@@ -2,7 +2,7 @@
 
 ``httpx`` is an optional dependency, imported lazily. An injectable
 ``transport`` callable (``method, path, json -> dict``) keeps the client fully
-testable without a network — the test suite drives a real :func:`get_fastapi_app`
+testable without a network — the test suite drives a real :func:`fastapi_server_app`
 server through an in-process transport.
 """
 
