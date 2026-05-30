@@ -31,7 +31,7 @@ from .extensions import get as get_component
 from .extensions import register as register_component
 from .limits import CancellationToken, UsageLimits
 from .memory.manager import MemoryManager
-from .multiagent import LoopAgent, ParallelAgent, SequentialAgent, Swarm
+from .multiagent import LoopAgent, MapAgent, ParallelAgent, SequentialAgent, Swarm
 from .prompts import PromptRegistry
 from .sessions.manager import SessionManager
 from .skills import Skill
@@ -66,6 +66,7 @@ __all__ = [
     # multi-agent workflow patterns
     "SequentialAgent",
     "ParallelAgent",
+    "MapAgent",
     "LoopAgent",
     "Swarm",
     # managers (ADK-style)

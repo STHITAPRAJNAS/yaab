@@ -40,6 +40,22 @@ result = await panel.run("Review this contract.")
 print(result.output["legal"], result.output["finance"], result.output["risk"])
 ```
 
+## Map fan-out
+
+Run one agent across many inputs concurrently; the output is the list of
+results. Give an explicit list, or derive inputs from the prompt with
+`map_inputs`. `max_concurrency` bounds simultaneous runs.
+
+```python
+from yaab import MapAgent
+
+summarize = MapAgent("summarize", summarizer, max_concurrency=4)
+results = await summarize.run([doc1, doc2, doc3])     # -> [summary1, summary2, summary3]
+
+# or derive inputs:
+per_line = MapAgent("classify", classifier, map_inputs=lambda text: text.splitlines())
+```
+
 ## Loop until done
 
 Re-run an agent, feeding its output back, until a condition or a cap.
@@ -52,6 +68,15 @@ refiner = LoopAgent(
     max_iterations=5,
     until=lambda out: "FINAL" in out,
 )
+```
+
+A `SequentialAgent` can also stop early via `stop_when`:
+
+```python
+from yaab import SequentialAgent
+
+pipeline = SequentialAgent("triage", [classify, escalate, resolve],
+                           stop_when=lambda out: "RESOLVED" in str(out))
 ```
 
 ## Swarm (autonomous hand-off)
