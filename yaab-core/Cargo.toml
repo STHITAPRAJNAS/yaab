@@ -1,0 +1,21 @@
+[package]
+name = "yaab-core"
+version = "0.1.0"
+edition = "2021"
+description = "Rust performance core for the YAAB agent SDK (orchestration, checkpoint serialization, vector ops)."
+license = "MIT"
+
+[lib]
+name = "yaab_core"
+# cdylib for the Python extension module; rlib so the engine can be reused by other bindings.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["extension-module"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[profile.release]
+opt-level = 3
+lto = true

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "yaab-core"
+version = "0.1.0"
+description = "Rust performance core for the YAAB agent SDK."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+classifiers = ["Programming Language :: Rust"]
+
+[tool.maturin]
+# Pure Rust extension module: produces the importable `yaab_core` module.
+module-name = "yaab_core"

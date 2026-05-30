@@ -1,0 +1,215 @@
+"""Agent Registry — the canonical system-of-record for every agent.
+
+Each entry is an :class:`AgentCard` that extends the A2A Agent Card with the
+governance fields a model-risk / AI-governance team needs (the Atlan "enterprise
+AI registry" 12-field minimum, plus agent-specific decision-authority and
+permission scope). In ``enforcing`` mode the runner refuses to run an agent
+unless it is registered and ``model_approval_status == approved``.
+
+The registry can export A2A-compatible discovery cards at
+``/.well-known/agent.json``.
+"""
+
+from __future__ import annotations
+
+import time
+from enum import Enum
+from typing import Any, Optional, Protocol, runtime_checkable
+
+from pydantic import BaseModel, Field
+
+
+class RiskTier(str, Enum):
+    """Internal risk tiering, orthogonal to any single regulatory regime."""
+
+    MINIMAL = "minimal"
+    LIMITED = "limited"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class EUActCategory(str, Enum):
+    """EU AI Act risk categories (Reg. 2024/1689)."""
+
+    PROHIBITED = "prohibited"
+    HIGH_RISK = "high_risk"
+    LIMITED = "limited"
+    MINIMAL = "minimal"
+    GPAI = "gpai"
+
+
+class ApprovalStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    REVOKED = "revoked"
+
+
+class DecisionAuthority(str, Enum):
+    """What the agent is allowed to *do* with its output."""
+
+    ADVISORY = "advisory"  # recommends; a human acts
+    AUTOMATED = "automated"  # acts autonomously, reversible
+    BINDING = "binding"  # acts autonomously, materially binding
+
+
+class AgentCard(BaseModel):
+    """The registry record for one agent version (A2A-compatible superset)."""
+
+    # Identity & ownership
+    agent_id: str
+    name: str
+    version: str = "0.1.0"
+    business_owner: Optional[str] = None
+    technical_owner: Optional[str] = None
+    team: Optional[str] = None
+
+    # Purpose & scope
+    intended_use_case: str = ""
+    output_actions: DecisionAuthority = DecisionAuthority.ADVISORY
+    decision_authority: DecisionAuthority = DecisionAuthority.ADVISORY
+    action_scope: list[str] = Field(default_factory=list)
+    data_inputs: list[str] = Field(default_factory=list)
+    training_data_sources: list[str] = Field(default_factory=list)
+
+    # Risk & compliance
+    risk_tier: RiskTier = RiskTier.LIMITED
+    eu_act_category: EUActCategory = EUActCategory.MINIMAL
+    regulatory_exemptions: list[str] = Field(default_factory=list)
+    model_approval_status: ApprovalStatus = ApprovalStatus.PENDING
+    last_audit_date: Optional[float] = None
+    deployment_environment: str = "dev"
+
+    # Operational
+    model_versions: list[str] = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
+    incident_history: list[dict[str, Any]] = Field(default_factory=list)
+    model_card_url: Optional[str] = None
+    lineage: dict[str, list[str]] = Field(default_factory=dict)
+
+    # Bookkeeping
+    lifecycle_state: str = "DRAFT"
+    created_at: float = Field(default_factory=time.time)
+    updated_at: float = Field(default_factory=time.time)
+    skills: list[dict[str, Any]] = Field(default_factory=list)
+
+    def to_a2a_card(self, url: str = "") -> dict[str, Any]:
+        """Render an A2A-style discovery card for ``/.well-known/agent.json``."""
+        return {
+            "name": self.name,
+            "description": self.intended_use_case,
+            "url": url,
+            "version": self.version,
+            "capabilities": {"streaming": True},
+            "skills": self.skills
+            or [{"id": t, "name": t} for t in self.tools],
+            "x-yaab-governance": {
+                "agent_id": self.agent_id,
+                "risk_tier": self.risk_tier.value,
+                "eu_act_category": self.eu_act_category.value,
+                "approval_status": self.model_approval_status.value,
+                "decision_authority": self.decision_authority.value,
+                "lifecycle_state": self.lifecycle_state,
+            },
+        }
+
+
+@runtime_checkable
+class RegistryBackend(Protocol):
+    """Pluggable storage for agent cards."""
+
+    def upsert(self, card: AgentCard) -> None:
+        ...
+
+    def fetch(self, agent_id: str) -> Optional[AgentCard]:
+        ...
+
+    def all(self) -> list[AgentCard]:
+        ...
+
+
+class InMemoryRegistryBackend:
+    def __init__(self) -> None:
+        self._cards: dict[str, AgentCard] = {}
+
+    def upsert(self, card: AgentCard) -> None:
+        self._cards[card.agent_id] = card
+
+    def fetch(self, agent_id: str) -> Optional[AgentCard]:
+        return self._cards.get(agent_id)
+
+    def all(self) -> list[AgentCard]:
+        return list(self._cards.values())
+
+
+class SQLiteRegistryBackend:
+    """Durable registry backend backed by SQLite."""
+
+    def __init__(self, path: str = "yaab_registry.db") -> None:
+        import sqlite3
+
+        self._conn = sqlite3.connect(path)
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS registry (agent_id TEXT PRIMARY KEY, data TEXT)"
+        )
+        self._conn.commit()
+
+    def upsert(self, card: AgentCard) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO registry VALUES (?, ?)",
+            (card.agent_id, card.model_dump_json()),
+        )
+        self._conn.commit()
+
+    def fetch(self, agent_id: str) -> Optional[AgentCard]:
+        row = self._conn.execute(
+            "SELECT data FROM registry WHERE agent_id = ?", (agent_id,)
+        ).fetchone()
+        return AgentCard.model_validate_json(row[0]) if row else None
+
+    def all(self) -> list[AgentCard]:
+        rows = self._conn.execute("SELECT data FROM registry").fetchall()
+        return [AgentCard.model_validate_json(r[0]) for r in rows]
+
+
+class AgentRegistry:
+    """The registry facade over a pluggable backend."""
+
+    def __init__(self, backend: Optional[RegistryBackend] = None) -> None:
+        self.backend = backend or InMemoryRegistryBackend()
+
+    def register(self, card: AgentCard) -> AgentCard:
+        card.updated_at = time.time()
+        self.backend.upsert(card)
+        return card
+
+    def get(self, agent_id: str) -> Optional[AgentCard]:
+        return self.backend.fetch(agent_id)
+
+    def list(self) -> list[AgentCard]:
+        return self.backend.all()
+
+    def is_approved(self, agent_id: str) -> bool:
+        card = self.get(agent_id)
+        return bool(card and card.model_approval_status == ApprovalStatus.APPROVED)
+
+    def inventory(self) -> list[dict[str, Any]]:
+        """Produce the SR 11-7 / EU AI Act model-inventory view."""
+        rows = []
+        for c in self.list():
+            rows.append(
+                {
+                    "agent_id": c.agent_id,
+                    "name": c.name,
+                    "version": c.version,
+                    "owner": c.business_owner,
+                    "risk_tier": c.risk_tier.value,
+                    "eu_act_category": c.eu_act_category.value,
+                    "approval_status": c.model_approval_status.value,
+                    "lifecycle_state": c.lifecycle_state,
+                    "last_audit_date": c.last_audit_date,
+                    "deployment_environment": c.deployment_environment,
+                }
+            )
+        return rows

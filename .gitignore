@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+*.so
+.coverage
+htmlcov/
+
+# Rust
+target/
+Cargo.lock
+
+# Local
+*.db
+*.sqlite
+*.sqlite3
+.DS_Store
+.env
+yaab_audit.db
+yaab_registry.db
