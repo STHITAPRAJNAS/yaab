@@ -47,6 +47,35 @@ from yaab.tools.mcp import mcp_toolset
 tools = mcp_toolset(descriptors, caller)   # caller: async (name, args) -> result
 ```
 
+### Resources & prompts (beyond tools)
+
+The client also speaks MCP resources and prompts:
+
+```python
+resources = await client.list_resources()
+text = await client.read_resource("file:///docs/policy.md")
+
+prompts = await client.list_prompts()
+rendered = await client.get_prompt("summarize", {"style": "brief"})
+```
+
+### Serve YAAB tools as an MCP server
+
+Expose your agent's tools to other MCP clients (IDEs, other agents) with
+`MCPServer`. It's transport-agnostic — `handle(request)` answers one JSON-RPC
+message; wire it to stdio or HTTP.
+
+```python
+from yaab.tools.mcp_server import MCPServer
+
+server = MCPServer.from_agent(agent)        # or MCPServer([tool_a, tool_b])
+response = await server.handle(json_rpc_request)
+```
+
+Because both ends are YAAB, a `MCPServer` can be driven directly by an
+`MCPClient` over an in-process transport — handy for testing and for embedding
+one agent's tools into another.
+
 ## A2A (Agent-to-Agent)
 
 ### Serve an agent as an A2A endpoint
