@@ -15,6 +15,8 @@ a first-class governance/registry/compliance layer that none of them ship.
 | Guide | What it covers |
 |---|---|
 | [**Get started**](get-started.md) | The guided path: install → agent → tools → RAG → memory → multi-agent → govern → deploy |
+| [**Concepts**](concepts.md) | What each component is for, and how to tell the confusable ones apart (Checkpointer vs Session, Memory vs RAG, …) |
+| [**Samples**](../samples/README.md) | End-to-end sample apps & patterns (support bot, RAG QA, approval pipeline, swarm, …), tested offline |
 | [Quickstart](quickstart.md) | Three-line agent, tools, typed output, offline testing |
 | [Agents](agents.md) | `Agent[Deps, Output]`, dependency injection, instructions, capabilities |
 | [Tools](tools.md) | Typed function tools, agent-as-tool, MCP tools |

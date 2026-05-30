@@ -1,4 +1,4 @@
-"""KnowledgeBase — the one object that makes RAG built-in, not bolted on.
+"""KnowledgeBase — the entry point to RAG.
 
 Ties together a chunker, an embedder, a vector store, and an optional reranker:
 ``add()`` ingests documents (chunk → embed → store); ``retrieve()`` embeds the
