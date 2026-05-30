@@ -54,10 +54,19 @@ class Module:
             self._model = resolve_model(self._model_spec)
         return self._model
 
-    async def forward(self, **inputs: Any) -> dict[str, str]:
-        prompt = self.signature.render_prompt(
+    def inspect_prompt(self, **inputs: Any) -> str:
+        """Return the exact prompt this module would send for ``inputs``.
+
+        Renders the current instructions + few-shot demos + inputs *without*
+        calling the model — the visibility DSPy users ask for (#7830) when
+        debugging or auditing an optimized program.
+        """
+        return self.signature.render_prompt(
             {k: str(v) for k, v in inputs.items()}, demos=self.demos
         )
+
+    async def forward(self, **inputs: Any) -> dict[str, str]:
+        prompt = self.inspect_prompt(**inputs)
         resp = await self.model.complete([Message(role=Role.USER, content=prompt)])
         return self.signature.parse_output(resp.content)
 
