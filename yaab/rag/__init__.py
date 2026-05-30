@@ -57,8 +57,13 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    # Lazy access to external stores (avoid importing chromadb/qdrant eagerly).
-    if name in ("ChromaVectorStore", "QdrantVectorStore"):
+    # Lazy access to external stores (avoid importing their client libs eagerly).
+    if name in (
+        "ChromaVectorStore",
+        "QdrantVectorStore",
+        "OpenSearchVectorStore",
+        "OracleVectorStore",
+    ):
         from . import stores_external
 
         return getattr(stores_external, name)

@@ -10,20 +10,29 @@ either in-process or as installable packages — without ever forking the core.
 |---|---|---|
 | `ModelProvider` | the LLM backend | `yaab.models.base` |
 | `Tool` | how a capability is exposed | `yaab.tools.base` |
-| `SessionService` | session storage | `yaab.sessions.base` |
+| `SessionService` | session storage (memory/SQLite/Postgres/Aurora/Redis/…) | `yaab.sessions.base` |
 | `MemoryService` | long-term memory | `yaab.memory` |
+| `VectorStore` | RAG vector storage (memory/pgvector/OpenSearch/Oracle/…) | `yaab.rag.store` |
+| `Reranker` | retrieval reranking | `yaab.rag.rerank` |
+| `Embedder` | embeddings | `yaab.memory.embedders` |
+| `Chunker` | document splitting | `yaab.rag.chunking` |
 | `ArtifactService` | blob storage | `yaab.artifacts` |
 | `Checkpointer` | graph durability | `yaab.graph.checkpoint` |
 | `GuardrailScanner` | a policy check | `yaab.governance.policy` |
+| `ToolAuthorizer` | tool authorization | `yaab.governance.authorization` |
 | `AuditSink` | where audit events go | `yaab.governance.audit` |
 | `RegistryBackend` | registry storage | `yaab.governance.registry` |
 | `ComplianceMapper` | a regulatory regime | `yaab.governance.compliance` |
+| eval metric | a scoring metric (RAGAS/DeepEval/custom) | `yaab.eval` |
 | `Optimizer` | a compile strategy | `yaab.optimize.optimizer` |
+| `ContextStrategy` | context-window management | `yaab.context` |
+| `Sandbox` | code-execution isolation | `yaab.tools.sandbox` |
 | `Plugin` | cross-cutting hooks | `yaab.plugins` |
 | `AuthScheme` | how requests authenticate | `yaab.auth` |
 
 Anything matching the protocol works anywhere the protocol is accepted — no
-registration required.
+registration required. Registering it (below) additionally makes it
+**selectable by name** and discoverable.
 
 ## The component registry
 
@@ -43,7 +52,43 @@ embedder = get("embedder", "myco", dim=256)
 ```
 
 Component kinds include: `model`, `tool`, `session`, `memory`, `artifact`,
-`checkpointer`, `guardrail`, `embedder`, `plugin`, `compliance`, `skill`.
+`checkpointer`, `guardrail`, `embedder`, `vectorstore`, `reranker`, `metric`,
+`plugin`, `compliance`, `skill`.
+
+### Worked example: add a vector-store backend
+
+Implement the four-method `VectorStore` protocol, import the client lazily, and
+register it — then it's selectable by name and drops into any `KnowledgeBase`:
+
+```python
+from yaab.extensions import register
+from yaab.rag.types import Chunk, RetrievedChunk
+
+class PineconeVectorStore:
+    def __init__(self, *, index: str, **kw):
+        try:
+            from pinecone import Pinecone          # lazy: optional dependency
+        except ImportError as exc:
+            raise RuntimeError("pinecone is required. `pip install pinecone`.") from exc
+        self._index = Pinecone(**kw).Index(index)
+
+    def add(self, chunks: list[Chunk]) -> None: ...
+    def query(self, embedding, *, k=5, where=None) -> list[RetrievedChunk]: ...
+    def delete(self, *, where=None) -> int: ...
+    def count(self) -> int: ...
+
+register("vectorstore", "pinecone", lambda **kw: PineconeVectorStore(**kw))
+```
+
+```python
+from yaab.rag import KnowledgeBase
+from yaab import get_component
+kb = KnowledgeBase(store=get_component("vectorstore", "pinecone", index="kb"))
+```
+
+The same recipe applies to a `SessionService` (kind `session`), `MemoryService`
+(`memory`), `Reranker` (`reranker`), eval metric (`metric`), and so on. Honor
+the protocol's metadata-filter semantics so per-tenant isolation keeps working.
 
 ### Register as an installable package (entry points)
 

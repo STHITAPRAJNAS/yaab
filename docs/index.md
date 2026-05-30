@@ -14,11 +14,13 @@ a first-class governance/registry/compliance layer that none of them ship.
 
 | Guide | What it covers |
 |---|---|
+| [**Get started**](get-started.md) | The guided path: install → agent → tools → RAG → memory → multi-agent → govern → deploy |
 | [Quickstart](quickstart.md) | Three-line agent, tools, typed output, offline testing |
 | [Agents](agents.md) | `Agent[Deps, Output]`, dependency injection, instructions, capabilities |
 | [Tools](tools.md) | Typed function tools, agent-as-tool, MCP tools |
 | [Models](models.md) | LiteLLM layer, fallbacks, retries, cost, structured output, TestModel |
 | [State: sessions, memory, artifacts](state.md) | Managers + services, scoping, session→memory ingestion |
+| [Storage & backends](storage-backends.md) | In-memory defaults + Postgres/Aurora, Redis, pgvector, OpenSearch, Chroma, Qdrant, Oracle — all extendible |
 | [State scoping & AG-UI](state-and-agui.md) | `temp:`/`user:`/`app:` state prefixes; AG-UI streaming middleware |
 | [RAG](rag.md) | Built-in retrieval: knowledge base, chunking, vector stores, rerank, citations, faithfulness |
 | [Multi-agent](multi-agent.md) | Sequential, Parallel, Loop, Swarm, agent-as-tool |

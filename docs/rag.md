@@ -50,18 +50,31 @@ cross-encoder rerankers drop in behind `VectorStore` / `Reranker`. Built-ins:
 |---|---|
 | Chunkers | `CharacterChunker`, `SentenceChunker`, `ParagraphChunker` |
 | Embedders | `hashing_embedder` (offline), `LiteLLMEmbedder` (any provider), `CachingEmbedder` |
-| Vector stores | `InMemoryVectorStore`, `PgVectorStore` (pgvector) |
-| Rerankers | `KeywordReranker` (lexical hybrid), `LLMReranker` |
+| Vector stores | in-memory · pgvector/Aurora · Chroma · Qdrant · OpenSearch · Oracle 23ai |
+| Rerankers | `KeywordReranker` (lexical hybrid), `LLMReranker`, `CrossEncoderReranker` |
 
-## Production store: pgvector
+## Production vector stores
+
+All stores satisfy one `VectorStore` protocol and honor metadata `where` filters
+(per-tenant isolation pushes down to the DB/cluster). Pick by class or by name —
+see the full matrix in [Storage & backends](storage-backends.md).
 
 ```python
-from yaab.rag import PgVectorStore
-kb = KnowledgeBase(store=PgVectorStore("postgresql://…", dim=1536))
-```
+from yaab.rag import KnowledgeBase, PgVectorStore           # yaab[postgres]
 
-Metadata filters push down to the database (JSONB containment), so per-tenant
-isolation is enforced at the query.
+# Postgres / Amazon Aurora PostgreSQL with pgvector:
+kb = KnowledgeBase(store=PgVectorStore("postgresql://…@aurora-endpoint/db", dim=1536))
+
+# Amazon OpenSearch Service / Serverless:           yaab[opensearch]
+from yaab.rag import OpenSearchVectorStore
+kb = KnowledgeBase(store=OpenSearchVectorStore(index="kb", hosts=[{"host": "...", "port": 443}]))
+
+# Oracle Database 23ai AI Vector Search:            yaab[oracle]
+from yaab.rag import OracleVectorStore
+kb = KnowledgeBase(store=OracleVectorStore(dsn="...", user="...", password="..."))
+
+# Chroma (yaab[chroma]) and Qdrant (yaab[qdrant]) likewise.
+```
 
 ## Governance features (the differentiators)
 

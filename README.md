@@ -286,19 +286,24 @@ a tool). See the docs below.
 
 Full guides live in [`docs/`](docs/index.md):
 
+[**Get started**](docs/get-started.md) ·
 [Quickstart](docs/quickstart.md) ·
 [Agents](docs/agents.md) ·
 [Tools](docs/tools.md) ·
 [Models](docs/models.md) ·
 [State (sessions/memory/artifacts)](docs/state.md) ·
+[Storage & backends](docs/storage-backends.md) ·
+[RAG](docs/rag.md) ·
 [Multi-agent](docs/multi-agent.md) ·
 [Streaming & events](docs/streaming-events.md) ·
 [Graph](docs/graph.md) ·
 [MCP & A2A](docs/interop.md) ·
 [Governance](docs/governance.md) ·
+[Evaluation](docs/evaluation.md) ·
 [Optimization](docs/optimization.md) ·
 [Prompts & skills](docs/prompts-skills.md) ·
 [Serving & auth](docs/serving.md) ·
+[Platform extensions](docs/platform.md) ·
 [Extending](docs/extending.md) ·
 [Deployment](docs/DEPLOYMENT.md) ·
 [Comparison & gaps](docs/COMPARISON.md)
