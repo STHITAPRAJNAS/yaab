@@ -15,7 +15,8 @@ Usage is rolled up across all sub-agents so cost/token accounting stays whole.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -32,15 +33,15 @@ class _WorkflowBase:
         prompt: str,
         *,
         deps: Any = None,
-        session_id: Optional[str] = None,
-        identity: Optional[str] = None,
+        session_id: str | None = None,
+        identity: str | None = None,
     ) -> RunResult[Any]:
         raise NotImplementedError
 
     def run_sync(self, prompt: str, **kwargs: Any) -> RunResult[Any]:
         return asyncio.run(self.run(prompt, **kwargs))
 
-    def as_tool(self, *, name: Optional[str] = None, description: Optional[str] = None) -> Any:
+    def as_tool(self, *, name: str | None = None, description: str | None = None) -> Any:
         from .tools.agent_tool import AgentTool
 
         return AgentTool(self, name=name, description=description)
@@ -59,7 +60,7 @@ class SequentialAgent(_WorkflowBase):
         agents: list[Any],
         *,
         pipe_output: bool = True,
-        stop_when: Optional[Callable[[Any], bool]] = None,
+        stop_when: Callable[[Any], bool] | None = None,
     ) -> None:
         self.name = name
         self.agents = agents
@@ -70,7 +71,7 @@ class SequentialAgent(_WorkflowBase):
     async def run(self, prompt: str, *, deps: Any = None, session_id=None, identity=None):
         usage = Usage()
         current_input = prompt
-        last: Optional[RunResult] = None
+        last: RunResult | None = None
         for agent in self.agents:
             last = await agent.run(
                 current_input, deps=deps, session_id=session_id, identity=identity
@@ -116,7 +117,7 @@ class MapAgent(_WorkflowBase):
         name: str,
         agent: Any,
         *,
-        map_inputs: Optional[Callable[[str], list[str]]] = None,
+        map_inputs: Callable[[str], list[str]] | None = None,
         max_concurrency: int = 0,
     ) -> None:
         self.name = name
@@ -153,9 +154,7 @@ class MapAgent(_WorkflowBase):
         usage = Usage()
         for r in results:
             usage.add(r.usage)
-        return RunResult(
-            output=[r.output for r in results], usage=usage, run_id=self.name
-        )
+        return RunResult(output=[r.output for r in results], usage=usage, run_id=self.name)
 
 
 class LoopAgent(_WorkflowBase):
@@ -171,7 +170,7 @@ class LoopAgent(_WorkflowBase):
         agent: Any,
         *,
         max_iterations: int = 5,
-        until: Optional[Callable[[Any], bool]] = None,
+        until: Callable[[Any], bool] | None = None,
     ) -> None:
         self.name = name
         self.agent = agent
@@ -182,7 +181,7 @@ class LoopAgent(_WorkflowBase):
     async def run(self, prompt: str, *, deps: Any = None, session_id=None, identity=None):
         usage = Usage()
         current_input = prompt
-        last: Optional[RunResult] = None
+        last: RunResult | None = None
         for _ in range(self.max_iterations):
             last = await self.agent.run(
                 current_input, deps=deps, session_id=session_id, identity=identity
@@ -197,7 +196,7 @@ class LoopAgent(_WorkflowBase):
 class SwarmState(BaseModel):
     """Shared, mutable state threaded through a swarm via DI."""
 
-    handoff: Optional[str] = None
+    handoff: str | None = None
     shared: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -214,7 +213,7 @@ class Swarm(_WorkflowBase):
         name: str,
         agents: list[Any],
         *,
-        entry: Optional[str] = None,
+        entry: str | None = None,
         max_handoffs: int = 6,
     ) -> None:
         self.name = name
@@ -252,7 +251,7 @@ class Swarm(_WorkflowBase):
         usage = Usage()
         current = self.entry
         current_input = prompt
-        last: Optional[RunResult] = None
+        last: RunResult | None = None
         for _ in range(self.max_handoffs + 1):
             state.handoff = None
             agent = self.agents[current]

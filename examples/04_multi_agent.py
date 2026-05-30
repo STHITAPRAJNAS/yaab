@@ -21,8 +21,9 @@ async def main():
     print("parallel:", (await board.run("review contract")).output)
 
     # Swarm: triage hands off to a specialist.
-    triage = Agent("triage", model=TestModel(custom_output="routing",
-                                             call_tools=["handoff_to_billing"]))
+    triage = Agent(
+        "triage", model=TestModel(custom_output="routing", call_tools=["handoff_to_billing"])
+    )
     billing = Agent("billing", model=TestModel("refund processed"))
     swarm = Swarm("support", [triage, billing], entry="triage")
     print("swarm:", (await swarm.run("I was double charged", deps=SwarmState())).output)

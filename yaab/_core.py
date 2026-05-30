@@ -105,7 +105,9 @@ def reduce_channel(reducer: str, current: Any, update: Any) -> Any:
     if reducer == "last_value":
         return update
     if reducer == "append":
-        base = list(current) if isinstance(current, list) else ([] if current is None else [current])
+        base = (
+            list(current) if isinstance(current, list) else ([] if current is None else [current])
+        )
         if isinstance(update, list):
             base.extend(update)
         else:

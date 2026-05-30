@@ -34,9 +34,7 @@ def test_all_regimes_available():
     assert {"sr_11_7", "eu_ai_act", "nist_ai_rmf", "iso_42001", "soc2"} <= names
 
 
-@pytest.mark.parametrize(
-    "regime", ["sr_11_7", "eu_ai_act", "nist_ai_rmf", "iso_42001", "soc2"]
-)
+@pytest.mark.parametrize("regime", ["sr_11_7", "eu_ai_act", "nist_ai_rmf", "iso_42001", "soc2"])
 def test_mapper_produces_report(populated, regime):
     registry, audit = populated
     mapper = get_mapper(regime)

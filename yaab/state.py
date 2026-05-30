@@ -20,7 +20,8 @@ returns everything except ``temp:`` for durable storage.
 
 from __future__ import annotations
 
-from typing import Any, Iterator, MutableMapping, Optional
+from collections.abc import Iterator, MutableMapping
+from typing import Any
 
 APP_PREFIX = "app:"
 USER_PREFIX = "user:"
@@ -48,10 +49,10 @@ class State(MutableMapping):
 
     def __init__(
         self,
-        session: Optional[dict[str, Any]] = None,
+        session: dict[str, Any] | None = None,
         *,
-        user: Optional[MutableMapping[str, Any]] = None,
-        app: Optional[MutableMapping[str, Any]] = None,
+        user: MutableMapping[str, Any] | None = None,
+        app: MutableMapping[str, Any] | None = None,
     ) -> None:
         self._session: dict[str, Any] = session if session is not None else {}
         self._user: MutableMapping[str, Any] = user if user is not None else {}

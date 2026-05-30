@@ -8,8 +8,6 @@ service semantics while staying backend-agnostic.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from . import ArtifactService, InMemoryArtifactService
 
 DEFAULT_APP = "default"
@@ -19,7 +17,7 @@ DEFAULT_USER = "default"
 class ArtifactManager:
     """Manage versioned artifacts scoped by app, user, and session."""
 
-    def __init__(self, service: Optional[ArtifactService] = None) -> None:
+    def __init__(self, service: ArtifactService | None = None) -> None:
         self.service = service or InMemoryArtifactService()
         # scoped name -> ordered list of artifact ids (one per version)
         self._versions: dict[str, list[str]] = {}
@@ -48,11 +46,11 @@ class ArtifactManager:
         self,
         name: str,
         *,
-        version: Optional[int] = None,
+        version: int | None = None,
         app_name: str = DEFAULT_APP,
         user_id: str = DEFAULT_USER,
         session_id: str = "default",
-    ) -> Optional[bytes]:
+    ) -> bytes | None:
         """Load a version of ``name`` (latest if ``version`` is None)."""
         key = self._scope(app_name, user_id, session_id, name)
         ids = self._versions.get(key)
@@ -75,10 +73,14 @@ class ArtifactManager:
         return len(self._versions.get(key, []))
 
     async def list_artifacts(
-        self, *, app_name: str = DEFAULT_APP, user_id: str = DEFAULT_USER, session_id: str = "default"
+        self,
+        *,
+        app_name: str = DEFAULT_APP,
+        user_id: str = DEFAULT_USER,
+        session_id: str = "default",
     ) -> list[str]:
         prefix = f"{app_name}:{user_id}:{session_id}:"
-        return [k[len(prefix):] for k in self._versions if k.startswith(prefix)]
+        return [k[len(prefix) :] for k in self._versions if k.startswith(prefix)]
 
 
 __all__ = ["ArtifactManager"]

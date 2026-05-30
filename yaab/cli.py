@@ -14,7 +14,6 @@ from __future__ import annotations
 import argparse
 import importlib
 import sys
-from typing import Optional
 
 from . import __version__, _core
 
@@ -67,7 +66,7 @@ def _load_attr(spec: str):
     return getattr(module, attr or "agent")
 
 
-def _registry_list(db: Optional[str]) -> int:
+def _registry_list(db: str | None) -> int:
     from .governance.registry import AgentRegistry, SQLiteRegistryBackend
 
     registry = AgentRegistry(SQLiteRegistryBackend(db) if db else None)
@@ -84,7 +83,7 @@ def _registry_list(db: Optional[str]) -> int:
     return 0
 
 
-def _compliance_report(regime: str, db: Optional[str], agent_id: Optional[str]) -> int:
+def _compliance_report(regime: str, db: str | None, agent_id: str | None) -> int:
     from .governance.audit import AuditLog
     from .governance.compliance import get_mapper
     from .governance.registry import AgentRegistry, SQLiteRegistryBackend
@@ -113,7 +112,7 @@ def _web(spec: str, host: str, port: int) -> int:
     return 0
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="yaab", description="Yet Another Agent Builder")
     parser.add_argument("--version", action="version", version=f"yaab {__version__}")
     sub = parser.add_subparsers(dest="command")

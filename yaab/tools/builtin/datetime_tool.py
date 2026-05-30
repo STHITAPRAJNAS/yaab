@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..base import tool
 
@@ -15,5 +15,5 @@ def current_time(tz_offset_hours: float = 0.0) -> str:
     """
     from datetime import timedelta
 
-    now = datetime.now(timezone.utc) + timedelta(hours=tz_offset_hours)
+    now = datetime.now(UTC) + timedelta(hours=tz_offset_hours)
     return now.isoformat()

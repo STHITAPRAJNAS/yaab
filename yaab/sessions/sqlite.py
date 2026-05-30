@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Optional
 
 from ..types import Message
 from .base import Session
@@ -19,10 +18,8 @@ class SQLiteSessionService:
         )
         self._conn.commit()
 
-    def _load(self, session_id: str) -> Optional[Session]:
-        row = self._conn.execute(
-            "SELECT data FROM sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+    def _load(self, session_id: str) -> Session | None:
+        row = self._conn.execute("SELECT data FROM sessions WHERE id = ?", (session_id,)).fetchone()
         if row is None:
             return None
         return Session.model_validate_json(row[0])
@@ -34,10 +31,10 @@ class SQLiteSessionService:
         )
         self._conn.commit()
 
-    async def get(self, session_id: str) -> Optional[Session]:
+    async def get(self, session_id: str) -> Session | None:
         return self._load(session_id)
 
-    async def get_or_create(self, session_id: Optional[str] = None) -> Session:
+    async def get_or_create(self, session_id: str | None = None) -> Session:
         if session_id:
             existing = self._load(session_id)
             if existing is not None:

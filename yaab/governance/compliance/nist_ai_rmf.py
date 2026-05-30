@@ -6,8 +6,6 @@ MEASURE, MANAGE.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ..audit import AuditLog
 from ..registry import AgentRegistry
 from .base import ComplianceReport, ControlResult, ControlStatus, _audit_kinds
@@ -17,7 +15,7 @@ class NISTAIRMFMapper:
     regime = "nist_ai_rmf"
 
     def map(
-        self, registry: AgentRegistry, audit: AuditLog, agent_id: Optional[str] = None
+        self, registry: AgentRegistry, audit: AuditLog, agent_id: str | None = None
     ) -> ComplianceReport:
         kinds = _audit_kinds(audit, agent_id)
         card = registry.get(agent_id) if agent_id else None

@@ -9,7 +9,8 @@ behavior of Pydantic AI's ``TestModel``/``FunctionModel``.
 from __future__ import annotations
 
 import json
-from typing import Any, AsyncIterator, Callable, Optional
+from collections.abc import AsyncIterator, Callable
+from typing import Any
 
 from ..types import Message, ToolCall, Usage
 from .base import ModelResponse, StreamChunk
@@ -39,10 +40,10 @@ class TestModel:
         self,
         custom_output: str = "test-response",
         *,
-        responses: Optional[list[ModelResponse | str]] = None,
-        call_tools: Optional[list[str]] = None,
-        structured_output: Optional[dict[str, Any]] = None,
-        reasoning: Optional[str] = None,
+        responses: list[ModelResponse | str] | None = None,
+        call_tools: list[str] | None = None,
+        structured_output: dict[str, Any] | None = None,
+        reasoning: str | None = None,
     ) -> None:
         self.name = "test"
         self.custom_output = custom_output
@@ -60,9 +61,9 @@ class TestModel:
         self,
         messages: list[Message],
         *,
-        tools: Optional[list[dict[str, Any]]] = None,
-        output_schema: Optional[dict[str, Any]] = None,
-        tool_choice: Optional[Any] = None,
+        tools: list[dict[str, Any]] | None = None,
+        output_schema: dict[str, Any] | None = None,
+        tool_choice: Any | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
         self.calls.append(list(messages))
@@ -100,7 +101,7 @@ class TestModel:
         self,
         messages: list[Message],
         *,
-        tools: Optional[list[dict[str, Any]]] = None,
+        tools: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         resp = await self.complete(messages, tools=tools, **kwargs)
@@ -120,8 +121,8 @@ class FunctionModel:
         self,
         messages: list[Message],
         *,
-        tools: Optional[list[dict[str, Any]]] = None,
-        output_schema: Optional[dict[str, Any]] = None,
+        tools: list[dict[str, Any]] | None = None,
+        output_schema: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
         result = self.fn(messages)
@@ -135,7 +136,7 @@ class FunctionModel:
         self,
         messages: list[Message],
         *,
-        tools: Optional[list[dict[str, Any]]] = None,
+        tools: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         resp = await self.complete(messages, tools=tools, **kwargs)

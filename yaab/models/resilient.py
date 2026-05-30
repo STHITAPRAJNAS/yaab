@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, AsyncIterator, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 from ..exceptions import ModelError
 from ..types import Message
@@ -55,7 +56,7 @@ class CircuitBreaker:
         self.threshold = threshold
         self.cooldown = cooldown
         self._failures = 0
-        self._opened_at: Optional[float] = None
+        self._opened_at: float | None = None
 
     @property
     def state(self) -> str:
@@ -89,8 +90,8 @@ class ResilientModel:
         self,
         inner: ModelProvider,
         *,
-        rate_limiter: Optional[RateLimiter] = None,
-        circuit_breaker: Optional[CircuitBreaker] = None,
+        rate_limiter: RateLimiter | None = None,
+        circuit_breaker: CircuitBreaker | None = None,
     ) -> None:
         self.inner = inner
         self.name = inner.name
@@ -101,9 +102,9 @@ class ResilientModel:
         self,
         messages: list[Message],
         *,
-        tools: Optional[list[dict[str, Any]]] = None,
-        output_schema: Optional[dict[str, Any]] = None,
-        tool_choice: Optional[Any] = None,
+        tools: list[dict[str, Any]] | None = None,
+        output_schema: dict[str, Any] | None = None,
+        tool_choice: Any | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
         if self.circuit_breaker is not None:
@@ -112,8 +113,11 @@ class ResilientModel:
             await self.rate_limiter.acquire()
         try:
             resp = await self.inner.complete(
-                messages, tools=tools, output_schema=output_schema,
-                tool_choice=tool_choice, **kwargs,
+                messages,
+                tools=tools,
+                output_schema=output_schema,
+                tool_choice=tool_choice,
+                **kwargs,
             )
         except Exception:
             if self.circuit_breaker is not None:
@@ -127,7 +131,7 @@ class ResilientModel:
         self,
         messages: list[Message],
         *,
-        tools: Optional[list[dict[str, Any]]] = None,
+        tools: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         return self.inner.stream(messages, tools=tools, **kwargs)

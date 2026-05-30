@@ -12,8 +12,17 @@ from yaab.rag.types import Chunk, RetrievedChunk
 
 def test_builtin_metrics_registered():
     names = set(available_metrics())
-    assert {"exact_match", "contains", "regex", "json_match", "numeric_tolerance",
-            "levenshtein", "llm_judge", "faithfulness", "context_relevance"} <= names
+    assert {
+        "exact_match",
+        "contains",
+        "regex",
+        "json_match",
+        "numeric_tolerance",
+        "levenshtein",
+        "llm_judge",
+        "faithfulness",
+        "context_relevance",
+    } <= names
 
 
 def test_external_adapters_registered():

@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 import uuid
 from enum import Enum
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -37,12 +37,12 @@ class Message(BaseModel):
 
     role: Role
     content: str = ""
-    name: Optional[str] = None
+    name: str | None = None
     tool_calls: list[ToolCall] = Field(default_factory=list)
-    tool_call_id: Optional[str] = None
+    tool_call_id: str | None = None
     # Pre-rendered multimodal content items (set when the message carries a
     # multimodal Content); when present they take precedence over `content`.
-    content_parts: Optional[list[Any]] = None
+    content_parts: list[Any] | None = None
     timestamp: float = Field(default_factory=time.time)
 
     def to_provider_dict(self) -> dict[str, Any]:
@@ -80,7 +80,7 @@ class Usage(BaseModel):
     total_tokens: int = 0
     cost_usd: float = 0.0
 
-    def add(self, other: "Usage") -> None:
+    def add(self, other: Usage) -> None:
         self.requests += other.requests
         self.input_tokens += other.input_tokens
         self.output_tokens += other.output_tokens
@@ -102,10 +102,10 @@ class RunContext(Generic[Deps]):
         self,
         deps: Deps = None,  # type: ignore[assignment]
         *,
-        session_id: Optional[str] = None,
-        identity: Optional[str] = None,
-        usage: Optional[Usage] = None,
-        state: Optional[dict[str, Any]] = None,
+        session_id: str | None = None,
+        identity: str | None = None,
+        usage: Usage | None = None,
+        state: dict[str, Any] | None = None,
     ) -> None:
         self.deps = deps
         self.session_id = session_id

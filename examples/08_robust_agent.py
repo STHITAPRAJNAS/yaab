@@ -15,16 +15,19 @@ async def main():
     # 1) Built-in tools — no need to write your own.
     print("tools:", [t.name for t in default_toolset()])
     from yaab.types import RunContext
+
     print("calc 6*7:", await calculator.execute(RunContext(), expression="6 * 7"))
 
     # 2) Declarative agent (auditable config, not code).
-    agent = agent_from_dict({
-        "name": "assistant",
-        "model": "openai/gpt-4o",
-        "instructions": "Be concise.",
-        "tools": ["calculator", "current_time"],
-        "max_steps": 5,
-    })
+    agent = agent_from_dict(
+        {
+            "name": "assistant",
+            "model": "openai/gpt-4o",
+            "instructions": "Be concise.",
+            "tools": ["calculator", "current_time"],
+            "max_steps": 5,
+        }
+    )
     print("config agent:", agent.name, "with", len(agent.tools), "tools")
 
     # 3) Context-window management + resilience on a real run (offline model).
@@ -51,11 +54,15 @@ async def main():
         return True
 
     audit = AuditLog()
-    model = TestModel(responses=[
-        ModelResponse(tool_calls=[ToolCall(name="refund", arguments={"amount": 50})],
-                      finish_reason="tool_calls"),
-        "Refund processed.",
-    ])
+    model = TestModel(
+        responses=[
+            ModelResponse(
+                tool_calls=[ToolCall(name="refund", arguments={"amount": 50})],
+                finish_reason="tool_calls",
+            ),
+            "Refund processed.",
+        ]
+    )
     runner = Runner(plugins=[ToolApprovalPlugin(tools=["refund"], approver=approver, audit=audit)])
     result = await runner.run(Agent("billing", model=model, tools=[refund]), "refund 50")
     print("approved run:", result.output)

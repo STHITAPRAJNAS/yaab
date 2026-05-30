@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import base64
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -36,21 +36,21 @@ class Part(BaseModel):
     """One unit of content. Use the classmethod constructors, not the raw fields."""
 
     kind: PartKind = PartKind.TEXT
-    text: Optional[str] = None
-    mime_type: Optional[str] = None
-    data: Optional[str] = None  # base64-encoded bytes for DATA parts
-    uri: Optional[str] = None  # for FILE parts
-    tool_call: Optional[ToolCall] = None
-    tool_result: Optional[Any] = None
+    text: str | None = None
+    mime_type: str | None = None
+    data: str | None = None  # base64-encoded bytes for DATA parts
+    uri: str | None = None  # for FILE parts
+    tool_call: ToolCall | None = None
+    tool_result: Any | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     # --- constructors --------------------------------------------------
     @classmethod
-    def text_part(cls, text: str) -> "Part":
+    def text_part(cls, text: str) -> Part:
         return cls(kind=PartKind.TEXT, text=text)
 
     @classmethod
-    def data_part(cls, data: bytes, mime_type: str) -> "Part":
+    def data_part(cls, data: bytes, mime_type: str) -> Part:
         return cls(
             kind=PartKind.DATA,
             mime_type=mime_type,
@@ -58,19 +58,19 @@ class Part(BaseModel):
         )
 
     @classmethod
-    def file_part(cls, uri: str, mime_type: Optional[str] = None) -> "Part":
+    def file_part(cls, uri: str, mime_type: str | None = None) -> Part:
         return cls(kind=PartKind.FILE, uri=uri, mime_type=mime_type)
 
     @classmethod
-    def thought_part(cls, text: str) -> "Part":
+    def thought_part(cls, text: str) -> Part:
         return cls(kind=PartKind.THOUGHT, text=text)
 
     @classmethod
-    def tool_call_part(cls, call: ToolCall) -> "Part":
+    def tool_call_part(cls, call: ToolCall) -> Part:
         return cls(kind=PartKind.TOOL_CALL, tool_call=call)
 
     @classmethod
-    def tool_result_part(cls, result: Any) -> "Part":
+    def tool_result_part(cls, result: Any) -> Part:
         return cls(kind=PartKind.TOOL_RESULT, tool_result=result)
 
     # --- rendering -----------------------------------------------------
@@ -80,7 +80,7 @@ class Part(BaseModel):
             raise ValueError("decoded() is only valid for DATA parts")
         return base64.b64decode(self.data)
 
-    def to_provider(self) -> Optional[dict[str, Any]]:
+    def to_provider(self) -> dict[str, Any] | None:
         """Render to an OpenAI-style multimodal content item (or None)."""
         if self.kind in (PartKind.TEXT, PartKind.THOUGHT):
             return {"type": "text", "text": self.text or ""}
@@ -99,11 +99,11 @@ class Content(BaseModel):
     parts: list[Part] = Field(default_factory=list)
 
     @classmethod
-    def from_text(cls, text: str, role: Role = Role.USER) -> "Content":
+    def from_text(cls, text: str, role: Role = Role.USER) -> Content:
         return cls(role=role, parts=[Part.text_part(text)])
 
     @classmethod
-    def coerce(cls, value: Union[str, "Content"], role: Role = Role.USER) -> "Content":
+    def coerce(cls, value: str | Content, role: Role = Role.USER) -> Content:
         if isinstance(value, Content):
             return value
         return cls.from_text(str(value), role=role)
@@ -111,7 +111,9 @@ class Content(BaseModel):
     @property
     def text(self) -> str:
         """Concatenate all text/thought parts."""
-        return "".join(p.text or "" for p in self.parts if p.kind in (PartKind.TEXT, PartKind.THOUGHT))
+        return "".join(
+            p.text or "" for p in self.parts if p.kind in (PartKind.TEXT, PartKind.THOUGHT)
+        )
 
     @property
     def tool_calls(self) -> list[ToolCall]:
@@ -120,7 +122,7 @@ class Content(BaseModel):
     def is_multimodal(self) -> bool:
         return any(p.kind in (PartKind.DATA, PartKind.FILE) for p in self.parts)
 
-    def to_provider_content(self) -> Union[str, list[dict[str, Any]]]:
+    def to_provider_content(self) -> str | list[dict[str, Any]]:
         """Render the parts into a provider ``content`` value.
 
         Returns a plain string for text-only content (the common, cheap case) or
@@ -131,7 +133,7 @@ class Content(BaseModel):
         items = [item for p in self.parts if (item := p.to_provider()) is not None]
         return items
 
-    def to_message(self) -> "Any":
+    def to_message(self) -> Any:
         """Lower a Content into the flat :class:`~yaab.types.Message` wire type."""
         from .types import Message
 

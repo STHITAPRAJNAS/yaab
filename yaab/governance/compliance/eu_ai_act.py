@@ -7,8 +7,6 @@ event logging. Verify dates/obligations against official EUR-Lex sources.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ..audit import AuditLog
 from ..registry import AgentRegistry, EUActCategory
 from .base import ComplianceReport, ControlResult, ControlStatus, _audit_kinds
@@ -18,7 +16,7 @@ class EUAIActMapper:
     regime = "eu_ai_act"
 
     def map(
-        self, registry: AgentRegistry, audit: AuditLog, agent_id: Optional[str] = None
+        self, registry: AgentRegistry, audit: AuditLog, agent_id: str | None = None
     ) -> ComplianceReport:
         kinds = _audit_kinds(audit, agent_id)
         card = registry.get(agent_id) if agent_id else None
@@ -71,9 +69,7 @@ class EUAIActMapper:
                 status=ControlStatus.SATISFIED
                 if ({"run_start", "model_call"} & kinds and audit.verify())
                 else ControlStatus.GAP,
-                evidence=["append-only hash-chained audit log"]
-                if audit.verify()
-                else [],
+                evidence=["append-only hash-chained audit log"] if audit.verify() else [],
             )
         )
         controls.append(

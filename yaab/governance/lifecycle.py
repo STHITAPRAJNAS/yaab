@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -76,8 +75,8 @@ class EvidenceArtifact(BaseModel):
 
     kind: str
     summary: str = ""
-    author: Optional[str] = None
-    reference: Optional[str] = None
+    author: str | None = None
+    reference: str | None = None
     timestamp: float = Field(default_factory=time.time)
 
 
@@ -97,8 +96,8 @@ class LifecycleManager:
         agent_id: str,
         to: LifecycleState,
         *,
-        actor: Optional[str] = None,
-        evidence: Optional[list[EvidenceArtifact]] = None,
+        actor: str | None = None,
+        evidence: list[EvidenceArtifact] | None = None,
     ) -> LifecycleState:
         card = self.registry.get(agent_id)
         if card is None:
@@ -113,9 +112,7 @@ class LifecycleManager:
         have = {e.kind for e in self._evidence.get(agent_id, [])} | supplied
         missing = [k for k in REQUIRED_EVIDENCE.get(to, []) if k not in have]
         if missing:
-            raise LifecycleError(
-                f"cannot enter {to.value}: missing evidence {missing}"
-            )
+            raise LifecycleError(f"cannot enter {to.value}: missing evidence {missing}")
 
         if evidence:
             self._evidence.setdefault(agent_id, []).extend(evidence)

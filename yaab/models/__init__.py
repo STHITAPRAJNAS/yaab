@@ -19,7 +19,7 @@ __all__ = [
 ]
 
 
-def resolve_model(model: "str | ModelProvider") -> ModelProvider:
+def resolve_model(model: str | ModelProvider) -> ModelProvider:
     """Coerce a model spec into a :class:`ModelProvider`.
 
     Strings are treated as LiteLLM model identifiers (e.g.

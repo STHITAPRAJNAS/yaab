@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -60,9 +60,9 @@ class AgentCard(BaseModel):
     agent_id: str
     name: str
     version: str = "0.1.0"
-    business_owner: Optional[str] = None
-    technical_owner: Optional[str] = None
-    team: Optional[str] = None
+    business_owner: str | None = None
+    technical_owner: str | None = None
+    team: str | None = None
 
     # Purpose & scope
     intended_use_case: str = ""
@@ -77,7 +77,7 @@ class AgentCard(BaseModel):
     eu_act_category: EUActCategory = EUActCategory.MINIMAL
     regulatory_exemptions: list[str] = Field(default_factory=list)
     model_approval_status: ApprovalStatus = ApprovalStatus.PENDING
-    last_audit_date: Optional[float] = None
+    last_audit_date: float | None = None
     deployment_environment: str = "dev"
 
     # Operational
@@ -85,7 +85,7 @@ class AgentCard(BaseModel):
     tools: list[str] = Field(default_factory=list)
     permissions: list[str] = Field(default_factory=list)
     incident_history: list[dict[str, Any]] = Field(default_factory=list)
-    model_card_url: Optional[str] = None
+    model_card_url: str | None = None
     lineage: dict[str, list[str]] = Field(default_factory=dict)
 
     # Bookkeeping
@@ -102,8 +102,7 @@ class AgentCard(BaseModel):
             "url": url,
             "version": self.version,
             "capabilities": {"streaming": True},
-            "skills": self.skills
-            or [{"id": t, "name": t} for t in self.tools],
+            "skills": self.skills or [{"id": t, "name": t} for t in self.tools],
             "x-yaab-governance": {
                 "agent_id": self.agent_id,
                 "risk_tier": self.risk_tier.value,
@@ -119,14 +118,11 @@ class AgentCard(BaseModel):
 class RegistryBackend(Protocol):
     """Pluggable storage for agent cards."""
 
-    def upsert(self, card: AgentCard) -> None:
-        ...
+    def upsert(self, card: AgentCard) -> None: ...
 
-    def fetch(self, agent_id: str) -> Optional[AgentCard]:
-        ...
+    def fetch(self, agent_id: str) -> AgentCard | None: ...
 
-    def all(self) -> list[AgentCard]:
-        ...
+    def all(self) -> list[AgentCard]: ...
 
 
 class InMemoryRegistryBackend:
@@ -136,7 +132,7 @@ class InMemoryRegistryBackend:
     def upsert(self, card: AgentCard) -> None:
         self._cards[card.agent_id] = card
 
-    def fetch(self, agent_id: str) -> Optional[AgentCard]:
+    def fetch(self, agent_id: str) -> AgentCard | None:
         return self._cards.get(agent_id)
 
     def all(self) -> list[AgentCard]:
@@ -162,7 +158,7 @@ class SQLiteRegistryBackend:
         )
         self._conn.commit()
 
-    def fetch(self, agent_id: str) -> Optional[AgentCard]:
+    def fetch(self, agent_id: str) -> AgentCard | None:
         row = self._conn.execute(
             "SELECT data FROM registry WHERE agent_id = ?", (agent_id,)
         ).fetchone()
@@ -176,7 +172,7 @@ class SQLiteRegistryBackend:
 class AgentRegistry:
     """The registry facade over a pluggable backend."""
 
-    def __init__(self, backend: Optional[RegistryBackend] = None) -> None:
+    def __init__(self, backend: RegistryBackend | None = None) -> None:
         self.backend = backend or InMemoryRegistryBackend()
 
     def register(self, card: AgentCard) -> AgentCard:
@@ -184,7 +180,7 @@ class AgentRegistry:
         self.backend.upsert(card)
         return card
 
-    def get(self, agent_id: str) -> Optional[AgentCard]:
+    def get(self, agent_id: str) -> AgentCard | None:
         return self.backend.fetch(agent_id)
 
     def list(self) -> list[AgentCard]:
@@ -196,7 +192,7 @@ class AgentRegistry:
 
     def inventory(self) -> list[dict[str, Any]]:
         """Produce the SR 11-7 / EU AI Act model-inventory view."""
-        rows = []
+        rows: list[dict[str, Any]] = []
         for c in self.list():
             rows.append(
                 {

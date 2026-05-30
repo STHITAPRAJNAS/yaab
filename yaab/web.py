@@ -14,7 +14,7 @@ or via the CLI: ``yaab web mymodule:agent``.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 _PAGE = """<!doctype html>
 <html lang="en">
@@ -82,7 +82,7 @@ document.getElementById('f').addEventListener('submit', async (e) => {
 </html>"""
 
 
-def web_app(agent: Any, *, runner: Optional[Any] = None, auth: Optional[Any] = None) -> Any:
+def web_app(agent: Any, *, runner: Any | None = None, auth: Any | None = None) -> Any:
     """Build a FastAPI app: the agent's API + a browser chat playground at ``/``."""
     from .serve import fastapi_server_app
 
@@ -102,7 +102,7 @@ def web_app(agent: Any, *, runner: Optional[Any] = None, auth: Optional[Any] = N
 
 
 def serve_web(
-    agent: Any, *, host: str = "127.0.0.1", port: int = 8080, auth: Optional[Any] = None
+    agent: Any, *, host: str = "127.0.0.1", port: int = 8080, auth: Any | None = None
 ) -> None:  # pragma: no cover - thin uvicorn wrapper
     """Run the dev playground with uvicorn (blocking)."""
     try:

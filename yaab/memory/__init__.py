@@ -11,7 +11,8 @@ from __future__ import annotations
 import hashlib
 import math
 import uuid
-from typing import Callable, Optional, Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -33,11 +34,9 @@ class MemoryRecord(BaseModel):
 class MemoryService(Protocol):
     """Pluggable long-term memory backend."""
 
-    async def add(self, text: str, *, metadata: Optional[dict] = None) -> MemoryRecord:
-        ...
+    async def add(self, text: str, *, metadata: dict | None = None) -> MemoryRecord: ...
 
-    async def search(self, query: str, *, k: int = 5) -> list[tuple[MemoryRecord, float]]:
-        ...
+    async def search(self, query: str, *, k: int = 5) -> list[tuple[MemoryRecord, float]]: ...
 
 
 def hashing_embedder(dim: int = 64) -> Embedder:
@@ -63,11 +62,11 @@ def hashing_embedder(dim: int = 64) -> Embedder:
 class InMemoryVectorMemory:
     """A simple in-process vector store over :func:`yaab._core.top_k`."""
 
-    def __init__(self, embedder: Optional[Embedder] = None) -> None:
+    def __init__(self, embedder: Embedder | None = None) -> None:
         self.embedder = embedder or hashing_embedder()
         self._records: list[MemoryRecord] = []
 
-    async def add(self, text: str, *, metadata: Optional[dict] = None) -> MemoryRecord:
+    async def add(self, text: str, *, metadata: dict | None = None) -> MemoryRecord:
         record = MemoryRecord(text=text, embedding=self.embedder(text), metadata=metadata or {})
         self._records.append(record)
         return record

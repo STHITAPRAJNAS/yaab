@@ -16,7 +16,8 @@ Token counting is approximate by default (chars/4) and pluggable.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional, Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import Any, Protocol, runtime_checkable
 
 from .types import Message, Role
 
@@ -32,8 +33,7 @@ def approx_tokens(messages: list[Message]) -> int:
 
 @runtime_checkable
 class ContextStrategy(Protocol):
-    async def apply(self, messages: list[Message], *, model: Any = None) -> list[Message]:
-        ...
+    async def apply(self, messages: list[Message], *, model: Any = None) -> list[Message]: ...
 
 
 class KeepAll:
@@ -76,7 +76,7 @@ class SummarizeHistory:
         *,
         max_tokens: int = 6000,
         keep_recent: int = 6,
-        token_counter: Optional[TokenCounter] = None,
+        token_counter: TokenCounter | None = None,
         model: Any = None,
     ) -> None:
         self.max_tokens = max_tokens

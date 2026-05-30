@@ -11,10 +11,10 @@ A KnowledgeBase exposes :meth:`as_tool`, so an agent can retrieve on demand, and
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from ..memory import Embedder, hashing_embedder
-from .chunking import Chunker, CharacterChunker
+from .chunking import CharacterChunker, Chunker
 from .rerank import Reranker
 from .store import Filter, InMemoryVectorStore, VectorStore
 from .types import Document, RetrievedChunk
@@ -26,11 +26,11 @@ class KnowledgeBase:
     def __init__(
         self,
         *,
-        embedder: Optional[Embedder] = None,
-        store: Optional[VectorStore] = None,
-        chunker: Optional[Chunker] = None,
-        reranker: Optional[Reranker] = None,
-        context_guard: Optional[Any] = None,
+        embedder: Embedder | None = None,
+        store: VectorStore | None = None,
+        chunker: Chunker | None = None,
+        reranker: Reranker | None = None,
+        context_guard: Any | None = None,
         min_score: float = 0.0,
         name: str = "knowledge",
     ) -> None:
@@ -73,7 +73,7 @@ class KnowledgeBase:
         return len(all_chunks)
 
     def add_text(
-        self, text: str, *, source: Optional[str] = None, metadata: Optional[dict] = None
+        self, text: str, *, source: str | None = None, metadata: dict | None = None
     ) -> int:
         return self.add(Document(text=text, source=source, metadata=metadata or {}))
 
@@ -92,8 +92,8 @@ class KnowledgeBase:
         query: str,
         *,
         k: int = 5,
-        where: Optional[Filter] = None,
-        rerank_top_n: Optional[int] = None,
+        where: Filter | None = None,
+        rerank_top_n: int | None = None,
     ) -> list[RetrievedChunk]:
         """Retrieve the top chunks for ``query`` (recall → optional rerank)."""
         embedding = self.embedder(query)
@@ -114,16 +114,14 @@ class KnowledgeBase:
         return results[:k]
 
     async def augment(
-        self, query: str, *, k: int = 5, where: Optional[Filter] = None
+        self, query: str, *, k: int = 5, where: Filter | None = None
     ) -> tuple[str, list[RetrievedChunk]]:
         """Return a context block (with citations) plus the retrieved chunks.
 
         Use for classic context-stuffing RAG: prepend the block to a prompt.
         """
         results = await self.retrieve(query, k=k, where=where)
-        block = "\n\n".join(
-            f"[{r.citation()}] {r.text}" for r in results
-        )
+        block = "\n\n".join(f"[{r.citation()}] {r.text}" for r in results)
         return block, results
 
     def count(self) -> int:
@@ -133,10 +131,10 @@ class KnowledgeBase:
     def as_tool(
         self,
         *,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         k: int = 5,
-        scope_from_deps: Optional[str] = None,
+        scope_from_deps: str | None = None,
     ) -> Any:
         """Expose retrieval as an agent tool.
 
@@ -150,7 +148,7 @@ class KnowledgeBase:
         kb = self
 
         async def search_knowledge(ctx: RunContext, query: str) -> str:
-            where: Optional[Filter] = None
+            where: Filter | None = None
             if scope_from_deps is not None and ctx.deps is not None:
                 value = getattr(ctx.deps, scope_from_deps, None)
                 if value is not None:

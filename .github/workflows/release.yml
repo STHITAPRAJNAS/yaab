@@ -1,0 +1,98 @@
+name: Release
+
+# Publish on a version tag (e.g. v0.1.0). Builds the yaab-core abi3 wheels for
+# all platforms + the pure-Python yaab wheel/sdist, then publishes to PyPI via
+# Trusted Publishing (OIDC) — no API token stored.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  # yaab-core: one abi3 wheel per OS/arch (works on CPython 3.11+).
+  core-wheels:
+    name: yaab-core wheels (${{ matrix.platform.target }})
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { os: ubuntu-latest,  target: x86_64 }
+          - { os: ubuntu-latest,  target: aarch64 }
+          - { os: macos-latest,   target: aarch64 }
+          - { os: macos-13,       target: x86_64 }
+          - { os: windows-latest, target: x64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build abi3 wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          args: --release --out dist -m yaab-core/Cargo.toml
+          manylinux: auto
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-${{ matrix.platform.os }}-${{ matrix.platform.target }}
+          path: dist/*.whl
+
+  core-sdist:
+    name: yaab-core sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist -m yaab-core/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-sdist
+          path: dist/*.tar.gz
+
+  # yaab: the pure-Python package (wheel + sdist).
+  yaab-dist:
+    name: yaab sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pipx run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yaab-dist
+          path: dist/*
+
+  publish-core:
+    name: Publish yaab-core to PyPI
+    needs: [core-wheels, core-sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # OIDC trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: core-*
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-yaab:
+    name: Publish yaab to PyPI
+    needs: [yaab-dist, publish-core]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: yaab-dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1

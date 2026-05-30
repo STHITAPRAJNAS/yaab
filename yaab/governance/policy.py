@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -43,15 +43,14 @@ class GuardrailScanner(Protocol):
     name: str
     stages: tuple[Stage, ...]
 
-    def scan(self, text: str, stage: Stage) -> GuardrailResult:
-        ...
+    def scan(self, text: str, stage: Stage) -> GuardrailResult: ...
 
 
 class PromptInjectionScanner:
     """Heuristic prompt-injection / jailbreak detector."""
 
     name = "prompt_injection"
-    stages = (Stage.INPUT,)
+    stages: tuple[Stage, ...] = (Stage.INPUT,)
     _patterns = [
         r"ignore (all |the )?(previous|prior|above) instructions",
         r"disregard (your|the) (system )?(prompt|instructions)",
@@ -76,7 +75,7 @@ class PIIScanner:
     """Detect and redact common PII (email, phone, SSN, credit card)."""
 
     name = "pii"
-    stages = (Stage.INPUT, Stage.OUTPUT)
+    stages: tuple[Stage, ...] = (Stage.INPUT, Stage.OUTPUT)
     _patterns = {
         "email": r"[\w.+-]+@[\w-]+\.[\w.-]+",
         "ssn": r"\b\d{3}-\d{2}-\d{4}\b",
@@ -108,7 +107,7 @@ class SecretScanner:
     """Detect leaked credentials/API keys (blocks on output)."""
 
     name = "secrets"
-    stages = (Stage.INPUT, Stage.OUTPUT)
+    stages: tuple[Stage, ...] = (Stage.INPUT, Stage.OUTPUT)
     _patterns = [
         r"sk-[A-Za-z0-9]{16,}",
         r"AKIA[0-9A-Z]{16}",
@@ -134,7 +133,7 @@ class TopicScanner:
     """Allow/deny list of banned topics (keyword based)."""
 
     name = "topics"
-    stages = (Stage.INPUT, Stage.OUTPUT)
+    stages: tuple[Stage, ...] = (Stage.INPUT, Stage.OUTPUT)
 
     def __init__(self, banned: list[str]) -> None:
         self.banned = [b.lower() for b in banned]
@@ -156,7 +155,7 @@ class SystemPromptLeakScanner:
     """Prevent the model from echoing its own system prompt."""
 
     name = "system_prompt_leak"
-    stages = (Stage.OUTPUT,)
+    stages: tuple[Stage, ...] = (Stage.OUTPUT,)
 
     def __init__(self, system_prompt: str = "") -> None:
         self.fingerprint = system_prompt.strip()[:80]
@@ -175,7 +174,7 @@ class SystemPromptLeakScanner:
 class PolicyEngine:
     """Runs a set of scanners over text at a given stage."""
 
-    def __init__(self, scanners: Optional[list[GuardrailScanner]] = None) -> None:
+    def __init__(self, scanners: list[GuardrailScanner] | None = None) -> None:
         self.scanners: list[GuardrailScanner] = scanners or [
             PromptInjectionScanner(),
             PIIScanner(),

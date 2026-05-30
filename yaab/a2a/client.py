@@ -8,11 +8,12 @@ server through an in-process transport.
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from ..types import RunContext, RunResult, Usage
 
-Transport = Callable[[str, str, Optional[dict]], Awaitable[dict]]
+Transport = Callable[[str, str, dict | None], Awaitable[dict]]
 
 
 class RemoteAgent:
@@ -22,10 +23,10 @@ class RemoteAgent:
         self,
         url: str,
         *,
-        name: Optional[str] = None,
-        auth_token: Optional[str] = None,
-        token_provider: Optional[Callable[[], str]] = None,
-        transport: Optional[Transport] = None,
+        name: str | None = None,
+        auth_token: str | None = None,
+        token_provider: Callable[[], str] | None = None,
+        transport: Transport | None = None,
     ) -> None:
         self.url = url.rstrip("/")
         self.name = name or "remote_agent"
@@ -34,14 +35,14 @@ class RemoteAgent:
         # request (token exchange / refresh handled by the caller's IdP client).
         self.token_provider = token_provider
         self._transport = transport
-        self._card: Optional[dict[str, Any]] = None
+        self._card: dict[str, Any] | None = None
 
     # --- transport -----------------------------------------------------
     def _headers(self) -> dict[str, str]:
         token = self.token_provider() if self.token_provider is not None else self.auth_token
         return {"Authorization": f"Bearer {token}"} if token else {}
 
-    async def _request(self, method: str, path: str, json: Optional[dict] = None) -> dict:
+    async def _request(self, method: str, path: str, json: dict | None = None) -> dict:
         if self._transport is not None:
             return await self._transport(method, path, json)
         try:
@@ -74,8 +75,8 @@ class RemoteAgent:
         prompt: str,
         *,
         deps: Any = None,
-        session_id: Optional[str] = None,
-        identity: Optional[str] = None,
+        session_id: str | None = None,
+        identity: str | None = None,
     ) -> RunResult[str]:
         """Send the prompt as an A2A task and return the remote agent's output."""
         body = {"message": {"role": "user", "parts": [{"text": prompt}]}}

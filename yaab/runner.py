@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, AsyncIterator, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -45,11 +46,11 @@ class Runner:
     def __init__(
         self,
         *,
-        session_service: Optional[SessionService] = None,
-        memory_service: Optional[Any] = None,
-        artifact_service: Optional[Any] = None,
-        governance: Optional[GovernanceService] = None,
-        plugins: Optional[list[Plugin]] = None,
+        session_service: SessionService | None = None,
+        memory_service: Any | None = None,
+        artifact_service: Any | None = None,
+        governance: GovernanceService | None = None,
+        plugins: list[Plugin] | None = None,
     ) -> None:
         self.session_service = session_service or InMemorySessionService()
         self.memory_service = memory_service
@@ -57,7 +58,7 @@ class Runner:
         self.governance = governance
         self.plugins: list[Plugin] = list(plugins or [])
 
-    def add_plugin(self, plugin: Plugin) -> "Runner":
+    def add_plugin(self, plugin: Plugin) -> Runner:
         self.plugins.append(plugin)
         return self
 
@@ -68,11 +69,11 @@ class Runner:
         prompt: str,
         *,
         deps: Any = None,
-        session_id: Optional[str] = None,
-        identity: Optional[str] = None,
-        usage_limits: Optional["UsageLimits"] = None,
-        cancellation: Optional["CancellationToken"] = None,
-        timeout: Optional[float] = None,
+        session_id: str | None = None,
+        identity: str | None = None,
+        usage_limits: UsageLimits | None = None,
+        cancellation: CancellationToken | None = None,
+        timeout: float | None = None,
     ) -> RunResult[Any]:
         events: list[Event] = []
         async for event in self.run_stream(
@@ -105,11 +106,11 @@ class Runner:
         prompt: str,
         *,
         deps: Any = None,
-        session_id: Optional[str] = None,
-        identity: Optional[str] = None,
-        usage_limits: Optional["UsageLimits"] = None,
-        cancellation: Optional["CancellationToken"] = None,
-        timeout: Optional[float] = None,
+        session_id: str | None = None,
+        identity: str | None = None,
+        usage_limits: UsageLimits | None = None,
+        cancellation: CancellationToken | None = None,
+        timeout: float | None = None,
     ) -> AsyncIterator[Event]:
         """Execute the loop, yielding a typed :class:`Event` per step."""
         ctx: RunContext = RunContext(
@@ -155,9 +156,7 @@ class Runner:
                     prompt_text, Stage.INPUT, agent_id=agent.registry_id, identity=identity
                 )
 
-            messages = await self._build_messages(
-                agent, ctx, scanned_prompt, original=prompt
-            )
+            messages = await self._build_messages(agent, ctx, scanned_prompt, original=prompt)
             user_msg = messages[-1]
             yield emit(EventType.USER_MESSAGE, content=scanned_prompt)
             for plugin in self.plugins:
@@ -193,8 +192,11 @@ class Runner:
 
                 if response.has_tool_calls:
                     messages.append(
-                        Message(role=Role.ASSISTANT, content=response.content,
-                                tool_calls=response.tool_calls)
+                        Message(
+                            role=Role.ASSISTANT,
+                            content=response.content,
+                            tool_calls=response.tool_calls,
+                        )
                     )
                     for tc in response.tool_calls:
                         if cancellation is not None:
@@ -217,9 +219,7 @@ class Runner:
 
                 # No tool calls -> attempt to finalize.
                 try:
-                    final_output = self._coerce_output(
-                        agent, response.content, output_adapter
-                    )
+                    final_output = self._coerce_output(agent, response.content, output_adapter)
                     produced = True
                     break
                 except ValidationError as exc:
@@ -262,7 +262,7 @@ class Runner:
             if gov is not None:
                 gov.record_run_end(agent.registry_id, identity, text_out)
 
-            result = RunResult(
+            result: RunResult = RunResult(
                 output=final_output,
                 messages=messages,
                 usage=ctx.usage,
@@ -287,8 +287,8 @@ class Runner:
         prompt: Any,
         *,
         deps: Any = None,
-        session_id: Optional[str] = None,
-        identity: Optional[str] = None,
+        session_id: str | None = None,
+        identity: str | None = None,
     ) -> AsyncIterator[str]:
         """Token-level streaming for a single answering turn (no tool loop).
 
@@ -331,9 +331,7 @@ class Runner:
             hits = await self.memory_service.search(prompt, k=3)
             if hits:
                 recalled = "\n".join(f"- {rec.text}" for rec, _ in hits)
-                messages.append(
-                    Message(role=Role.SYSTEM, content=f"Relevant memory:\n{recalled}")
-                )
+                messages.append(Message(role=Role.SYSTEM, content=f"Relevant memory:\n{recalled}"))
 
         messages.append(_user_message(prompt, original))
         return messages
@@ -343,9 +341,9 @@ class Runner:
         agent: Any,
         ctx: RunContext,
         messages: list[Message],
-        tool_schemas: Optional[list[dict[str, Any]]],
-        output_schema: Optional[dict[str, Any]],
-        tool_choice: Optional[Any] = None,
+        tool_schemas: list[dict[str, Any]] | None,
+        output_schema: dict[str, Any] | None,
+        tool_choice: Any | None = None,
     ) -> ModelResponse:
         for plugin in self.plugins:
             short = await plugin.before_model(ctx, agent.name, messages)
@@ -387,19 +385,15 @@ class Runner:
                 result = amended
         return result
 
-    def _coerce_output(self, agent: Any, content: str, adapter: Optional[TypeAdapter]) -> Any:
+    def _coerce_output(self, agent: Any, content: str, adapter: TypeAdapter | None) -> Any:
         if adapter is None:
             return content
         return adapter.validate_json(content)
 
-    async def _persist(
-        self, agent: Any, ctx: RunContext, prompt: str, output: Any
-    ) -> None:
+    async def _persist(self, agent: Any, ctx: RunContext, prompt: str, output: Any) -> None:
         if ctx.session_id is None:
             return
-        await self.session_service.append(
-            ctx.session_id, Message(role=Role.USER, content=prompt)
-        )
+        await self.session_service.append(ctx.session_id, Message(role=Role.USER, content=prompt))
         await self.session_service.append(
             ctx.session_id, Message(role=Role.ASSISTANT, content=_to_text(output))
         )
@@ -410,13 +404,11 @@ def _user_message(text: str, original: Any = None) -> Message:
     from .content import Content
 
     if isinstance(original, Content) and original.is_multimodal():
-        return Message(
-            role=Role.USER, content=text, content_parts=original.to_provider_content()
-        )
+        return Message(role=Role.USER, content=text, content_parts=original.to_provider_content())
     return Message(role=Role.USER, content=text)
 
 
-def _normalize_tool_choice(choice: Any, tool_schemas: Optional[list[dict[str, Any]]]) -> Any:
+def _normalize_tool_choice(choice: Any, tool_schemas: list[dict[str, Any]] | None) -> Any:
     """Normalize a tool_choice into the provider form.
 
     Passes through ``None``/``"auto"``/``"required"``/``"none"`` and dicts. A bare
@@ -435,7 +427,7 @@ def _normalize_tool_choice(choice: Any, tool_schemas: Optional[list[dict[str, An
     return choice
 
 
-def _output_spec(output_type: type) -> tuple[Optional[TypeAdapter], Optional[dict[str, Any]]]:
+def _output_spec(output_type: type) -> tuple[TypeAdapter | None, dict[str, Any] | None]:
     """Build a validator + JSON schema for non-string output types."""
     if output_type is str or output_type is type(None):
         return None, None

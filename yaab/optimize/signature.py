@@ -8,8 +8,6 @@ the named output fields.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 
@@ -26,7 +24,7 @@ class Signature(BaseModel):
     outputs: list[FieldSpec] = Field(default_factory=list)
 
     @classmethod
-    def parse(cls, spec: str, *, instructions: str = "") -> "Signature":
+    def parse(cls, spec: str, *, instructions: str = "") -> Signature:
         """Parse a ``"a, b -> c, d"`` style signature string."""
         if "->" not in spec:
             raise ValueError("signature must contain '->' (e.g. 'question -> answer')")
@@ -35,7 +33,7 @@ class Signature(BaseModel):
         outputs = [FieldSpec(name=n.strip()) for n in right.split(",") if n.strip()]
         return cls(instructions=instructions, inputs=inputs, outputs=outputs)
 
-    def render_prompt(self, values: dict[str, str], demos: Optional[list[dict]] = None) -> str:
+    def render_prompt(self, values: dict[str, str], demos: list[dict] | None = None) -> str:
         """Render the instruction + few-shot demos + the current inputs."""
         lines: list[str] = []
         if self.instructions:

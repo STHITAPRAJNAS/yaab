@@ -9,7 +9,8 @@ registry-trackable :class:`CompiledArtifact` so production runs are deterministi
 
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import Any, Protocol, runtime_checkable
 
 from ..governance.eval import Case
 from .module import CompiledArtifact, Module
@@ -23,8 +24,7 @@ class Optimizer(Protocol):
 
     async def compile(
         self, module: Module, trainset: list[Case], metric: Metric
-    ) -> CompiledArtifact:
-        ...
+    ) -> CompiledArtifact: ...
 
 
 class BootstrapFewShot:
@@ -70,7 +70,9 @@ class MIPROv2:
 
     name = "miprov2"
 
-    def __init__(self, candidates: list[str] | None = None, *, bootstrap_demos: bool = True) -> None:
+    def __init__(
+        self, candidates: list[str] | None = None, *, bootstrap_demos: bool = True
+    ) -> None:
         self.candidates = candidates or [
             "Answer accurately and concisely.",
             "Think carefully, then give the precise answer.",
@@ -114,7 +116,9 @@ class GEPA:
 
     name = "gepa"
 
-    def __init__(self, generations: int = 3, reflect: Callable[[str, Case, dict], str] | None = None):
+    def __init__(
+        self, generations: int = 3, reflect: Callable[[str, Case, dict], str] | None = None
+    ):
         self.generations = generations
         self.reflect = reflect or self._default_reflect
 
@@ -141,7 +145,10 @@ class GEPA:
                 module.signature.instructions = best_instr
         module.signature.instructions = best_instr
         return CompiledArtifact(
-            instructions=best_instr, demos=list(module.demos), optimizer=self.name, train_score=best_score
+            instructions=best_instr,
+            demos=list(module.demos),
+            optimizer=self.name,
+            train_score=best_score,
         )
 
     async def _score(self, module: Module, trainset: list[Case], metric: Metric) -> float:

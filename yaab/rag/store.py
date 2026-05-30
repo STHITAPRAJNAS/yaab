@@ -13,7 +13,7 @@ parties can add Chroma/Qdrant/Pinecone/etc. behind the same protocol.
 
 from __future__ import annotations
 
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from .. import _core
 from ..extensions import register
@@ -23,7 +23,7 @@ from .types import Chunk, RetrievedChunk
 Filter = dict[str, Any]
 
 
-def _matches(metadata: dict[str, Any], where: Optional[Filter]) -> bool:
+def _matches(metadata: dict[str, Any], where: Filter | None) -> bool:
     if not where:
         return True
     return all(metadata.get(k) == v for k, v in where.items())
@@ -33,19 +33,15 @@ def _matches(metadata: dict[str, Any], where: Optional[Filter]) -> bool:
 class VectorStore(Protocol):
     """Pluggable vector storage + similarity search."""
 
-    def add(self, chunks: list[Chunk]) -> None:
-        ...
+    def add(self, chunks: list[Chunk]) -> None: ...
 
     def query(
-        self, embedding: list[float], *, k: int = 5, where: Optional[Filter] = None
-    ) -> list[RetrievedChunk]:
-        ...
+        self, embedding: list[float], *, k: int = 5, where: Filter | None = None
+    ) -> list[RetrievedChunk]: ...
 
-    def delete(self, *, where: Optional[Filter] = None) -> int:
-        ...
+    def delete(self, *, where: Filter | None = None) -> int: ...
 
-    def count(self) -> int:
-        ...
+    def count(self) -> int: ...
 
 
 class InMemoryVectorStore:
@@ -58,7 +54,7 @@ class InMemoryVectorStore:
         self._chunks.extend(c for c in chunks if c.embedding)
 
     def query(
-        self, embedding: list[float], *, k: int = 5, where: Optional[Filter] = None
+        self, embedding: list[float], *, k: int = 5, where: Filter | None = None
     ) -> list[RetrievedChunk]:
         candidates = [c for c in self._chunks if _matches(c.metadata, where)]
         if not candidates:
@@ -67,7 +63,7 @@ class InMemoryVectorStore:
         hits = _core.top_k(embedding, matrix, k)
         return [RetrievedChunk(chunk=candidates[i], score=score) for i, score in hits]
 
-    def delete(self, *, where: Optional[Filter] = None) -> int:
+    def delete(self, *, where: Filter | None = None) -> int:
         if where is None:
             n = len(self._chunks)
             self._chunks.clear()
@@ -119,17 +115,26 @@ class PgVectorStore:
                     f"INSERT INTO {self._table} "
                     f"(id, text, document_id, source, idx, embedding, metadata) "
                     f"VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING",
-                    (c.id, c.text, c.document_id, c.source, c.index,
-                     str(c.embedding), json.dumps(c.metadata)),
+                    (
+                        c.id,
+                        c.text,
+                        c.document_id,
+                        c.source,
+                        c.index,
+                        str(c.embedding),
+                        json.dumps(c.metadata),
+                    ),
                 )
 
     def query(
-        self, embedding: list[float], *, k: int = 5, where: Optional[Filter] = None
+        self, embedding: list[float], *, k: int = 5, where: Filter | None = None
     ) -> list[RetrievedChunk]:
         import json
 
-        sql = f"SELECT id, text, document_id, source, idx, metadata, " \
-              f"1 - (embedding <=> %s) AS score FROM {self._table}"
+        sql = (
+            f"SELECT id, text, document_id, source, idx, metadata, "
+            f"1 - (embedding <=> %s) AS score FROM {self._table}"
+        )
         params: list[Any] = [str(embedding)]
         if where:
             sql += " WHERE metadata @> %s"
@@ -140,13 +145,17 @@ class PgVectorStore:
         out: list[RetrievedChunk] = []
         for rid, text, doc_id, source, idx, metadata, score in rows:
             chunk = Chunk(
-                id=rid, text=text, document_id=doc_id, source=source,
-                index=idx or 0, metadata=metadata or {},
+                id=rid,
+                text=text,
+                document_id=doc_id,
+                source=source,
+                index=idx or 0,
+                metadata=metadata or {},
             )
             out.append(RetrievedChunk(chunk=chunk, score=float(score)))
         return out
 
-    def delete(self, *, where: Optional[Filter] = None) -> int:
+    def delete(self, *, where: Filter | None = None) -> int:
         import json
 
         if where is None:

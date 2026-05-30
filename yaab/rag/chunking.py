@@ -20,8 +20,7 @@ from .types import Chunk, Document
 
 @runtime_checkable
 class Chunker(Protocol):
-    def split(self, document: Document) -> list[Chunk]:
-        ...
+    def split(self, document: Document) -> list[Chunk]: ...
 
 
 def _make_chunks(document: Document, texts: list[str]) -> list[Chunk]:

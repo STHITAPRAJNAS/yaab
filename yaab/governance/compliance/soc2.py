@@ -6,8 +6,6 @@ logging/monitoring (CC7), change management (CC8), and confidentiality (C1).
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ..audit import AuditLog
 from ..registry import AgentRegistry
 from .base import ComplianceReport, ControlResult, ControlStatus, _audit_kinds
@@ -17,7 +15,7 @@ class SOC2Mapper:
     regime = "soc2"
 
     def map(
-        self, registry: AgentRegistry, audit: AuditLog, agent_id: Optional[str] = None
+        self, registry: AgentRegistry, audit: AuditLog, agent_id: str | None = None
     ) -> ComplianceReport:
         kinds = _audit_kinds(audit, agent_id)
         controls = [

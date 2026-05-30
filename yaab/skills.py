@@ -21,7 +21,7 @@ in the agent card.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from .tools.base import Tool, coerce_tools
 
@@ -34,9 +34,9 @@ class Skill:
         name: str,
         *,
         instructions: str = "",
-        tools: Optional[list[Any]] = None,
-        prompt: Optional[str] = None,
-        permissions: Optional[list[str]] = None,
+        tools: list[Any] | None = None,
+        prompt: str | None = None,
+        permissions: list[str] | None = None,
         version: str = "0.1.0",
         description: str = "",
     ) -> None:

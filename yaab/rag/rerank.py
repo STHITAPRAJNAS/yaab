@@ -25,8 +25,7 @@ _WORD_RE = re.compile(r"\w+")
 class Reranker(Protocol):
     def rerank(
         self, query: str, results: list[RetrievedChunk], *, top_n: int
-    ) -> list[RetrievedChunk]:
-        ...
+    ) -> list[RetrievedChunk]: ...
 
 
 class KeywordReranker:

@@ -8,7 +8,8 @@ custom client all implement this one protocol.
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Optional, Protocol, runtime_checkable
+from collections.abc import AsyncIterator
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -25,8 +26,8 @@ class ModelResponse(BaseModel):
     model: str = ""
     #: Reasoning / thinking trace, when the provider exposes one (o-series, R1,
     #: Anthropic extended thinking, ...). Captured into a thought Part by the runner.
-    reasoning: Optional[str] = None
-    raw: Optional[dict[str, Any]] = None
+    reasoning: str | None = None
+    raw: dict[str, Any] | None = None
 
     @property
     def has_tool_calls(self) -> bool:
@@ -37,7 +38,7 @@ class StreamChunk(BaseModel):
     """An incremental delta during streaming."""
 
     delta: str = ""
-    tool_call: Optional[ToolCall] = None
+    tool_call: ToolCall | None = None
     done: bool = False
 
 
@@ -51,9 +52,9 @@ class ModelProvider(Protocol):
         self,
         messages: list[Message],
         *,
-        tools: Optional[list[dict[str, Any]]] = None,
-        output_schema: Optional[dict[str, Any]] = None,
-        tool_choice: Optional[Any] = None,
+        tools: list[dict[str, Any]] | None = None,
+        output_schema: dict[str, Any] | None = None,
+        tool_choice: Any | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
         """Return a single completion for ``messages``.
@@ -67,7 +68,7 @@ class ModelProvider(Protocol):
         self,
         messages: list[Message],
         *,
-        tools: Optional[list[dict[str, Any]]] = None,
+        tools: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Yield incremental chunks for ``messages``."""

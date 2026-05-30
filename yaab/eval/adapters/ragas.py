@@ -39,9 +39,9 @@ class RagasMetric:
 
     async def ascore(self, case: Case, output: Any) -> float:
         try:
+            from datasets import Dataset  # type: ignore
             from ragas import evaluate  # type: ignore
             from ragas import metrics as ragas_metrics  # type: ignore
-            from datasets import Dataset  # type: ignore
         except ImportError as exc:  # pragma: no cover - optional extra
             raise RuntimeError(
                 "ragas (and datasets) are required for the RAGAS adapter. "
@@ -68,7 +68,9 @@ def register() -> None:
     from ...extensions import register as _register
 
     for metric in _RAGAS_METRICS:
-        _register("metric", f"ragas:{metric}", lambda metric=metric, **kw: RagasMetric(metric, **kw))
+        _register(
+            "metric", f"ragas:{metric}", lambda metric=metric, **kw: RagasMetric(metric, **kw)
+        )
 
 
 __all__ = ["RagasMetric", "register"]

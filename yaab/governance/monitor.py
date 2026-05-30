@@ -15,8 +15,6 @@ Both read from data YAAB already produces, so they need no new instrumentation.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 from .audit import AuditKind, AuditLog
@@ -95,7 +93,7 @@ class TrustScorer:
     def __init__(
         self,
         *,
-        weights: Optional[dict[str, float]] = None,
+        weights: dict[str, float] | None = None,
     ) -> None:
         self.weights = weights or {"performance": 0.5, "safety": 0.3, "reliability": 0.2}
 
@@ -104,7 +102,7 @@ class TrustScorer:
         agent_id: str,
         audit: AuditLog,
         *,
-        eval_score: Optional[float] = None,
+        eval_score: float | None = None,
     ) -> TrustReport:
         events = audit.for_agent(agent_id)
         runs = sum(1 for e in events if e.kind is AuditKind.RUN_START)

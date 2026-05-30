@@ -306,16 +306,28 @@ Full guides live in [`docs/`](docs/index.md):
 ## Install
 
 ```bash
-pip install yaab                 # core (pure-Python core works everywhere)
+pip install yaab                 # SDK + high-performance async-first Python core
+pip install 'yaab[rust]'         # + the prebuilt Rust performance core (yaab-core)
 pip install 'yaab[litellm]'      # universal model layer
-pip install 'yaab[otel]'         # OpenTelemetry tracing
-pip install 'yaab[all]'          # everything
+pip install 'yaab[all]'          # everything (rust, litellm, otel, rag, serve, …)
 ```
 
-Build the Rust accelerator from source:
+**Two cores, one API.** `pip install yaab` ships a high-performance,
+async-first **pure-Python core** that works on every platform with zero build
+tooling. `pip install 'yaab[rust]'` adds **`yaab-core`** — a prebuilt
+`abi3` wheel (one wheel for CPython 3.11+, including future versions) that
+transparently accelerates the hot paths (vector search, checkpoint
+serialization, channel reducers, audit hashing, the graph engine). YAAB
+auto-selects Rust when present and falls back to Python otherwise — your code
+never changes. Check which is active:
+
+```python
+import yaab; print(yaab.BACKEND)   # "rust" or "python"
+```
+
+Building the Rust core from source (for development) needs only `maturin`:
 
 ```bash
-pip install maturin
 maturin develop -m yaab-core/Cargo.toml --release
 ```
 

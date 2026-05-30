@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from .mcp import MCPTool
 
@@ -32,16 +33,16 @@ class MCPClient:
         self._transport = transport
         self._id = 0
         self._initialized = False
-        self._proc: Optional[asyncio.subprocess.Process] = None
+        self._proc: asyncio.subprocess.Process | None = None
 
     # --- constructors --------------------------------------------------
     @classmethod
-    def from_transport(cls, transport: RPCTransport) -> "MCPClient":
+    def from_transport(cls, transport: RPCTransport) -> MCPClient:
         """Build a client over a custom async transport (HTTP/SSE, in-process)."""
         return cls(transport)
 
     @classmethod
-    def stdio(cls, command: list[str]) -> "MCPClient":
+    def stdio(cls, command: list[str]) -> MCPClient:
         """Build a client that will spawn ``command`` as a stdio MCP server."""
         client = cls.__new__(cls)
         client._id = 0
@@ -80,7 +81,7 @@ class MCPClient:
                 pass
             self._proc = None
 
-    async def __aenter__(self) -> "MCPClient":
+    async def __aenter__(self) -> MCPClient:
         await self.start()
         return self
 
@@ -92,8 +93,13 @@ class MCPClient:
         self._id += 1
         return self._id
 
-    async def _call(self, method: str, params: Optional[dict] = None) -> Any:
-        request = {"jsonrpc": "2.0", "id": self._next_id(), "method": method, "params": params or {}}
+    async def _call(self, method: str, params: dict | None = None) -> Any:
+        request = {
+            "jsonrpc": "2.0",
+            "id": self._next_id(),
+            "method": method,
+            "params": params or {},
+        }
         response = await self._transport(request)
         if "error" in response and response["error"]:
             raise RuntimeError(f"MCP error from '{method}': {response['error']}")
@@ -149,7 +155,7 @@ class MCPClient:
         result = await self._call("prompts/list", {})
         return result.get("prompts", []) if isinstance(result, dict) else []
 
-    async def get_prompt(self, name: str, arguments: Optional[dict] = None) -> Any:
+    async def get_prompt(self, name: str, arguments: dict | None = None) -> Any:
         """Fetch a rendered prompt by name."""
         return await self._call("prompts/get", {"name": name, "arguments": arguments or {}})
 
