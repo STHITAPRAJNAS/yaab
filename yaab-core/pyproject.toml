@@ -7,9 +7,14 @@ name = "yaab-core"
 version = "0.1.0"
 description = "Rust performance core for the YAAB agent SDK."
 readme = "README.md"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
-classifiers = ["Programming Language :: Rust"]
+authors = [{ name = "YAAB contributors" }]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3.11",
+]
 
 [tool.maturin]
 # Pure Rust extension module: produces the importable `yaab_core` module.
