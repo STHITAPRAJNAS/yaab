@@ -200,10 +200,24 @@ def _make_oracle(**kw: Any) -> Any:
     return OracleVectorStore(**kw)
 
 
+def _make_pinecone(**kw: Any) -> Any:
+    from .stores_external import PineconeVectorStore
+
+    return PineconeVectorStore(**kw)
+
+
+def _make_weaviate(**kw: Any) -> Any:
+    from .stores_external import WeaviateVectorStore
+
+    return WeaviateVectorStore(**kw)
+
+
 register("vectorstore", "chroma", _make_chroma)
 register("vectorstore", "qdrant", _make_qdrant)
 register("vectorstore", "opensearch", _make_opensearch)
 register("vectorstore", "oracle", _make_oracle)
+register("vectorstore", "pinecone", _make_pinecone)
+register("vectorstore", "weaviate", _make_weaviate)
 # Aurora PostgreSQL (and any Postgres with the pgvector extension) is served by
 # the pgvector store — the connection string just points at the Aurora endpoint.
 register("vectorstore", "aurora", lambda **kw: PgVectorStore(**kw))

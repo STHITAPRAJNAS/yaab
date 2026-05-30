@@ -430,14 +430,216 @@ class OracleVectorStore:
             return int(cur.fetchone()[0])
 
 
+class PineconeVectorStore:
+    """Pinecone-backed store (``pip install pinecone``, imported lazily).
+
+    Uses a Pinecone serverless/pod index; embeddings are supplied by YAAB.
+    Metadata is stored on each vector and filtered with Pinecone's ``filter``
+    operator, so per-tenant isolation runs in the index.
+    """
+
+    def __init__(
+        self,
+        *,
+        index: str = "yaab",
+        api_key: str | None = None,
+        namespace: str = "",
+        client: Any = None,
+    ) -> None:
+        try:
+            from pinecone import Pinecone  # type: ignore
+        except ImportError as exc:  # pragma: no cover - optional extra
+            raise RuntimeError("pinecone is required. `pip install pinecone`.") from exc
+        pc = client or Pinecone(api_key=api_key)
+        self._index = pc.Index(index)
+        self._namespace = namespace
+
+    def add(self, chunks: list[Chunk]) -> None:
+        vectors = [
+            {
+                "id": c.id,
+                "values": c.embedding,
+                "metadata": {
+                    **c.metadata,
+                    "text": c.text,
+                    "source": c.source or "",
+                    "document_id": c.document_id or "",
+                    "idx": c.index,
+                },
+            }
+            for c in chunks
+            if c.embedding
+        ]
+        if vectors:
+            self._index.upsert(vectors=vectors, namespace=self._namespace)
+
+    def query(
+        self, embedding: list[float], *, k: int = 5, where: Filter | None = None
+    ) -> list[RetrievedChunk]:
+        res = self._index.query(
+            vector=embedding,
+            top_k=k,
+            namespace=self._namespace,
+            include_metadata=True,
+            filter=dict(where) if where else None,
+        )
+        out: list[RetrievedChunk] = []
+        for match in res.get("matches", []):
+            meta = dict(match.get("metadata") or {})
+            chunk = Chunk(
+                id=match["id"],
+                text=meta.pop("text", ""),
+                source=meta.pop("source", None) or None,
+                document_id=meta.pop("document_id", None) or None,
+                index=int(meta.pop("idx", 0)),
+                metadata=meta,
+            )
+            out.append(RetrievedChunk(chunk=chunk, score=float(match.get("score", 0.0))))
+        return out
+
+    def delete(self, *, where: Filter | None = None) -> int:
+        before = self.count()
+        if where is None:
+            self._index.delete(delete_all=True, namespace=self._namespace)
+        else:
+            self._index.delete(filter=dict(where), namespace=self._namespace)
+        return max(0, before - self.count())
+
+    def count(self) -> int:
+        stats = self._index.describe_index_stats()
+        ns = stats.get("namespaces", {}).get(self._namespace, {})
+        return int(ns.get("vector_count", stats.get("total_vector_count", 0)))
+
+
+class WeaviateVectorStore:
+    """Weaviate-backed store (``pip install weaviate-client`` v4, lazy import).
+
+    Stores chunks in a collection with a vector + properties; metadata filters
+    map to Weaviate ``where`` filters. Pass a connected ``client`` (e.g. from
+    ``weaviate.connect_to_weaviate_cloud(...)``) or connection kwargs.
+    """
+
+    def __init__(
+        self,
+        *,
+        collection: str = "Yaab",
+        client: Any = None,
+        url: str | None = None,
+        api_key: str | None = None,
+    ) -> None:
+        try:
+            import weaviate  # type: ignore
+            from weaviate.classes.config import DataType, Property  # type: ignore
+        except ImportError as exc:  # pragma: no cover - optional extra
+            raise RuntimeError(
+                "weaviate-client (v4) is required. `pip install weaviate-client`."
+            ) from exc
+        if client is not None:
+            self._client = client
+        elif url:
+            from weaviate.classes.init import Auth  # type: ignore
+
+            self._client = weaviate.connect_to_weaviate_cloud(
+                cluster_url=url, auth_credentials=Auth.api_key(api_key) if api_key else None
+            )
+        else:
+            self._client = weaviate.connect_to_local()
+        self._name = collection
+        if not self._client.collections.exists(collection):
+            self._client.collections.create(
+                collection,
+                properties=[
+                    Property(name="text", data_type=DataType.TEXT),
+                    Property(name="source", data_type=DataType.TEXT),
+                    Property(name="document_id", data_type=DataType.TEXT),
+                    Property(name="idx", data_type=DataType.INT),
+                    Property(name="meta", data_type=DataType.TEXT),
+                ],
+            )
+
+    def add(self, chunks: list[Chunk]) -> None:
+        import json
+
+        coll = self._client.collections.get(self._name)
+        with coll.batch.dynamic() as batch:
+            for c in chunks:
+                if not c.embedding:
+                    continue
+                batch.add_object(
+                    properties={
+                        "text": c.text,
+                        "source": c.source or "",
+                        "document_id": c.document_id or "",
+                        "idx": c.index,
+                        "meta": json.dumps(c.metadata),
+                    },
+                    vector=c.embedding,
+                    uuid=_to_uuid(c.id),
+                )
+
+    def query(
+        self, embedding: list[float], *, k: int = 5, where: Filter | None = None
+    ) -> list[RetrievedChunk]:
+        import json
+
+        coll = self._client.collections.get(self._name)
+        res = coll.query.near_vector(near_vector=embedding, limit=k, return_metadata=["distance"])
+        out: list[RetrievedChunk] = []
+        for obj in res.objects:
+            props = obj.properties
+            meta = json.loads(props.get("meta") or "{}")
+            if where and not all(meta.get(key) == val for key, val in where.items()):
+                continue
+            chunk = Chunk(
+                text=props.get("text", ""),
+                source=props.get("source") or None,
+                document_id=props.get("document_id") or None,
+                index=int(props.get("idx", 0)),
+                metadata=meta,
+            )
+            dist = obj.metadata.distance if obj.metadata else 0.0
+            out.append(RetrievedChunk(chunk=chunk, score=1.0 - float(dist or 0.0)))
+        return out
+
+    def delete(self, *, where: Filter | None = None) -> int:
+        before = self.count()
+        coll = self._client.collections.get(self._name)
+        if where is None:
+            self._client.collections.delete(self._name)
+        else:
+            from weaviate.classes.query import Filter as WFilter  # type: ignore
+
+            flt = None
+            for key, val in where.items():
+                cond = WFilter.by_property("meta").like(f'*"{key}": "{val}"*')
+                flt = cond if flt is None else flt & cond
+            if flt is not None:
+                coll.data.delete_many(where=flt)
+        return max(0, before - self.count())
+
+    def count(self) -> int:
+        coll = self._client.collections.get(self._name)
+        return int(coll.aggregate.over_all(total_count=True).total_count)
+
+
+def _to_uuid(text: str) -> str:
+    import uuid as _uuid
+
+    return str(_uuid.uuid5(_uuid.NAMESPACE_URL, text))
+
+
 register("vectorstore", "chroma", lambda **kw: ChromaVectorStore(**kw))
 register("vectorstore", "qdrant", lambda **kw: QdrantVectorStore(**kw))
 register("vectorstore", "opensearch", lambda **kw: OpenSearchVectorStore(**kw))
 register("vectorstore", "oracle", lambda **kw: OracleVectorStore(**kw))
+register("vectorstore", "pinecone", lambda **kw: PineconeVectorStore(**kw))
+register("vectorstore", "weaviate", lambda **kw: WeaviateVectorStore(**kw))
 
 __all__ = [
     "ChromaVectorStore",
     "QdrantVectorStore",
     "OpenSearchVectorStore",
     "OracleVectorStore",
+    "PineconeVectorStore",
+    "WeaviateVectorStore",
 ]

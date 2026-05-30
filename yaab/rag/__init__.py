@@ -63,6 +63,8 @@ def __getattr__(name: str):
         "QdrantVectorStore",
         "OpenSearchVectorStore",
         "OracleVectorStore",
+        "PineconeVectorStore",
+        "WeaviateVectorStore",
     ):
         from . import stores_external
 
