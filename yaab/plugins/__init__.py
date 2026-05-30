@@ -49,6 +49,17 @@ class Plugin:
         """Return a replacement response to amend the model output."""
         return None
 
+    async def repair_tool_args(
+        self, ctx: RunContext, agent: str, tool: str, args: dict[str, Any]
+    ) -> Optional[dict[str, Any]]:
+        """Pre-process/repair raw tool-call args before they are validated.
+
+        Return a replacement args dict to use instead, or ``None`` to leave the
+        args unchanged. Runs before :meth:`before_tool` and tool execution — the
+        seam for coercing malformed model output (Pydantic AI #3008).
+        """
+        return None
+
     async def before_tool(
         self, ctx: RunContext, agent: str, tool: str, args: dict[str, Any]
     ) -> Any:

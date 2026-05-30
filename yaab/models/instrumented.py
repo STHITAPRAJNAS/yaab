@@ -29,6 +29,7 @@ class InstrumentedModel:
         *,
         tools: Optional[list[dict[str, Any]]] = None,
         output_schema: Optional[dict[str, Any]] = None,
+        tool_choice: Optional[Any] = None,
         **kwargs: Any,
     ) -> ModelResponse:
         attrs = {
@@ -38,7 +39,11 @@ class InstrumentedModel:
         }
         with genai_span("chat", attrs) as span:
             resp = await self.inner.complete(
-                messages, tools=tools, output_schema=output_schema, **kwargs
+                messages,
+                tools=tools,
+                output_schema=output_schema,
+                tool_choice=tool_choice,
+                **kwargs,
             )
             if span is not None:
                 span.set_attribute("gen_ai.response.model", resp.model)

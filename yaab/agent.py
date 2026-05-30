@@ -40,6 +40,7 @@ class Agent(Generic[Deps, Output]):
         registry_id: Optional[str] = None,
         max_steps: int = 8,
         output_retries: int = 2,
+        tool_choice: Optional[Any] = None,
         runner: Optional[Any] = None,
         instrument: bool = True,
     ) -> None:
@@ -53,6 +54,9 @@ class Agent(Generic[Deps, Output]):
         self.registry_id = registry_id
         self.max_steps = max_steps
         self.output_retries = output_retries
+        #: Tool-choice policy passed to the model: "auto" | "required" | "none" |
+        #: a tool name (forces that function) | an OpenAI tool_choice dict.
+        self.tool_choice = tool_choice
         self.instrument = instrument
         self.permissions: list[str] = []
 

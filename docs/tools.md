@@ -49,6 +49,41 @@ class MyTool:
     async def execute(self, ctx, **kwargs): ...
 ```
 
+## Controlling tool use (`tool_choice`)
+
+Set `tool_choice` on the agent to steer whether/which tools the model calls:
+
+```python
+Agent("a", model="openai/gpt-4o", tools=[...], tool_choice="auto")      # default
+Agent("a", model="openai/gpt-4o", tools=[...], tool_choice="required")  # must call some tool
+Agent("a", model="openai/gpt-4o", tools=[...], tool_choice="none")      # answer without tools
+Agent("a", model="openai/gpt-4o", tools=[search], tool_choice="search") # force this tool
+```
+
+A bare tool name is expanded to the provider's
+`{"type": "function", "function": {"name": ...}}` form. Use `"required"` to force
+the agent to call a tool before producing a final answer.
+
+## Repairing malformed tool args
+
+When a model emits tool-call arguments that don't match the schema, a plugin can
+coerce/repair them *before* validation via the `repair_tool_args` hook:
+
+```python
+from yaab.plugins import Plugin
+
+class CoerceInts(Plugin):
+    async def repair_tool_args(self, ctx, agent, tool, args):
+        if tool == "add":
+            return {k: int(v) for k, v in args.items()}   # "2" -> 2
+        return None   # leave unchanged
+
+runner = Runner(plugins=[CoerceInts()])
+```
+
+If repair isn't enough, invalid args still raise a `ToolError` that is fed back
+to the model as a tool result so it can retry.
+
 ## Agent as a tool
 
 ```python

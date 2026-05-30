@@ -42,14 +42,18 @@ class TestModel:
         responses: Optional[list[ModelResponse | str]] = None,
         call_tools: Optional[list[str]] = None,
         structured_output: Optional[dict[str, Any]] = None,
+        reasoning: Optional[str] = None,
     ) -> None:
         self.name = "test"
         self.custom_output = custom_output
         self.responses = responses
         self.call_tools = call_tools or []
         self.structured_output = structured_output
+        self.reasoning = reasoning
         self._index = 0
         self.calls: list[list[Message]] = []
+        #: Records the tool_choice passed on each complete() call, for assertions.
+        self.tool_choices: list[Any] = []
         self._tools_called = False
 
     async def complete(
@@ -58,9 +62,11 @@ class TestModel:
         *,
         tools: Optional[list[dict[str, Any]]] = None,
         output_schema: Optional[dict[str, Any]] = None,
+        tool_choice: Optional[Any] = None,
         **kwargs: Any,
     ) -> ModelResponse:
         self.calls.append(list(messages))
+        self.tool_choices.append(tool_choice)
         usage = Usage(requests=1, input_tokens=10, output_tokens=5, total_tokens=15)
 
         if self.responses is not None:
@@ -78,6 +84,7 @@ class TestModel:
                 finish_reason="tool_calls",
                 usage=usage,
                 model="test",
+                reasoning=self.reasoning,
             )
 
         if output_schema is not None and self.structured_output is not None:
@@ -85,7 +92,9 @@ class TestModel:
                 content=json.dumps(self.structured_output), usage=usage, model="test"
             )
 
-        return ModelResponse(content=self.custom_output, usage=usage, model="test")
+        return ModelResponse(
+            content=self.custom_output, usage=usage, model="test", reasoning=self.reasoning
+        )
 
     async def stream(
         self,
