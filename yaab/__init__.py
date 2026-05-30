@@ -33,6 +33,7 @@ from .limits import CancellationToken, UsageLimits
 from .memory.manager import MemoryManager
 from .multiagent import LoopAgent, MapAgent, ParallelAgent, SequentialAgent, Swarm
 from .prompts import PromptRegistry
+from .rag import Document, KnowledgeBase
 from .sessions.manager import SessionManager
 from .skills import Skill
 from .exceptions import (
@@ -80,6 +81,9 @@ __all__ = [
     # reusable building blocks
     "Skill",
     "PromptRegistry",
+    # RAG
+    "KnowledgeBase",
+    "Document",
     # run controls
     "UsageLimits",
     "CancellationToken",

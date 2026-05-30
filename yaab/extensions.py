@@ -40,6 +40,8 @@ _ENTRY_POINT_GROUPS: dict[str, str] = {
     "checkpointer": "yaab.checkpointers",
     "guardrail": "yaab.guardrails",
     "embedder": "yaab.embedders",
+    "vectorstore": "yaab.vectorstores",
+    "reranker": "yaab.rerankers",
     "plugin": "yaab.plugins",
     "compliance": "yaab.compliance",
     "skill": "yaab.skills",

@@ -34,9 +34,34 @@ class LiteLLMEmbedder:
         return list(resp["data"][0]["embedding"])
 
 
-# Register both embedders for discovery via yaab.extensions.get("embedder", ...).
+class CachingEmbedder:
+    """Wrap any embedder with a content-keyed cache to avoid re-embedding.
+
+    Re-embedding the same text (re-indexing, repeated queries) is a recurring
+    cost sink across RAG stacks. This caches by exact text; pass a ``store``
+    dict to share/persist the cache across instances.
+    """
+
+    def __init__(self, embedder: Embedder, *, store: dict | None = None) -> None:
+        self.embedder = embedder
+        self._cache: dict[str, list[float]] = store if store is not None else {}
+        self.hits = 0
+        self.misses = 0
+
+    def __call__(self, text: str) -> list[float]:
+        cached = self._cache.get(text)
+        if cached is not None:
+            self.hits += 1
+            return cached
+        self.misses += 1
+        vec = self.embedder(text)
+        self._cache[text] = vec
+        return vec
+
+
+# Register embedders for discovery via yaab.extensions.get("embedder", ...).
 register("embedder", "hashing", lambda **kw: hashing_embedder(**kw))
 register("embedder", "litellm", lambda **kw: LiteLLMEmbedder(**kw))
 
 
-__all__ = ["LiteLLMEmbedder", "Embedder"]
+__all__ = ["LiteLLMEmbedder", "CachingEmbedder", "Embedder"]
