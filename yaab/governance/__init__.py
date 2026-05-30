@@ -3,6 +3,14 @@
 from __future__ import annotations
 
 from .audit import AuditEvent, AuditKind, AuditLog, AuditSink, SQLiteAuditSink
+from .authorization import (
+    CallableAuthorizer,
+    Decision,
+    IdempotencyPlugin,
+    RBACAuthorizer,
+    ToolAuthorizationPlugin,
+    ToolAuthorizer,
+)
 from .eval import (
     Case,
     Contains,
@@ -63,6 +71,13 @@ __all__ = [
     "SecretScanner",
     "TopicScanner",
     "SystemPromptLeakScanner",
+    # authorization & idempotency
+    "ToolAuthorizationPlugin",
+    "ToolAuthorizer",
+    "RBACAuthorizer",
+    "CallableAuthorizer",
+    "Decision",
+    "IdempotencyPlugin",
     # audit
     "AuditLog",
     "AuditEvent",
