@@ -37,7 +37,10 @@ from .rag import Document, KnowledgeBase
 from .sessions.manager import SessionManager
 from .skills import Skill
 from .state import State
+from .config import agent_from_dict, agent_from_yaml
+from .context import KeepAll, SummarizeHistory, TruncateMessages
 from .exceptions import (
+    ApprovalRequired,
     GovernanceError,
     MaxStepsExceeded,
     ModelError,
@@ -89,6 +92,13 @@ __all__ = [
     # run controls
     "UsageLimits",
     "CancellationToken",
+    # context-window management
+    "TruncateMessages",
+    "SummarizeHistory",
+    "KeepAll",
+    # declarative config
+    "agent_from_dict",
+    "agent_from_yaml",
     "RunContext",
     "RunResult",
     "Message",
@@ -108,4 +118,5 @@ __all__ = [
     "RunCancelled",
     "GovernanceError",
     "PolicyViolation",
+    "ApprovalRequired",
 ]

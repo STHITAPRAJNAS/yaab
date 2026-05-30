@@ -41,6 +41,7 @@ class Agent(Generic[Deps, Output]):
         max_steps: int = 8,
         output_retries: int = 2,
         tool_choice: Optional[Any] = None,
+        context_strategy: Optional[Any] = None,
         runner: Optional[Any] = None,
         instrument: bool = True,
     ) -> None:
@@ -57,6 +58,9 @@ class Agent(Generic[Deps, Output]):
         #: Tool-choice policy passed to the model: "auto" | "required" | "none" |
         #: a tool name (forces that function) | an OpenAI tool_choice dict.
         self.tool_choice = tool_choice
+        #: Optional ContextStrategy that trims/summarizes history before each
+        #: model call to stay within the context window.
+        self.context_strategy = context_strategy
         self.instrument = instrument
         self.permissions: list[str] = []
 
