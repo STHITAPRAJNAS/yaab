@@ -35,6 +35,22 @@ class MaxStepsExceeded(YaabError):
     """Raised when the agent loop exceeds its configured step budget."""
 
 
+class UsageLimitExceeded(YaabError):
+    """Raised when a run exceeds a configured usage limit (tokens/requests/tools)."""
+
+    def __init__(self, message: str, *, limit: str) -> None:
+        super().__init__(message)
+        self.limit = limit
+
+
+class RunCancelled(YaabError):
+    """Raised when a run is cancelled via a CancellationToken or times out."""
+
+    def __init__(self, message: str = "run cancelled", *, reason: str = "cancelled") -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
 class GovernanceError(YaabError):
     """Base for governance/registry/policy failures."""
 

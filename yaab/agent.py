@@ -119,10 +119,25 @@ class Agent(Generic[Deps, Output]):
         deps: Deps = None,  # type: ignore[assignment]
         session_id: Optional[str] = None,
         identity: Optional[str] = None,
+        usage_limits: Optional[Any] = None,
+        cancellation: Optional[Any] = None,
+        timeout: Optional[float] = None,
     ) -> RunResult[Output]:
-        """Run the agent's model-driven loop and return a typed result."""
+        """Run the agent's model-driven loop and return a typed result.
+
+        ``usage_limits`` (:class:`~yaab.limits.UsageLimits`) caps tokens/requests/
+        tool calls; ``cancellation`` (:class:`~yaab.limits.CancellationToken`) and
+        ``timeout`` (seconds) stop the run cooperatively between steps.
+        """
         return await self._get_runner().run(
-            self, prompt, deps=deps, session_id=session_id, identity=identity
+            self,
+            prompt,
+            deps=deps,
+            session_id=session_id,
+            identity=identity,
+            usage_limits=usage_limits,
+            cancellation=cancellation,
+            timeout=timeout,
         )
 
     def stream(
@@ -151,10 +166,21 @@ class Agent(Generic[Deps, Output]):
         deps: Deps = None,  # type: ignore[assignment]
         session_id: Optional[str] = None,
         identity: Optional[str] = None,
+        usage_limits: Optional[Any] = None,
+        cancellation: Optional[Any] = None,
+        timeout: Optional[float] = None,
     ) -> RunResult[Output]:
         """Synchronous convenience wrapper around :meth:`run`."""
         return asyncio.run(
-            self.run(prompt, deps=deps, session_id=session_id, identity=identity)
+            self.run(
+                prompt,
+                deps=deps,
+                session_id=session_id,
+                identity=identity,
+                usage_limits=usage_limits,
+                cancellation=cancellation,
+                timeout=timeout,
+            )
         )
 
     def __repr__(self) -> str:

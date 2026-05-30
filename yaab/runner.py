@@ -13,6 +13,7 @@ layers.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, AsyncIterator, Optional
 
 from pydantic import TypeAdapter, ValidationError
@@ -21,6 +22,7 @@ from .exceptions import MaxStepsExceeded, ToolError
 from .governance.audit import AuditKind
 from .governance.policy import Stage
 from .governance.service import GovernanceService
+from .limits import CancellationToken, UsageLimits
 from .models.base import ModelResponse
 from .plugins import Plugin
 from .sessions.base import SessionService
@@ -68,10 +70,20 @@ class Runner:
         deps: Any = None,
         session_id: Optional[str] = None,
         identity: Optional[str] = None,
+        usage_limits: Optional["UsageLimits"] = None,
+        cancellation: Optional["CancellationToken"] = None,
+        timeout: Optional[float] = None,
     ) -> RunResult[Any]:
         events: list[Event] = []
         async for event in self.run_stream(
-            agent, prompt, deps=deps, session_id=session_id, identity=identity
+            agent,
+            prompt,
+            deps=deps,
+            session_id=session_id,
+            identity=identity,
+            usage_limits=usage_limits,
+            cancellation=cancellation,
+            timeout=timeout,
         ):
             events.append(event)
         final = events[-1]
@@ -95,12 +107,29 @@ class Runner:
         deps: Any = None,
         session_id: Optional[str] = None,
         identity: Optional[str] = None,
+        usage_limits: Optional["UsageLimits"] = None,
+        cancellation: Optional["CancellationToken"] = None,
+        timeout: Optional[float] = None,
     ) -> AsyncIterator[Event]:
         """Execute the loop, yielding a typed :class:`Event` per step."""
         ctx: RunContext = RunContext(
             deps=deps, session_id=session_id, identity=identity, usage=Usage()
         )
         gov = self.governance
+
+        # A timeout is just a deadline on the cancellation token.
+        if timeout is not None:
+            if cancellation is None:
+                cancellation = CancellationToken.with_timeout(timeout)
+            elif cancellation.deadline is None:
+                cancellation.deadline = time.monotonic() + timeout
+        tool_counts: dict[str, int] = {}
+
+        def check_controls() -> None:
+            if cancellation is not None:
+                cancellation.raise_if_cancelled()
+            if usage_limits is not None:
+                usage_limits.check_usage(ctx.usage)
 
         def emit(etype: EventType, **payload: Any) -> Event:
             return Event(type=etype, agent=agent.name, run_id=ctx.run_id, payload=payload)
@@ -141,9 +170,13 @@ class Runner:
             produced = False
 
             for _step in range(agent.max_steps):
+                check_controls()  # cancellation / timeout / usage caps
                 response = await self._call_model(
                     agent, ctx, messages, tool_schemas, output_schema
                 )
+                # Re-check usage now that this request's tokens are counted.
+                if usage_limits is not None:
+                    usage_limits.check_usage(ctx.usage)
                 yield emit(
                     EventType.MODEL_RESPONSE,
                     content=response.content,
@@ -156,6 +189,11 @@ class Runner:
                                 tool_calls=response.tool_calls)
                     )
                     for tc in response.tool_calls:
+                        if cancellation is not None:
+                            cancellation.raise_if_cancelled()
+                        tool_counts[tc.name] = tool_counts.get(tc.name, 0) + 1
+                        if usage_limits is not None:
+                            usage_limits.check_tool_call(tc.name, tool_counts)
                         yield emit(EventType.TOOL_CALL, name=tc.name, arguments=tc.arguments)
                         result_value = await self._run_tool(agent, ctx, tc)
                         yield emit(EventType.TOOL_RESULT, name=tc.name, result=_safe(result_value))
