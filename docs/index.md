@@ -19,6 +19,7 @@ a first-class governance/registry/compliance layer that none of them ship.
 | [Tools](tools.md) | Typed function tools, agent-as-tool, MCP tools |
 | [Models](models.md) | LiteLLM layer, fallbacks, retries, cost, structured output, TestModel |
 | [State: sessions, memory, artifacts](state.md) | Managers + services, scoping, session→memory ingestion |
+| [RAG](rag.md) | Built-in retrieval: knowledge base, chunking, vector stores, rerank, citations, faithfulness |
 | [Multi-agent](multi-agent.md) | Sequential, Parallel, Loop, Swarm, agent-as-tool |
 | [Streaming & events](streaming-events.md) | Token streaming, the semantic event stream, SSE endpoints |
 | [Usage limits & run control](limits.md) | Token/request/tool caps, cancellation, timeouts |

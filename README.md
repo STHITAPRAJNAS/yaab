@@ -45,6 +45,8 @@ governance.
 | Pluggable auth (bearer / API key / OAuth2)| ◑ | ✕ | ✕ | ◑ | ✕ | **✓** |
 | OTel GenAI-convention tracing | ✓ | ◑ | ✓ | ✓ | ◑ | **✓** |
 | Prompt management + versioning | ✕ | ◑ | ✕ | ✕ | ✕ | **✓** |
+| Built-in RAG (provider-neutral) | ◑ cloud | ◑ cloud | ✕ | ◑ cloud | ◑ | **✓** |
+| RAG access control + citations + faithfulness | ✕ | ✕ | ✕ | ✕ | ✕ | **✓** |
 | **Agent registry + lifecycle FSM** | ✕ | ✕ | ✕ | ✕ | ✕ | **✓** |
 | **Guardrail / policy engine** | ◑ | ✕ | ◑ | ✕ | ◑ | **✓** |
 | **Tamper-evident audit + lineage** | ✕ | ✕ | ✕ | ✕ | ✕ | **✓** |
