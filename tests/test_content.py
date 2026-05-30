@@ -64,10 +64,10 @@ def test_sse_endpoint_streams_events():
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
-    from yaab.serve import get_fastapi_app
+    from yaab.serve import fastapi_server_app
 
     agent = Agent("a", model=TestModel("streamed answer"))
-    client = TestClient(get_fastapi_app(agent))
+    client = TestClient(fastapi_server_app(agent))
     with client.stream("POST", "/run/stream", json={"prompt": "hi"}) as resp:
         assert resp.status_code == 200
         assert "text/event-stream" in resp.headers["content-type"]

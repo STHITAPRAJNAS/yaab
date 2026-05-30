@@ -1,7 +1,7 @@
 # Deploying YAAB — local to cloud
 
 YAAB runs the same way everywhere: an agent is an ASGI app
-(`get_fastapi_app`), so anything that hosts ASGI/containers hosts YAAB.
+(`fastapi_server_app`), so anything that hosts ASGI/containers hosts YAAB.
 
 ## Local
 
@@ -26,10 +26,10 @@ Wrap with any scheme from `yaab.auth` — the resolved identity flows into the
 run context and the audit log:
 
 ```python
-from yaab.serve import get_fastapi_app
+from yaab.serve import fastapi_server_app
 from yaab.auth import BearerTokenAuth, APIKeyAuth, OAuth2
 
-app = get_fastapi_app(agent, auth=BearerTokenAuth({"token-123": "alice"}))
+app = fastapi_server_app(agent, auth=BearerTokenAuth({"token-123": "alice"}))
 # OAuth2(validator=verify_jwt, authorization_url=..., token_url=...) for A2A.
 ```
 

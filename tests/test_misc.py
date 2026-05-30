@@ -131,10 +131,10 @@ def test_audit_plugin_records(tmp_path):
 
 def test_fastapi_app_builds():
     fastapi = pytest.importorskip("fastapi")
-    from yaab.serve import get_fastapi_app
+    from yaab.serve import fastapi_server_app
 
     agent = Agent("a", model=TestModel("hi"))
-    app = get_fastapi_app(agent)
+    app = fastapi_server_app(agent)
     routes = {r.path for r in app.routes}
     assert "/run" in routes
     assert "/.well-known/agent.json" in routes

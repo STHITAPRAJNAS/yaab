@@ -51,7 +51,7 @@ tools = mcp_toolset(descriptors, caller)   # caller: async (name, args) -> resul
 
 ### Serve an agent as an A2A endpoint
 
-`get_fastapi_app` exposes an A2A Agent Card and task endpoint
+`fastapi_server_app` exposes an A2A Agent Card and task endpoint
 (see [Serving](serving.md)):
 
 ```
@@ -60,8 +60,8 @@ POST /a2a/tasks                # submit a task
 ```
 
 ```python
-from yaab.serve import get_fastapi_app
-app = get_fastapi_app(agent, base_url="https://my-service")
+from yaab.serve import fastapi_server_app
+app = fastapi_server_app(agent, base_url="https://my-service")
 ```
 
 The Agent Card is generated from the governance registry entry and includes
