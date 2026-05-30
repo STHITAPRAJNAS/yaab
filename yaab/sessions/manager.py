@@ -9,11 +9,14 @@ backend (in-memory, SQLite, Postgres, Redis) works unchanged.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from ..types import Message, Role
 from .base import Session, SessionService
 from .memory import InMemorySessionService
+
+if TYPE_CHECKING:
+    from ..state import State
 
 DEFAULT_APP = "default"
 DEFAULT_USER = "default"
@@ -26,6 +29,9 @@ class SessionManager:
         self.service = service or InMemorySessionService()
         # (app, user) -> ordered list of session ids (best-effort index).
         self._index: dict[tuple[str, str], list[str]] = {}
+        # Shared state stores for the prefix scopes (ADK-style).
+        self._app_state: dict[str, dict[str, Any]] = {}            # app -> app: state
+        self._user_state: dict[tuple[str, str], dict[str, Any]] = {}  # (app,user) -> user: state
 
     @staticmethod
     def _key(app_name: str, user_id: str, session_id: str) -> str:
@@ -97,6 +103,34 @@ class SessionManager:
     async def get_state(self, session_id: str) -> dict[str, Any]:
         session = await self.service.get(session_id)
         return dict(session.state) if session else {}
+
+    # --- prefix-scoped state (ADK temp:/user:/app:) -------------------
+    async def resolve_state(
+        self,
+        session_id: str,
+        *,
+        app_name: str = DEFAULT_APP,
+        user_id: str = DEFAULT_USER,
+    ) -> "State":
+        """Build a prefix-routed :class:`~yaab.state.State` for a session.
+
+        Reads/writes to ``app:``/``user:`` keys hit the shared stores; ``temp:``
+        is ephemeral; unprefixed keys are session-scoped. Persist the durable
+        subset back with :meth:`save_state`.
+        """
+        from ..state import State
+
+        session = await self.service.get_or_create(session_id)
+        app_store = self._app_state.setdefault(app_name, {})
+        user_store = self._user_state.setdefault((app_name, user_id), {})
+        return State(session=session.state, user=user_store, app=app_store)
+
+    async def save_state(self, session_id: str, state: "State") -> None:
+        """Persist the durable (non-temp) subset of a resolved State."""
+        session = await self.service.get_or_create(session_id)
+        # session.state is the same dict the State wrote into; just persist it.
+        session.state.update(state.session)
+        await self.service.save(session)
 
 
 __all__ = ["SessionManager"]
