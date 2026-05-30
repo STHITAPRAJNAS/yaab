@@ -53,6 +53,108 @@ class Contains:
         return 1.0 if str(case.expected) in str(output) else 0.0
 
 
+class Regex:
+    """Score 1.0 if the output matches a regex (the pattern is ``case.expected``)."""
+
+    name = "regex"
+
+    def evaluate(self, case: Case, output: Any) -> float:
+        import re
+
+        return 1.0 if re.search(str(case.expected), str(output)) else 0.0
+
+
+class JSONMatch:
+    """Score 1.0 if output parses to JSON equal to ``case.expected``."""
+
+    name = "json_match"
+
+    def evaluate(self, case: Case, output: Any) -> float:
+        import json
+
+        try:
+            parsed = json.loads(output) if isinstance(output, str) else output
+        except (json.JSONDecodeError, TypeError):
+            return 0.0
+        expected = case.expected
+        if isinstance(expected, str):
+            try:
+                expected = json.loads(expected)
+            except json.JSONDecodeError:
+                pass
+        return 1.0 if parsed == expected else 0.0
+
+
+class NumericTolerance:
+    """Score 1.0 if the numeric output is within ``tol`` of ``case.expected``."""
+
+    name = "numeric_tolerance"
+
+    def __init__(self, tol: float = 1e-6) -> None:
+        self.tol = tol
+
+    def evaluate(self, case: Case, output: Any) -> float:
+        try:
+            return 1.0 if abs(float(output) - float(case.expected)) <= self.tol else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+
+class Levenshtein:
+    """Normalized edit-distance similarity in [0, 1] vs ``case.expected``."""
+
+    name = "levenshtein"
+
+    @staticmethod
+    def _distance(a: str, b: str) -> int:
+        if a == b:
+            return 0
+        if not a:
+            return len(b)
+        if not b:
+            return len(a)
+        prev = list(range(len(b) + 1))
+        for i, ca in enumerate(a, 1):
+            cur = [i]
+            for j, cb in enumerate(b, 1):
+                cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+            prev = cur
+        return prev[-1]
+
+    def evaluate(self, case: Case, output: Any) -> float:
+        a, b = str(output), str(case.expected)
+        if not a and not b:
+            return 1.0
+        return 1.0 - self._distance(a, b) / max(len(a), len(b))
+
+
+class LLMJudge:
+    """Score an output's quality 0-1 with a model judge (call :meth:`ascore`)."""
+
+    name = "llm_judge"
+
+    def __init__(self, model: Any, *, criteria: str = "correct and helpful") -> None:
+        from ..models import resolve_model
+
+        self.model = resolve_model(model)
+        self.criteria = criteria
+
+    async def ascore(self, case: Case, output: Any) -> float:
+        import re
+
+        from ..types import Message, Role
+
+        prompt = (
+            f"Rate the OUTPUT from 0 to 1 on: {self.criteria}. Reply with only a number.\n\n"
+            f"INPUT: {case.inputs}\nEXPECTED: {case.expected}\nOUTPUT: {output}\n\nScore:"
+        )
+        try:
+            resp = await self.model.complete([Message(role=Role.USER, content=prompt)])
+            return float(re.search(r"[01](?:\.\d+)?", resp.content).group())  # type: ignore[union-attr]
+        except (AttributeError, ValueError, TypeError):
+            return 0.0
+
+
 class FunctionEvaluator:
     """Wrap an arbitrary scoring function as an :class:`Evaluator`."""
 

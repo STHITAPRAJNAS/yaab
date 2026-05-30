@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from yaab import Agent, EventType, RunContext, tool
+from yaab import Agent, EventType, tool
 from yaab.models.test_model import TestModel
 from yaab.plugins import Plugin
 from yaab.runner import _normalize_tool_choice

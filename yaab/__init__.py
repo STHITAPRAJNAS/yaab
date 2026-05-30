@@ -25,6 +25,7 @@ from __future__ import annotations
 from . import _core
 from .agent import Agent
 from .artifacts.manager import ArtifactManager
+from .batch import batch_embed, batch_map, batch_run
 from .content import Content, Part, PartKind
 from .extensions import available as available_components
 from .extensions import get as get_component
@@ -99,6 +100,10 @@ __all__ = [
     # declarative config
     "agent_from_dict",
     "agent_from_yaml",
+    # batch / offline inference
+    "batch_run",
+    "batch_map",
+    "batch_embed",
     "RunContext",
     "RunResult",
     "Message",

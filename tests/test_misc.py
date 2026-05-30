@@ -88,7 +88,6 @@ async def test_cost_budget_plugin_aborts():
     from yaab.plugins.builtins import BudgetExceeded
 
     # TestModel reports cost 0, so simulate via a plugin that bumps cost.
-    from yaab.models.base import ModelResponse
     from yaab.plugins import Plugin
 
     class Expensive(Plugin):

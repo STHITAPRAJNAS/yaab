@@ -4,7 +4,7 @@ The graph pauses at the approval node (checkpointing its state), returns control
 to you, and resumes from exactly where it left off when you supply the decision.
 """
 
-from yaab.graph import END, START, Channel, MemorySaver, StateGraph
+from yaab.graph import START, Channel, MemorySaver, StateGraph
 
 
 def draft(state, ctx):

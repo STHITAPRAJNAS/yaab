@@ -9,7 +9,6 @@ from yaab.exceptions import PolicyViolation
 from yaab.governance import (
     AuditLog,
     CallableAuthorizer,
-    Decision,
     IdempotencyPlugin,
     RBACAuthorizer,
     ToolAuthorizationPlugin,

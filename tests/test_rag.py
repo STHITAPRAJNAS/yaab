@@ -9,7 +9,6 @@ from yaab.memory.embedders import CachingEmbedder
 from yaab.models.test_model import TestModel
 from yaab.rag import (
     CharacterChunker,
-    InMemoryVectorStore,
     KeywordReranker,
     ParagraphChunker,
     SentenceChunker,

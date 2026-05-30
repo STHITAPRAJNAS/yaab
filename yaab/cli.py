@@ -106,6 +106,13 @@ def _serve(spec: str, host: str, port: int) -> int:
     return 0
 
 
+def _web(spec: str, host: str, port: int) -> int:
+    from .web import serve_web
+
+    serve_web(_load_attr(spec), host=host, port=port)
+    return 0
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="yaab", description="Yet Another Agent Builder")
     parser.add_argument("--version", action="version", version=f"yaab {__version__}")
@@ -133,6 +140,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
 
+    p_web = sub.add_parser("web", help="open a browser dev playground for an agent")
+    p_web.add_argument("spec")
+    p_web.add_argument("--host", default="127.0.0.1")
+    p_web.add_argument("--port", type=int, default=8080)
+
     args = parser.parse_args(argv)
 
     if args.command == "info" or args.command is None:
@@ -151,6 +163,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
     if args.command == "serve":
         return _serve(args.spec, args.host, args.port)
+    if args.command == "web":
+        return _web(args.spec, args.host, args.port)
     parser.print_help()
     return 1
 
