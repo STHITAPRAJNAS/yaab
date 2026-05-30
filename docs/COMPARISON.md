@@ -110,10 +110,9 @@ toward parity-or-better.
 
 ## 4. Net assessment
 
-For the **regulated-enterprise agent** use case, YAAB is already differentiated
-beyond any single framework today, because governance/registry/audit/compliance
-and a Rust core simply do not exist elsewhere. For **raw orchestration breadth**,
-LangGraph still leads on streaming-mode richness and battle-tested scale, DSPy
-leads on optimizer depth, and ADK leads on the maturity of its tool/eval
-ecosystem and managed deployment. Closing gaps 1–6 above is what turns "uniquely
-valuable to a bank" into "the default for everyone."
+For the **regulated-enterprise agent** use case, YAAB provides governance,
+registry, audit, and compliance together with a Rust core — a combination not
+found in the other frameworks surveyed. For **raw orchestration breadth**,
+LangGraph offers more streaming modes and longer production history, DSPy offers
+deeper optimizers, and ADK offers a more mature tool/eval ecosystem and managed
+deployment. The gaps listed above (items 1–6) are the remaining work.
