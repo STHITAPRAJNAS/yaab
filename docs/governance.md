@@ -144,6 +144,27 @@ report = await exp.run(lambda x: str(eval(x.rstrip("?"))))
 print(report.mean_score, report.aggregate)
 ```
 
+## Drift detection & trust scoring
+
+Production agents degrade quietly. The monitor turns the eval + audit substrate
+into an ongoing health signal — no new instrumentation.
+
+```python
+from yaab.governance import DriftMonitor, TrustScorer
+
+# Feed periodic eval scores; flag when recent performance drops below baseline.
+drift = DriftMonitor(baseline_window=5, recent_window=5, threshold=0.1)
+for score in nightly_eval_scores:
+    drift.record_score("kyc-bot", score)
+report = drift.report("kyc-bot")
+if report.drifted:
+    alert(f"{report.agent_id} drifted: {report.baseline:.2f} -> {report.recent:.2f}")
+
+# Blend eval performance, guardrail blocks, and errors into one 0-1 trust score.
+trust = TrustScorer().score("kyc-bot", gov.audit, eval_score=report.recent)
+print(trust.score, trust.components)   # {'performance':…, 'safety':…, 'reliability':…}
+```
+
 ## Compliance mappers
 
 Project the governance data onto a regime's controls and emit an audit-ready

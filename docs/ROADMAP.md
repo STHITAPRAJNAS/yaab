@@ -48,7 +48,12 @@ checkpointer design.
 
 ## 3. What we'll incorporate, prioritized
 
-**Tier 1 — high demand × strong fit × low effort (do next):**
+> **Delivery status (feature/tiered-enhancements):** Tier 1 ✅ · Tier 2 ✅ ·
+> Tier 3 ✅ except the TypeScript/Go binding (item 14), which is tracked as a
+> separate effort needing a JS/Go toolchain. Each item below links to the
+> upstream request; see git history for the commit that implemented it.
+
+**Tier 1 — high demand × strong fit × low effort — ✅ DONE:**
 
 1. **`UsageLimits`** — unified caps (requests, input/output tokens, wall-clock,
    per-tool call counts) enforced in the Runner, with a graceful-fallback hook.
@@ -66,7 +71,7 @@ checkpointer design.
 6. **Inspect the compiled prompt** — expose the exact rendered prompt/demos from
    an optimized `Module`. *(DSPy #7830.)*
 
-**Tier 2 — high demand, more effort:**
+**Tier 2 — high demand, more effort — ✅ DONE:**
 
 7. **Tool idempotency keys** — dedupe side-effecting tool calls across retries.
    *(CrewAI #5802 — governance-aligned.)*
@@ -79,15 +84,15 @@ checkpointer design.
 11. **`MapAgent`** (fan-out one sub-agent N times) and **early-stop** conditions
     for workflow agents. *(ADK #1828/#3405.)*
 
-**Tier 3 — strategic, larger:**
+**Tier 3 — strategic, larger — ✅ DONE (except 14):**
 
-12. **MCP resources/prompts/sampling + native streamable-HTTP transport + an MCP
-    *server*** exposing YAAB tools. *(Strands #151/#765, DSPy #7799.)*
-13. **A2A 1.0 depth** — streaming/long-running tasks, OAuth2 token exchange,
-    back-to-orchestrator handoff. *(OpenAI #472/#847, ADK #5056.)*
-14. **TypeScript binding** over `yaab-core` (then Go). *(Strands #616, AutoGen
-    #1700.)*
-15. **Drift / trust-scoring monitor** built on evals + audit. *(CrewAI
+12. ✅ **MCP resources/prompts + an MCP *server*** exposing YAAB tools, plus
+    client resources/read & prompts/get. *(Strands #151/#765, DSPy #7799.)*
+13. ✅ **A2A depth** — streaming/long-running tasks (poll + SSE), OAuth2 token
+    provider, back-to-orchestrator handoff. *(OpenAI #472/#847, ADK #5056.)*
+14. ⬜ **TypeScript binding** over `yaab-core` (then Go) — needs a JS/Go
+    toolchain; tracked separately. *(Strands #616, AutoGen #1700.)*
+15. ✅ **Drift / trust-scoring monitor** built on evals + audit. *(CrewAI
     #5155/#5789.)*
 
 ## 4. Non-goals (for now)

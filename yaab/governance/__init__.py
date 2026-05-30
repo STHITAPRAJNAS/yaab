@@ -21,6 +21,7 @@ from .eval import (
     FunctionEvaluator,
 )
 from .lifecycle import EvidenceArtifact, LifecycleManager, LifecycleState
+from .monitor import DriftMonitor, DriftReport, TrustReport, TrustScorer
 from .policy import (
     Action,
     GuardrailResult,
@@ -92,4 +93,9 @@ __all__ = [
     "ExactMatch",
     "Contains",
     "FunctionEvaluator",
+    # monitoring
+    "DriftMonitor",
+    "DriftReport",
+    "TrustScorer",
+    "TrustReport",
 ]
