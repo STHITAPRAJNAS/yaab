@@ -210,6 +210,62 @@ card + task endpoint), so other agents can discover and delegate to it. See
 
 ---
 
+## Multi-agent & managers (ADK-style)
+
+Compose agents as Sequential / Parallel / Loop / Swarm workflows — each is itself
+an agent, so they nest and drop into tools, graphs, and servers:
+
+```python
+from yaab import SequentialAgent, ParallelAgent, Swarm
+from yaab.multiagent import SwarmState
+
+pipeline = SequentialAgent("etl", [extractor, transformer, loader])
+board    = ParallelAgent("review", [legal, finance, risk])
+support  = Swarm("support", [triage, billing, tech], entry="triage")
+await support.run("I was double charged", deps=SwarmState())
+```
+
+Scoped session / memory / artifact **managers** mirror ADK's services:
+
+```python
+from yaab import SessionManager, MemoryManager, ArtifactManager
+
+sessions = SessionManager()
+s = await sessions.create_session(app_name="bank", user_id="alice", state={"tier": "gold"})
+
+memory = MemoryManager()
+await memory.add("Alice prefers email", app_name="bank", user_id="alice")
+await memory.add_session_to_memory(s, app_name="bank", user_id="alice")
+
+artifacts = ArtifactManager()
+await artifacts.save("report.pdf", data, session_id=s.id)   # auto-versioned
+```
+
+Interop is first-class: import an **MCP** server's tools with `MCPClient`, and
+discover/delegate to remote agents over **A2A** with `RemoteAgent` (which is also
+a tool). See the docs below.
+
+## Documentation
+
+Full guides live in [`docs/`](docs/index.md):
+
+[Quickstart](docs/quickstart.md) ·
+[Agents](docs/agents.md) ·
+[Tools](docs/tools.md) ·
+[Models](docs/models.md) ·
+[State (sessions/memory/artifacts)](docs/state.md) ·
+[Multi-agent](docs/multi-agent.md) ·
+[Streaming & events](docs/streaming-events.md) ·
+[Graph](docs/graph.md) ·
+[MCP & A2A](docs/interop.md) ·
+[Governance](docs/governance.md) ·
+[Optimization](docs/optimization.md) ·
+[Prompts & skills](docs/prompts-skills.md) ·
+[Serving & auth](docs/serving.md) ·
+[Extending](docs/extending.md) ·
+[Deployment](docs/DEPLOYMENT.md) ·
+[Comparison & gaps](docs/COMPARISON.md)
+
 ## Install
 
 ```bash

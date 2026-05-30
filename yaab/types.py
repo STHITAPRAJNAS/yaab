@@ -119,6 +119,7 @@ class EventType(str, Enum):
     RUN_START = "run_start"
     USER_MESSAGE = "user_message"
     MODEL_REQUEST = "model_request"
+    MODEL_DELTA = "model_delta"
     MODEL_RESPONSE = "model_response"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"

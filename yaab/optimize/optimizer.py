@@ -9,7 +9,7 @@ registry-trackable :class:`CompiledArtifact` so production runs are deterministi
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Protocol, runtime_checkable
+from typing import Any, Callable, Protocol, runtime_checkable
 
 from ..governance.eval import Case
 from .module import CompiledArtifact, Module
@@ -70,32 +70,37 @@ class MIPROv2:
 
     name = "miprov2"
 
-    def __init__(self, candidates: list[str] | None = None) -> None:
+    def __init__(self, candidates: list[str] | None = None, *, bootstrap_demos: bool = True) -> None:
         self.candidates = candidates or [
             "Answer accurately and concisely.",
             "Think carefully, then give the precise answer.",
             "Be correct. Prefer the exact expected format.",
         ]
+        self.bootstrap_demos = bootstrap_demos
 
     async def compile(
         self, module: Module, trainset: list[Case], metric: Metric
     ) -> CompiledArtifact:
-        best_instr = module.signature.instructions
-        best_score = -1.0
         original = module.signature.instructions
+        # Candidate demo sets: none, or bootstrapped from correct predictions.
+        demo_sets: list[list[dict]] = [[]]
+        if self.bootstrap_demos:
+            booted = await BootstrapFewShot().compile(module, trainset, metric)
+            module.demos = []  # reset; we search demos explicitly
+            demo_sets.append(booted.demos)
+
+        best = (original, list(module.demos), -1.0)
         for instr in [original, *self.candidates]:
-            module.signature.instructions = instr
-            total = 0.0
-            for case in trainset:
-                inputs = case.inputs if isinstance(case.inputs, dict) else {"input": case.inputs}
-                prediction = await module.forward(**inputs)
-                total += metric(case, prediction)
-            score = total / len(trainset) if trainset else 0.0
-            if score > best_score:
-                best_score, best_instr = score, instr
-        module.signature.instructions = best_instr
+            for demos in demo_sets:
+                module.signature.instructions = instr
+                module.demos = demos
+                score = await _mean_score(module, trainset, metric)
+                if score > best[2]:
+                    best = (instr, demos, score)
+
+        module.signature.instructions, module.demos = best[0], best[1]
         return CompiledArtifact(
-            instructions=best_instr, demos=list(module.demos), optimizer=self.name, train_score=best_score
+            instructions=best[0], demos=best[1], optimizer=self.name, train_score=best[2]
         )
 
 
@@ -158,6 +163,16 @@ class GEPA:
             if score < worst_score:
                 worst_score, worst = score, (case, prediction)
         return worst
+
+
+async def _mean_score(module: Module, trainset: list[Case], metric: Metric) -> float:
+    if not trainset:
+        return 0.0
+    total = 0.0
+    for case in trainset:
+        inputs = case.inputs if isinstance(case.inputs, dict) else {"input": case.inputs}
+        total += metric(case, await module.forward(**inputs))
+    return total / len(trainset)
 
 
 __all__ = ["Optimizer", "BootstrapFewShot", "MIPROv2", "GEPA", "Metric"]

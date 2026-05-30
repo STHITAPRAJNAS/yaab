@@ -99,6 +99,20 @@ def get_fastapi_app(
 
         return StreamingResponse(event_source(), media_type="text/event-stream")
 
+    @app.post("/chat/stream")
+    async def chat_stream(request: Request) -> Any:
+        """Token-level streaming (SSE) for a single answering turn."""
+        identity = _identify(request)
+        body = await request.json()
+        prompt = body.get("prompt") or body.get("input") or ""
+
+        async def token_source():
+            async for token in agent.stream(prompt, identity=identity):
+                yield f"data: {token}\n\n"
+            yield "event: done\ndata: [DONE]\n\n"
+
+        return StreamingResponse(token_source(), media_type="text/event-stream")
+
     @app.post("/a2a/tasks")
     async def a2a_task(request: Request) -> Any:
         """Minimal A2A task endpoint: accept a message, return a completed task."""

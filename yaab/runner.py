@@ -235,6 +235,35 @@ class Runner:
             yield emit(EventType.ERROR, error=exc)
 
     # ------------------------------------------------------------------
+    async def stream_text(
+        self,
+        agent: Any,
+        prompt: Any,
+        *,
+        deps: Any = None,
+        session_id: Optional[str] = None,
+        identity: Optional[str] = None,
+    ) -> AsyncIterator[str]:
+        """Token-level streaming for a single answering turn (no tool loop).
+
+        Yields text deltas as they arrive from the model. Use this for chat-style
+        streaming UX; use :meth:`run_stream` when you need the full tool loop and
+        semantic events.
+        """
+        from .content import Content
+
+        ctx: RunContext = RunContext(deps=deps, session_id=session_id, identity=identity)
+        prompt_text = prompt.text if isinstance(prompt, Content) else str(prompt)
+        if self.governance is not None:
+            prompt_text = self.governance.scan(
+                prompt_text, Stage.INPUT, agent_id=agent.registry_id, identity=identity
+            )
+        messages = await self._build_messages(agent, ctx, prompt_text, original=prompt)
+        async for chunk in agent.model.stream(messages):
+            if chunk.delta:
+                yield chunk.delta
+
+    # ------------------------------------------------------------------
     async def _build_messages(
         self, agent: Any, ctx: RunContext, prompt: str, *, original: Any = None
     ) -> list[Message]:

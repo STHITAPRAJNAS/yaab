@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from .base import ModelProvider, ModelResponse, StreamChunk
 from .instrumented import InstrumentedModel
 from .litellm_provider import LiteLLMModel

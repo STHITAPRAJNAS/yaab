@@ -20,7 +20,7 @@ from typing import Optional
 from ..exceptions import NotRegisteredError, PolicyViolation
 from .audit import AuditKind, AuditLog
 from .lifecycle import LifecycleManager
-from .policy import Action, GuardrailResult, PolicyEngine, Stage
+from .policy import Action, PolicyEngine, Stage
 from .registry import AgentRegistry
 
 

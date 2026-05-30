@@ -1,0 +1,137 @@
+"""MCP client — connect to a Model Context Protocol server and import its tools.
+
+Supports a stdio transport (spawn an MCP server subprocess and speak
+line-delimited JSON-RPC) and an injectable async transport for HTTP/SSE servers
+or tests. Discovered tools are returned as :class:`~yaab.tools.mcp.MCPTool`
+objects that satisfy YAAB's :class:`Tool` protocol, so an MCP server's whole
+toolset drops straight into an agent.
+
+    client = MCPClient.stdio(["python", "my_mcp_server.py"])
+    await client.start()
+    agent = Agent("a", tools=await client.list_tools())
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from typing import Any, Awaitable, Callable, Optional
+
+from .mcp import MCPTool
+
+# A transport sends a JSON-RPC request dict and returns the response dict.
+RPCTransport = Callable[[dict], Awaitable[dict]]
+
+
+class MCPClient:
+    """A minimal JSON-RPC 2.0 client for MCP servers."""
+
+    PROTOCOL_VERSION = "2024-11-05"
+
+    def __init__(self, transport: RPCTransport) -> None:
+        self._transport = transport
+        self._id = 0
+        self._initialized = False
+        self._proc: Optional[asyncio.subprocess.Process] = None
+
+    # --- constructors --------------------------------------------------
+    @classmethod
+    def from_transport(cls, transport: RPCTransport) -> "MCPClient":
+        """Build a client over a custom async transport (HTTP/SSE, in-process)."""
+        return cls(transport)
+
+    @classmethod
+    def stdio(cls, command: list[str]) -> "MCPClient":
+        """Build a client that will spawn ``command`` as a stdio MCP server."""
+        client = cls.__new__(cls)
+        client._id = 0
+        client._initialized = False
+        client._proc = None
+        client._command = command  # type: ignore[attr-defined]
+        client._transport = client._stdio_transport  # type: ignore[assignment]
+        return client
+
+    # --- lifecycle -----------------------------------------------------
+    async def start(self) -> dict[str, Any]:
+        """Spawn the subprocess (if stdio) and perform the MCP handshake."""
+        if getattr(self, "_command", None) and self._proc is None:
+            self._proc = await asyncio.create_subprocess_exec(
+                *self._command,  # type: ignore[attr-defined]
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+            )
+        result = await self._call(
+            "initialize",
+            {
+                "protocolVersion": self.PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": "yaab", "version": "0.1.0"},
+            },
+        )
+        self._initialized = True
+        return result
+
+    async def close(self) -> None:
+        if self._proc is not None:
+            try:
+                self._proc.terminate()
+                await self._proc.wait()
+            except ProcessLookupError:  # pragma: no cover
+                pass
+            self._proc = None
+
+    async def __aenter__(self) -> "MCPClient":
+        await self.start()
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        await self.close()
+
+    # --- RPC -----------------------------------------------------------
+    def _next_id(self) -> int:
+        self._id += 1
+        return self._id
+
+    async def _call(self, method: str, params: Optional[dict] = None) -> Any:
+        request = {"jsonrpc": "2.0", "id": self._next_id(), "method": method, "params": params or {}}
+        response = await self._transport(request)
+        if "error" in response and response["error"]:
+            raise RuntimeError(f"MCP error from '{method}': {response['error']}")
+        return response.get("result")
+
+    async def _stdio_transport(self, request: dict) -> dict:  # pragma: no cover - needs subprocess
+        assert self._proc and self._proc.stdin and self._proc.stdout
+        self._proc.stdin.write((json.dumps(request) + "\n").encode())
+        await self._proc.stdin.drain()
+        line = await self._proc.stdout.readline()
+        if not line:
+            raise RuntimeError("MCP server closed the connection")
+        return json.loads(line.decode())
+
+    # --- tools ---------------------------------------------------------
+    async def list_tools(self) -> list[MCPTool]:
+        """Discover the server's tools as YAAB :class:`MCPTool` objects."""
+        if not self._initialized:
+            await self.start()
+        result = await self._call("tools/list", {})
+        descriptors = result.get("tools", []) if isinstance(result, dict) else []
+
+        async def caller(name: str, arguments: dict) -> Any:
+            out = await self._call("tools/call", {"name": name, "arguments": arguments})
+            return _flatten_content(out)
+
+        from .mcp import mcp_toolset
+
+        return mcp_toolset(descriptors, caller)
+
+
+def _flatten_content(result: Any) -> Any:
+    """Reduce an MCP ``tools/call`` result to plain text where possible."""
+    if isinstance(result, dict) and "content" in result:
+        texts = [c.get("text", "") for c in result["content"] if c.get("type") == "text"]
+        if texts:
+            return "\n".join(texts)
+    return result
+
+
+__all__ = ["MCPClient"]
