@@ -60,9 +60,19 @@ class SessionManager:
         return await self.service.get(self._key(app_name, user_id, session_id))
 
     async def list_sessions(
-        self, *, app_name: str = DEFAULT_APP, user_id: str = DEFAULT_USER
+        self,
+        *,
+        app_name: str = DEFAULT_APP,
+        user_id: str = DEFAULT_USER,
+        limit: Optional[int] = None,
+        offset: int = 0,
     ) -> list[str]:
-        return list(self._index.get((app_name, user_id), []))
+        """List a user's session ids, with optional pagination (ADK #4621)."""
+        ids = list(self._index.get((app_name, user_id), []))
+        ids = ids[offset:]
+        if limit is not None:
+            ids = ids[:limit]
+        return ids
 
     async def delete_session(
         self, *, app_name: str = DEFAULT_APP, user_id: str = DEFAULT_USER, session_id: str

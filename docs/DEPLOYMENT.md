@@ -68,9 +68,23 @@ audit = AuditLog(sinks=[SQLiteAuditSink("audit.db")])
 registry = AgentRegistry(SQLiteRegistryBackend("registry.db"))
 ```
 
-Postgres/Redis backends implement the same protocols (`SessionService`,
-`Checkpointer`, `RegistryBackend`, `AuditSink`) — drop them in without touching
-agent code.
+For Postgres, install the extra and swap one line — same `SessionService`
+protocol, so agent code is untouched:
+
+```bash
+pip install 'yaab[postgres]'
+```
+
+```python
+from yaab.sessions import PostgresSessionService
+runner = Runner(session_service=PostgresSessionService("postgresql://user:pw@host/db"))
+```
+
+Lists are paginated for large tenants:
+
+```python
+ids = await session_manager.list_sessions(app_name="app", user_id="u", limit=50, offset=0)
+```
 
 ## Observability
 
@@ -80,6 +94,19 @@ plus token/cost attributes.
 
 ```bash
 pip install 'yaab[otel]'
+```
+
+Control tracing at runtime — disable it entirely, or scrub PII from span
+attributes before they're recorded:
+
+```python
+from yaab.observability import set_tracing_enabled, set_trace_redactor
+
+set_tracing_enabled(False)                 # global off switch (or YAAB_DISABLE_TRACING=1)
+
+def scrub(key, value):                     # redact sensitive attributes
+    return "[REDACTED]" if key.endswith("prompt") else value
+set_trace_redactor(scrub)
 ```
 
 ## Governance in production
