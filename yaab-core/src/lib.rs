@@ -49,6 +49,17 @@ fn reduce_channel(reducer: &str, current_json: &str, update_json: &str) -> PyRes
         .map_err(pyo3::exceptions::PyValueError::new_err)
 }
 
+/// Apply a whole superstep's node updates to graph state in one call.
+#[pyfunction]
+fn advance_superstep(
+    state_json: &str,
+    reducers_json: &str,
+    updates_json: &str,
+) -> PyResult<String> {
+    channels::advance_superstep(state_json, reducers_json, updates_json)
+        .map_err(pyo3::exceptions::PyValueError::new_err)
+}
+
 /// Plan BSP supersteps for the given nodes and edges.
 #[pyfunction]
 fn plan_supersteps(nodes: Vec<String>, edges: Vec<(String, String)>) -> Vec<Vec<String>> {
@@ -82,6 +93,7 @@ fn yaab_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(encode_checkpoint, m)?)?;
     m.add_function(wrap_pyfunction!(decode_checkpoint, m)?)?;
     m.add_function(wrap_pyfunction!(reduce_channel, m)?)?;
+    m.add_function(wrap_pyfunction!(advance_superstep, m)?)?;
     m.add_function(wrap_pyfunction!(plan_supersteps, m)?)?;
     m.add_function(wrap_pyfunction!(hash_event, m)?)?;
     m.add_function(wrap_pyfunction!(verify_chain, m)?)?;

@@ -40,7 +40,7 @@ Agent  ── the typed unit of work (model + instructions + tools + output type
 Runner ── executes agents: event stream, sessions, plugins, governance
 Graph  ── durable, checkpointed orchestration when you need explicit control
 Governance ── registry + lifecycle + guardrails + audit + compliance (opt-in by mode)
-yaab-core ── the Rust engine doing the heavy lifting (with a pure-Python fallback)
+yaab-core ── a Rust performance core for the compute-bound primitives (pure-Python fallback)
 ```
 
 Three orchestration paths compose over **one runtime**:
@@ -48,6 +48,18 @@ Three orchestration paths compose over **one runtime**:
 1. **Fast path** — `agent.run(prompt)`: a model-driven tool loop (Strands-style).
 2. **Graph path** — `StateGraph`: durable, checkpointed, HITL (LangGraph-style).
 3. **Optimizable path** — `Module.compile(...)`: tune at build time, freeze for prod (DSPy-style).
+
+### Python vs Rust — the honest split
+
+YAAB is **Python-first**. The whole developer API, the agent loop, the model
+layer, governance, and orchestration *logic* are Python (~95% of the code). The
+Rust core (`yaab-core`, ~325 lines) accelerates only the compute-bound
+primitives — vector search, checkpoint serialization, channel reducers, BSP
+superstep planning + the opt-in whole-superstep fold, and audit hashing — each
+with a pure-Python fallback. The I/O-bound agent loop stays in Python on purpose
+(the model/tool network calls dominate, not the loop). The durable graph also
+exposes an explicit `compile(engine="rust"|"python"|"auto")` switch. See
+[Graph › Choosing the engine](graph.md#choosing-the-engine-python-vs-rust).
 
 ## Install
 

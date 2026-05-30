@@ -126,10 +126,36 @@ class StateGraph:
         self.channels[key] = channel
         return self
 
-    def compile(self, checkpointer: Optional[Checkpointer] = None) -> "CompiledGraph":
+    def compile(
+        self,
+        checkpointer: Optional[Checkpointer] = None,
+        *,
+        engine: str = "auto",
+    ) -> "CompiledGraph":
+        """Compile the graph to an executable form.
+
+        ``engine`` selects how a superstep's state is advanced:
+
+        * ``"python"`` — the Python engine (applies node updates sequentially);
+        * ``"rust"``   — offload the whole-superstep state fold to ``yaab-core``
+          (requires the compiled extension; raises if unavailable);
+        * ``"auto"``   — use Rust when the extension is present, else Python.
+
+        Both engines produce identical results; the Rust engine reduces an
+        entire superstep in one native call (one cross-language hop per
+        superstep instead of one per key).
+        """
         if self.entry is None:
             raise YaabError("graph has no entry point; call set_entry_point or add_edge(START, ...)")
-        # Plan supersteps via the Rust core (informational / parallel grouping).
+        if engine not in ("auto", "python", "rust"):
+            raise YaabError(f"unknown engine {engine!r}; use 'auto', 'python', or 'rust'")
+        if engine == "rust" and not _core.RUST:
+            raise YaabError(
+                "engine='rust' requires the yaab-core extension; build it with "
+                "`maturin develop -m yaab-core/Cargo.toml --release`, or use engine='auto'."
+            )
+        resolved = engine if engine != "auto" else ("rust" if _core.RUST else "python")
+        # Plan supersteps via the core (informational / parallel grouping).
         edge_pairs = [
             (s, d)
             for s, dsts in self.edges.items()
@@ -137,18 +163,26 @@ class StateGraph:
             if s not in (START, END) and d not in (START, END)
         ]
         supersteps = _core.plan_supersteps(list(self.nodes.keys()), edge_pairs)
-        return CompiledGraph(self, checkpointer or MemorySaver(), supersteps)
+        return CompiledGraph(self, checkpointer or MemorySaver(), supersteps, engine=resolved)
 
 
 class CompiledGraph:
     """An executable graph with checkpointing and HITL resume."""
 
     def __init__(
-        self, graph: StateGraph, checkpointer: Checkpointer, supersteps: list[list[str]]
+        self,
+        graph: StateGraph,
+        checkpointer: Checkpointer,
+        supersteps: list[list[str]],
+        *,
+        engine: str = "python",
     ) -> None:
         self.graph = graph
         self.checkpointer = checkpointer
         self.supersteps = supersteps
+        #: "python" or "rust" — which superstep state-advancement engine is active.
+        self.engine = engine
+        self._reducers = {k: ch.reducer for k, ch in graph.channels.items()}
 
     def _init_state(self, inputs: dict[str, Any]) -> dict[str, Any]:
         state: dict[str, Any] = {k: ch.default for k, ch in self.graph.channels.items()}
@@ -156,6 +190,7 @@ class CompiledGraph:
         return state
 
     def _apply(self, state: dict[str, Any], updates: dict[str, Any]) -> None:
+        """Apply a single node's updates to ``state`` (Python engine path)."""
         for key, value in updates.items():
             channel = self.graph.channels.get(key)
             if channel is None:
@@ -163,6 +198,10 @@ class CompiledGraph:
             else:
                 current = state.get(key, channel.default)
                 state[key] = _core.reduce_channel(channel.reducer, current, value)
+
+    def _advance(self, state: dict[str, Any], updates: list[dict[str, Any]]) -> dict[str, Any]:
+        """Fold a whole superstep's updates into a new state (Rust engine path)."""
+        return _core.advance_superstep(state, self._reducers, updates)
 
     def _successors(self, node: str, state: dict[str, Any]) -> list[str]:
         if node in self.graph.conditional:
@@ -200,6 +239,8 @@ class CompiledGraph:
                 break
 
             next_frontier: list[str] = []
+            batch: list[dict[str, Any]] = []  # collected updates for the Rust barrier
+            superstep_base = dict(state)  # state at the superstep barrier (Rust fold input)
             for node in active:
                 fn = self.graph.nodes[node]
                 ctx = GraphContext(thread_id, deps, resume=resume_for_first)
@@ -217,12 +258,23 @@ class CompiledGraph:
                         state=state, interrupted=True, interrupt_value=itr.value, steps=step
                     )
                 if updates:
-                    self._apply(state, updates)
+                    if self.engine == "rust":
+                        # Defer to the barrier so the whole superstep folds in
+                        # one native call; routing still sees committed state
+                        # because planned supersteps hold only independent nodes.
+                        batch.append(updates)
+                        self._apply(state, updates)  # keep routing inputs current
+                    else:
+                        self._apply(state, updates)
                 for succ in self._successors(node, state):
                     if succ == END:
                         continue
                     if succ not in next_frontier:
                         next_frontier.append(succ)
+
+            if self.engine == "rust" and batch:
+                # Recompute the authoritative state for this superstep in Rust.
+                state = self._advance(superstep_base, batch)
 
             step += 1
             self.checkpointer.put(thread_id, step, {"state": state, "frontier": next_frontier})

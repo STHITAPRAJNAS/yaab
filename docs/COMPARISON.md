@@ -62,10 +62,14 @@ YAAB is categorically ahead: **no incumbent ships any of it.**
 - **Governance is a runtime concern, not a doc.** Registry gate + guardrails +
   hash-chained audit run *inside* the loop, toggled by mode. This is the reason a
   regulated bank adopts YAAB.
-- **Rust does the heavy lifting.** Scheduling, checkpoint serialization, channel
-  reducers, vector similarity, and audit hashing live in `yaab-core`; the Python
-  layer is a thin, friendly wrapper. A pure-Python fallback keeps it installable
-  anywhere (`YAAB_NO_RUST=1` exercises it in CI).
+- **A Rust core accelerates the hot paths — honestly scoped.** ~95% of YAAB is
+  Python (the entire API, orchestration logic, and governance); `yaab-core`
+  (~325 lines of Rust) holds the compute-bound primitives — vector similarity,
+  checkpoint serialization, channel reducers, BSP superstep planning + the
+  opt-in whole-superstep state fold, and audit hashing. The I/O-bound agent loop
+  stays in Python (the network is the bottleneck, not the loop). A pure-Python
+  fallback keeps everything installable anywhere (`YAAB_NO_RUST=1` exercises it
+  in CI), and the durable graph offers `engine="rust"|"python"|"auto"`.
 - **Serve + interop out of the box.** `fastapi_server_app` exposes native, A2A, and
   discovery endpoints with pluggable auth — a single function from local to cloud.
 
