@@ -167,6 +167,27 @@ class Agent(Generic[Deps, Output]):
             self, prompt, deps=deps, session_id=session_id, identity=identity
         )
 
+    def stream_structured(
+        self,
+        prompt: Any,
+        *,
+        output_type: Optional[type] = None,
+        deps: Deps = None,  # type: ignore[assignment]
+        identity: Optional[str] = None,
+    ) -> Any:
+        """Stream partial typed objects as the model generates JSON.
+
+        Yields successive partial instances of ``output_type`` (defaults to the
+        agent's ``output_type``); the final yield is the fully-validated object::
+
+            async for partial in agent.stream_structured("...", output_type=Weather):
+                render(partial)
+        """
+        from .streaming import stream_structured as _stream_structured
+
+        ot = output_type or self.output_type
+        return _stream_structured(self, prompt, output_type=ot, deps=deps, identity=identity)
+
     def run_sync(
         self,
         prompt: str,

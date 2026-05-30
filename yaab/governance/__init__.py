@@ -20,6 +20,11 @@ from .eval import (
     Experiment,
     ExperimentResult,
     FunctionEvaluator,
+    JSONMatch,
+    Levenshtein,
+    LLMJudge,
+    NumericTolerance,
+    Regex,
 )
 from .lifecycle import EvidenceArtifact, LifecycleManager, LifecycleState
 from .monitor import DriftMonitor, DriftReport, TrustReport, TrustScorer
@@ -95,6 +100,11 @@ __all__ = [
     "ExactMatch",
     "Contains",
     "FunctionEvaluator",
+    "Regex",
+    "JSONMatch",
+    "NumericTolerance",
+    "Levenshtein",
+    "LLMJudge",
     # monitoring
     "DriftMonitor",
     "DriftReport",

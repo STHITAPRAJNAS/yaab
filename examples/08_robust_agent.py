@@ -8,7 +8,7 @@ from yaab import Agent, Runner, SummarizeHistory, agent_from_dict
 from yaab.governance import AuditLog, ToolApprovalPlugin
 from yaab.models.resilient import CircuitBreaker, RateLimiter, ResilientModel
 from yaab.models.test_model import TestModel
-from yaab.tools.builtin import calculator, current_time, default_toolset
+from yaab.tools.builtin import calculator, default_toolset
 
 
 async def main():

@@ -24,7 +24,8 @@ from .chunking import (
 )
 from .eval import FaithfulnessEvaluator, context_relevance, faithfulness
 from .knowledge import KnowledgeBase
-from .rerank import KeywordReranker, LLMReranker, Reranker
+from .loaders import load, load_bytes, load_directory
+from .rerank import CrossEncoderReranker, KeywordReranker, LLMReranker, Reranker
 from .store import InMemoryVectorStore, PgVectorStore, VectorStore
 from .types import Chunk, Document, RetrievedChunk
 
@@ -42,9 +43,23 @@ __all__ = [
     "Reranker",
     "KeywordReranker",
     "LLMReranker",
+    "CrossEncoderReranker",
     "KnowledgeBase",
+    # document loaders
+    "load",
+    "load_directory",
+    "load_bytes",
     # RAG evaluation (groundedness / faithfulness)
     "faithfulness",
     "context_relevance",
     "FaithfulnessEvaluator",
 ]
+
+
+def __getattr__(name: str):
+    # Lazy access to external stores (avoid importing chromadb/qdrant eagerly).
+    if name in ("ChromaVectorStore", "QdrantVectorStore"):
+        from . import stores_external
+
+        return getattr(stores_external, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

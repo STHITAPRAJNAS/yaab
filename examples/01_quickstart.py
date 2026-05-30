@@ -6,7 +6,7 @@ string like "openai/gpt-4o" to talk to a real provider.
 
 from pydantic import BaseModel
 
-from yaab import Agent, RunContext, tool
+from yaab import Agent, tool
 from yaab.testing import TestModel
 
 

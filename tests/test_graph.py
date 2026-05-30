@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from yaab.graph import END, START, Channel, MemorySaver, StateGraph
 

@@ -25,6 +25,7 @@ from __future__ import annotations
 from . import _core
 from .agent import Agent
 from .artifacts.manager import ArtifactManager
+from .batch import batch_embed, batch_map, batch_run
 from .content import Content, Part, PartKind
 from .extensions import available as available_components
 from .extensions import get as get_component
@@ -38,6 +39,7 @@ from .sessions.manager import SessionManager
 from .skills import Skill
 from .state import State
 from .config import agent_from_dict, agent_from_yaml
+from .eval import available_metrics, get_metric, register_metric
 from .context import KeepAll, SummarizeHistory, TruncateMessages
 from .exceptions import (
     ApprovalRequired,
@@ -83,6 +85,10 @@ __all__ = [
     "register_component",
     "get_component",
     "available_components",
+    # eval metrics (built-in + RAGAS/DeepEval adapters)
+    "register_metric",
+    "get_metric",
+    "available_metrics",
     # reusable building blocks
     "Skill",
     "PromptRegistry",
@@ -99,6 +105,10 @@ __all__ = [
     # declarative config
     "agent_from_dict",
     "agent_from_yaml",
+    # batch / offline inference
+    "batch_run",
+    "batch_map",
+    "batch_embed",
     "RunContext",
     "RunResult",
     "Message",
