@@ -75,6 +75,7 @@ class LiteLLMModel:
         *,
         tools: Optional[list[dict[str, Any]]] = None,
         output_schema: Optional[dict[str, Any]] = None,
+        tool_choice: Optional[Any] = None,
         **kwargs: Any,
     ) -> ModelResponse:
         litellm = _require_litellm()
@@ -82,6 +83,8 @@ class LiteLLMModel:
         extra: dict[str, Any] = self._params(**kwargs)
         if tools:
             extra["tools"] = tools
+            if tool_choice is not None:
+                extra["tool_choice"] = tool_choice
         if output_schema is not None:
             # LiteLLM normalizes structured outputs across providers.
             extra["response_format"] = {
@@ -128,12 +131,16 @@ class LiteLLMModel:
             except Exception:  # noqa: BLE001 - cost is best-effort
                 usage.cost_usd = 0.0
 
+        # Capture a reasoning/thinking trace when the provider exposes one.
+        reasoning = getattr(msg, "reasoning_content", None) or getattr(msg, "reasoning", None)
+
         return ModelResponse(
             content=msg.content or "",
             tool_calls=tool_calls,
             finish_reason=choice.finish_reason or "stop",
             usage=usage,
             model=model,
+            reasoning=reasoning,
         )
 
     async def stream(

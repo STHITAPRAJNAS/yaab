@@ -75,3 +75,15 @@ frozen = qa.freeze()         # snapshot the current module as an artifact
 
 Store the `artifact_id` on the agent's registry card to tie the deployed prompt
 to its governance record.
+
+## Inspect the compiled prompt
+
+See exactly what a module will send — instructions + few-shot demos + inputs —
+without calling the model:
+
+```python
+print(qa.inspect_prompt(question="What is the capital of France?"))
+```
+
+Useful for debugging an optimized program and for attaching the rendered prompt
+to an audit/validation record.

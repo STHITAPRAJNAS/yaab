@@ -34,7 +34,7 @@ Event types (`yaab.EventType`):
 |---|---|---|
 | `RUN_START` | run begins | `prompt` |
 | `USER_MESSAGE` | user turn recorded | `content` |
-| `MODEL_DELTA` | token delta (when streaming) | `delta` |
+| `MODEL_DELTA` | token delta, or a reasoning trace | `delta` / `reasoning` |
 | `MODEL_RESPONSE` | a model reply | `content`, `tool_calls` |
 | `TOOL_CALL` | a tool is invoked | `name`, `arguments` |
 | `TOOL_RESULT` | a tool returns | `name`, `result` |
@@ -44,6 +44,13 @@ Event types (`yaab.EventType`):
 | `ERROR` | run failed | `error` |
 
 The non-streaming `run`/`run_sync` collect these into `result.events`.
+
+### Reasoning traces
+
+When a provider exposes a reasoning/thinking trace (o-series, DeepSeek R1,
+Anthropic extended thinking), it is captured on `ModelResponse.reasoning` and
+emitted as a `MODEL_DELTA` event carrying a `reasoning` payload — so you can
+surface the model's thinking without parsing it out of the answer.
 
 ## Streaming over HTTP (SSE)
 

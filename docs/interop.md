@@ -47,6 +47,35 @@ from yaab.tools.mcp import mcp_toolset
 tools = mcp_toolset(descriptors, caller)   # caller: async (name, args) -> result
 ```
 
+### Resources & prompts (beyond tools)
+
+The client also speaks MCP resources and prompts:
+
+```python
+resources = await client.list_resources()
+text = await client.read_resource("file:///docs/policy.md")
+
+prompts = await client.list_prompts()
+rendered = await client.get_prompt("summarize", {"style": "brief"})
+```
+
+### Serve YAAB tools as an MCP server
+
+Expose your agent's tools to other MCP clients (IDEs, other agents) with
+`MCPServer`. It's transport-agnostic — `handle(request)` answers one JSON-RPC
+message; wire it to stdio or HTTP.
+
+```python
+from yaab.tools.mcp_server import MCPServer
+
+server = MCPServer.from_agent(agent)        # or MCPServer([tool_a, tool_b])
+response = await server.handle(json_rpc_request)
+```
+
+Because both ends are YAAB, a `MCPServer` can be driven directly by an
+`MCPClient` over an in-process transport — handy for testing and for embedding
+one agent's tools into another.
+
 ## A2A (Agent-to-Agent)
 
 ### Serve an agent as an A2A endpoint
@@ -83,6 +112,32 @@ result = await remote.run("Refund order 123")
 local = Agent("concierge", model="openai/gpt-4o", tools=[remote])
 ```
 
-Authentication uses a bearer token (`auth_token`); for OAuth 2.1 token exchange,
-wire your IdP and pass the resulting access token. See [Serving](serving.md) for
-the server-side auth schemes.
+Authentication uses a static bearer token (`auth_token`) or, for OAuth 2.1, a
+`token_provider` callable that returns a fresh access token per request (wire it
+to your IdP's token exchange/refresh):
+
+```python
+remote = RemoteAgent("https://billing", token_provider=lambda: idp.access_token())
+```
+
+### Long-running tasks: poll & stream
+
+The server stores submitted tasks so clients can poll by id, and exposes a
+streaming variant that emits `working` → `completed` status events:
+
+```python
+result = await remote.run("generate the report")
+task = await remote.get_task(result.run_id)     # poll: {"status": {"state": "completed"}, ...}
+```
+
+```
+POST /a2a/tasks         # submit, returns the completed task
+GET  /a2a/tasks/{id}    # poll a task by id
+POST /a2a/tasks/stream  # SSE: working → completed task-status events
+```
+
+### Hand back to the orchestrator
+
+In a [`Swarm`](multi-agent.md#swarm-autonomous-hand-off), every member gets a
+`handoff_to_<peer>` tool for *each* peer — including the entry/orchestrator
+agent — so a specialist can return control once its part is done.

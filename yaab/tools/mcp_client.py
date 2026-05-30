@@ -124,6 +124,35 @@ class MCPClient:
 
         return mcp_toolset(descriptors, caller)
 
+    # --- resources (MCP beyond tools; Strands #151) --------------------
+    async def list_resources(self) -> list[dict[str, Any]]:
+        """List the server's resources (uri + metadata descriptors)."""
+        if not self._initialized:
+            await self.start()
+        result = await self._call("resources/list", {})
+        return result.get("resources", []) if isinstance(result, dict) else []
+
+    async def read_resource(self, uri: str) -> Any:
+        """Read a resource by URI; returns flattened text when possible."""
+        out = await self._call("resources/read", {"uri": uri})
+        if isinstance(out, dict) and "contents" in out:
+            texts = [c.get("text", "") for c in out["contents"] if "text" in c]
+            if texts:
+                return "\n".join(texts)
+        return out
+
+    # --- prompts (MCP beyond tools) ------------------------------------
+    async def list_prompts(self) -> list[dict[str, Any]]:
+        """List the server's prompt templates."""
+        if not self._initialized:
+            await self.start()
+        result = await self._call("prompts/list", {})
+        return result.get("prompts", []) if isinstance(result, dict) else []
+
+    async def get_prompt(self, name: str, arguments: Optional[dict] = None) -> Any:
+        """Fetch a rendered prompt by name."""
+        return await self._call("prompts/get", {"name": name, "arguments": arguments or {}})
+
 
 def _flatten_content(result: Any) -> Any:
     """Reduce an MCP ``tools/call`` result to plain text where possible."""

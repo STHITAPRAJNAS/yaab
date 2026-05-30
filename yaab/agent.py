@@ -40,6 +40,7 @@ class Agent(Generic[Deps, Output]):
         registry_id: Optional[str] = None,
         max_steps: int = 8,
         output_retries: int = 2,
+        tool_choice: Optional[Any] = None,
         runner: Optional[Any] = None,
         instrument: bool = True,
     ) -> None:
@@ -53,6 +54,9 @@ class Agent(Generic[Deps, Output]):
         self.registry_id = registry_id
         self.max_steps = max_steps
         self.output_retries = output_retries
+        #: Tool-choice policy passed to the model: "auto" | "required" | "none" |
+        #: a tool name (forces that function) | an OpenAI tool_choice dict.
+        self.tool_choice = tool_choice
         self.instrument = instrument
         self.permissions: list[str] = []
 
@@ -119,10 +123,25 @@ class Agent(Generic[Deps, Output]):
         deps: Deps = None,  # type: ignore[assignment]
         session_id: Optional[str] = None,
         identity: Optional[str] = None,
+        usage_limits: Optional[Any] = None,
+        cancellation: Optional[Any] = None,
+        timeout: Optional[float] = None,
     ) -> RunResult[Output]:
-        """Run the agent's model-driven loop and return a typed result."""
+        """Run the agent's model-driven loop and return a typed result.
+
+        ``usage_limits`` (:class:`~yaab.limits.UsageLimits`) caps tokens/requests/
+        tool calls; ``cancellation`` (:class:`~yaab.limits.CancellationToken`) and
+        ``timeout`` (seconds) stop the run cooperatively between steps.
+        """
         return await self._get_runner().run(
-            self, prompt, deps=deps, session_id=session_id, identity=identity
+            self,
+            prompt,
+            deps=deps,
+            session_id=session_id,
+            identity=identity,
+            usage_limits=usage_limits,
+            cancellation=cancellation,
+            timeout=timeout,
         )
 
     def stream(
@@ -151,10 +170,21 @@ class Agent(Generic[Deps, Output]):
         deps: Deps = None,  # type: ignore[assignment]
         session_id: Optional[str] = None,
         identity: Optional[str] = None,
+        usage_limits: Optional[Any] = None,
+        cancellation: Optional[Any] = None,
+        timeout: Optional[float] = None,
     ) -> RunResult[Output]:
         """Synchronous convenience wrapper around :meth:`run`."""
         return asyncio.run(
-            self.run(prompt, deps=deps, session_id=session_id, identity=identity)
+            self.run(
+                prompt,
+                deps=deps,
+                session_id=session_id,
+                identity=identity,
+                usage_limits=usage_limits,
+                cancellation=cancellation,
+                timeout=timeout,
+            )
         )
 
     def __repr__(self) -> str:

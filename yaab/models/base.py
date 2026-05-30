@@ -23,6 +23,9 @@ class ModelResponse(BaseModel):
     finish_reason: str = "stop"
     usage: Usage = Field(default_factory=Usage)
     model: str = ""
+    #: Reasoning / thinking trace, when the provider exposes one (o-series, R1,
+    #: Anthropic extended thinking, ...). Captured into a thought Part by the runner.
+    reasoning: Optional[str] = None
     raw: Optional[dict[str, Any]] = None
 
     @property
@@ -50,9 +53,14 @@ class ModelProvider(Protocol):
         *,
         tools: Optional[list[dict[str, Any]]] = None,
         output_schema: Optional[dict[str, Any]] = None,
+        tool_choice: Optional[Any] = None,
         **kwargs: Any,
     ) -> ModelResponse:
-        """Return a single completion for ``messages``."""
+        """Return a single completion for ``messages``.
+
+        ``tool_choice`` follows the OpenAI convention: ``"auto"``, ``"required"``,
+        ``"none"``, or a ``{"type": "function", "function": {"name": ...}}`` dict.
+        """
         ...
 
     def stream(

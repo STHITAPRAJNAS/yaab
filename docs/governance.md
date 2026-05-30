@@ -78,6 +78,40 @@ gov.policy = PolicyEngine([
 Bring your own by implementing the `GuardrailScanner` protocol (adapters for
 LLM Guard / NeMo Guardrails fit here).
 
+## Tool authorization & idempotency
+
+Authorize a tool call *before* it runs, and dedupe side-effecting calls — the
+two most-requested governance seams across the ecosystem. Both are Runner
+plugins, so they compose with guardrails and audit.
+
+```python
+from yaab import Runner
+from yaab.governance import (
+    ToolAuthorizationPlugin, RBACAuthorizer, CallableAuthorizer, IdempotencyPlugin,
+)
+
+authz = ToolAuthorizationPlugin(
+    [
+        RBACAuthorizer(
+            deny=["delete_account"],                       # never allowed
+            require_capability={"update_inventory": "write"},  # needs ctx capability
+        ),
+        CallableAuthorizer(lambda tool, args, ctx: args.get("amount", 0) <= 10_000),
+    ],
+    audit=gov.audit,
+    hard=False,   # soft: deny is fed back to the model; hard=True raises PolicyViolation
+)
+
+# Don't charge/email/trade twice if the model repeats a call:
+idem = IdempotencyPlugin(tools=["charge"], key_fn=lambda t, a: a["order_id"])
+
+runner = Runner(plugins=[authz, idem])
+```
+
+A soft denial returns an error string to the model (so the agent can adapt); a
+hard denial raises `PolicyViolation`. Every non-allow decision is audited. The
+caller's capabilities come from `ctx.state["capabilities"]`.
+
 ## Audit log & lineage
 
 Append-only, tamper-evident (hash-chained in Rust). Every run, model call, tool
@@ -108,6 +142,27 @@ ds = Dataset(name="qa", cases=[Case(name="c1", inputs="2+2?", expected="4")])
 exp = Experiment(ds, [ExactMatch()])
 report = await exp.run(lambda x: str(eval(x.rstrip("?"))))
 print(report.mean_score, report.aggregate)
+```
+
+## Drift detection & trust scoring
+
+Production agents degrade quietly. The monitor turns the eval + audit substrate
+into an ongoing health signal — no new instrumentation.
+
+```python
+from yaab.governance import DriftMonitor, TrustScorer
+
+# Feed periodic eval scores; flag when recent performance drops below baseline.
+drift = DriftMonitor(baseline_window=5, recent_window=5, threshold=0.1)
+for score in nightly_eval_scores:
+    drift.record_score("kyc-bot", score)
+report = drift.report("kyc-bot")
+if report.drifted:
+    alert(f"{report.agent_id} drifted: {report.baseline:.2f} -> {report.recent:.2f}")
+
+# Blend eval performance, guardrail blocks, and errors into one 0-1 trust score.
+trust = TrustScorer().score("kyc-bot", gov.audit, eval_score=report.recent)
+print(trust.score, trust.components)   # {'performance':…, 'safety':…, 'reliability':…}
 ```
 
 ## Compliance mappers

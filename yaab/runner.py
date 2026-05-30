@@ -13,6 +13,7 @@ layers.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, AsyncIterator, Optional
 
 from pydantic import TypeAdapter, ValidationError
@@ -21,6 +22,7 @@ from .exceptions import MaxStepsExceeded, ToolError
 from .governance.audit import AuditKind
 from .governance.policy import Stage
 from .governance.service import GovernanceService
+from .limits import CancellationToken, UsageLimits
 from .models.base import ModelResponse
 from .plugins import Plugin
 from .sessions.base import SessionService
@@ -68,10 +70,20 @@ class Runner:
         deps: Any = None,
         session_id: Optional[str] = None,
         identity: Optional[str] = None,
+        usage_limits: Optional["UsageLimits"] = None,
+        cancellation: Optional["CancellationToken"] = None,
+        timeout: Optional[float] = None,
     ) -> RunResult[Any]:
         events: list[Event] = []
         async for event in self.run_stream(
-            agent, prompt, deps=deps, session_id=session_id, identity=identity
+            agent,
+            prompt,
+            deps=deps,
+            session_id=session_id,
+            identity=identity,
+            usage_limits=usage_limits,
+            cancellation=cancellation,
+            timeout=timeout,
         ):
             events.append(event)
         final = events[-1]
@@ -95,12 +107,29 @@ class Runner:
         deps: Any = None,
         session_id: Optional[str] = None,
         identity: Optional[str] = None,
+        usage_limits: Optional["UsageLimits"] = None,
+        cancellation: Optional["CancellationToken"] = None,
+        timeout: Optional[float] = None,
     ) -> AsyncIterator[Event]:
         """Execute the loop, yielding a typed :class:`Event` per step."""
         ctx: RunContext = RunContext(
             deps=deps, session_id=session_id, identity=identity, usage=Usage()
         )
         gov = self.governance
+
+        # A timeout is just a deadline on the cancellation token.
+        if timeout is not None:
+            if cancellation is None:
+                cancellation = CancellationToken.with_timeout(timeout)
+            elif cancellation.deadline is None:
+                cancellation.deadline = time.monotonic() + timeout
+        tool_counts: dict[str, int] = {}
+
+        def check_controls() -> None:
+            if cancellation is not None:
+                cancellation.raise_if_cancelled()
+            if usage_limits is not None:
+                usage_limits.check_usage(ctx.usage)
 
         def emit(etype: EventType, **payload: Any) -> Event:
             return Event(type=etype, agent=agent.name, run_id=ctx.run_id, payload=payload)
@@ -136,14 +165,21 @@ class Runner:
 
             tool_schemas = [t.schema() for t in agent.tools] or None
             output_adapter, output_schema = _output_spec(agent.output_type)
+            tool_choice = _normalize_tool_choice(getattr(agent, "tool_choice", None), tool_schemas)
 
             final_output: Any = None
             produced = False
 
             for _step in range(agent.max_steps):
+                check_controls()  # cancellation / timeout / usage caps
                 response = await self._call_model(
-                    agent, ctx, messages, tool_schemas, output_schema
+                    agent, ctx, messages, tool_schemas, output_schema, tool_choice
                 )
+                # Re-check usage now that this request's tokens are counted.
+                if usage_limits is not None:
+                    usage_limits.check_usage(ctx.usage)
+                if response.reasoning:
+                    yield emit(EventType.MODEL_DELTA, reasoning=response.reasoning)
                 yield emit(
                     EventType.MODEL_RESPONSE,
                     content=response.content,
@@ -156,6 +192,11 @@ class Runner:
                                 tool_calls=response.tool_calls)
                     )
                     for tc in response.tool_calls:
+                        if cancellation is not None:
+                            cancellation.raise_if_cancelled()
+                        tool_counts[tc.name] = tool_counts.get(tc.name, 0) + 1
+                        if usage_limits is not None:
+                            usage_limits.check_tool_call(tc.name, tool_counts)
                         yield emit(EventType.TOOL_CALL, name=tc.name, arguments=tc.arguments)
                         result_value = await self._run_tool(agent, ctx, tc)
                         yield emit(EventType.TOOL_RESULT, name=tc.name, result=_safe(result_value))
@@ -299,6 +340,7 @@ class Runner:
         messages: list[Message],
         tool_schemas: Optional[list[dict[str, Any]]],
         output_schema: Optional[dict[str, Any]],
+        tool_choice: Optional[Any] = None,
     ) -> ModelResponse:
         for plugin in self.plugins:
             short = await plugin.before_model(ctx, agent.name, messages)
@@ -306,7 +348,7 @@ class Runner:
                 ctx.usage.add(short.usage)
                 return short
         response = await agent.model.complete(
-            messages, tools=tool_schemas, output_schema=output_schema
+            messages, tools=tool_schemas, output_schema=output_schema, tool_choice=tool_choice
         )
         ctx.usage.add(response.usage)
         for plugin in self.plugins:
@@ -316,6 +358,11 @@ class Runner:
         return response
 
     async def _run_tool(self, agent: Any, ctx: RunContext, tc: ToolCall) -> Any:
+        # Let plugins repair/coerce raw args before validation/execution.
+        for plugin in self.plugins:
+            repaired = await plugin.repair_tool_args(ctx, agent.name, tc.name, tc.arguments)
+            if repaired is not None:
+                tc.arguments = repaired
         for plugin in self.plugins:
             short = await plugin.before_tool(ctx, agent.name, tc.name, tc.arguments)
             if short is not None:
@@ -362,6 +409,25 @@ def _user_message(text: str, original: Any = None) -> Message:
             role=Role.USER, content=text, content_parts=original.to_provider_content()
         )
     return Message(role=Role.USER, content=text)
+
+
+def _normalize_tool_choice(choice: Any, tool_schemas: Optional[list[dict[str, Any]]]) -> Any:
+    """Normalize a tool_choice into the provider form.
+
+    Passes through ``None``/``"auto"``/``"required"``/``"none"`` and dicts. A bare
+    string naming one of the agent's tools is expanded to the OpenAI
+    ``{"type": "function", "function": {"name": ...}}`` form. Ignored entirely
+    when the agent has no tools.
+    """
+    if choice is None or not tool_schemas:
+        return None if not tool_schemas else choice
+    if isinstance(choice, dict) or choice in ("auto", "required", "none"):
+        return choice
+    if isinstance(choice, str):
+        known = {s["function"]["name"] for s in tool_schemas if "function" in s}
+        if choice in known:
+            return {"type": "function", "function": {"name": choice}}
+    return choice
 
 
 def _output_spec(output_type: type) -> tuple[Optional[TypeAdapter], Optional[dict[str, Any]]]:

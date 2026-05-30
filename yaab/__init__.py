@@ -29,8 +29,9 @@ from .content import Content, Part, PartKind
 from .extensions import available as available_components
 from .extensions import get as get_component
 from .extensions import register as register_component
+from .limits import CancellationToken, UsageLimits
 from .memory.manager import MemoryManager
-from .multiagent import LoopAgent, ParallelAgent, SequentialAgent, Swarm
+from .multiagent import LoopAgent, MapAgent, ParallelAgent, SequentialAgent, Swarm
 from .prompts import PromptRegistry
 from .sessions.manager import SessionManager
 from .skills import Skill
@@ -40,7 +41,9 @@ from .exceptions import (
     ModelError,
     OutputValidationError,
     PolicyViolation,
+    RunCancelled,
     ToolError,
+    UsageLimitExceeded,
     YaabError,
 )
 from .runner import Runner
@@ -63,6 +66,7 @@ __all__ = [
     # multi-agent workflow patterns
     "SequentialAgent",
     "ParallelAgent",
+    "MapAgent",
     "LoopAgent",
     "Swarm",
     # managers (ADK-style)
@@ -76,6 +80,9 @@ __all__ = [
     # reusable building blocks
     "Skill",
     "PromptRegistry",
+    # run controls
+    "UsageLimits",
+    "CancellationToken",
     "RunContext",
     "RunResult",
     "Message",
@@ -91,6 +98,8 @@ __all__ = [
     "ToolError",
     "OutputValidationError",
     "MaxStepsExceeded",
+    "UsageLimitExceeded",
+    "RunCancelled",
     "GovernanceError",
     "PolicyViolation",
 ]

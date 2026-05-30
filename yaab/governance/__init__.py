@@ -3,6 +3,14 @@
 from __future__ import annotations
 
 from .audit import AuditEvent, AuditKind, AuditLog, AuditSink, SQLiteAuditSink
+from .authorization import (
+    CallableAuthorizer,
+    Decision,
+    IdempotencyPlugin,
+    RBACAuthorizer,
+    ToolAuthorizationPlugin,
+    ToolAuthorizer,
+)
 from .eval import (
     Case,
     Contains,
@@ -13,6 +21,7 @@ from .eval import (
     FunctionEvaluator,
 )
 from .lifecycle import EvidenceArtifact, LifecycleManager, LifecycleState
+from .monitor import DriftMonitor, DriftReport, TrustReport, TrustScorer
 from .policy import (
     Action,
     GuardrailResult,
@@ -63,6 +72,13 @@ __all__ = [
     "SecretScanner",
     "TopicScanner",
     "SystemPromptLeakScanner",
+    # authorization & idempotency
+    "ToolAuthorizationPlugin",
+    "ToolAuthorizer",
+    "RBACAuthorizer",
+    "CallableAuthorizer",
+    "Decision",
+    "IdempotencyPlugin",
     # audit
     "AuditLog",
     "AuditEvent",
@@ -77,4 +93,9 @@ __all__ = [
     "ExactMatch",
     "Contains",
     "FunctionEvaluator",
+    # monitoring
+    "DriftMonitor",
+    "DriftReport",
+    "TrustScorer",
+    "TrustReport",
 ]

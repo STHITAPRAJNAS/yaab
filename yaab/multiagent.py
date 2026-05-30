@@ -47,12 +47,24 @@ class _WorkflowBase:
 
 
 class SequentialAgent(_WorkflowBase):
-    """Run sub-agents in sequence, feeding each output into the next prompt."""
+    """Run sub-agents in sequence, feeding each output into the next prompt.
 
-    def __init__(self, name: str, agents: list[Any], *, pipe_output: bool = True) -> None:
+    ``stop_when`` (optional) receives each step's output and returns ``True`` to
+    stop the pipeline early — the conditional early-stop ADK #3405 asks for.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        agents: list[Any],
+        *,
+        pipe_output: bool = True,
+        stop_when: Optional[Callable[[Any], bool]] = None,
+    ) -> None:
         self.name = name
         self.agents = agents
         self.pipe_output = pipe_output
+        self.stop_when = stop_when
         self.instructions = f"Sequential pipeline of {len(agents)} agents."
 
     async def run(self, prompt: str, *, deps: Any = None, session_id=None, identity=None):
@@ -64,6 +76,8 @@ class SequentialAgent(_WorkflowBase):
                 current_input, deps=deps, session_id=session_id, identity=identity
             )
             usage.add(last.usage)
+            if self.stop_when and self.stop_when(last.output):
+                break
             if self.pipe_output:
                 current_input = _as_text(last.output)
         return RunResult(output=last.output if last else None, usage=usage, run_id=self.name)
@@ -87,6 +101,61 @@ class ParallelAgent(_WorkflowBase):
             usage.add(result.usage)
             output[agent.name] = result.output
         return RunResult(output=output, usage=usage, run_id=self.name)
+
+
+class MapAgent(_WorkflowBase):
+    """Fan one sub-agent out across many inputs concurrently (ADK #1828).
+
+    Given a list of prompts (or a function that derives them from the incoming
+    prompt), run the same agent on each in parallel and return the list of
+    outputs. ``max_concurrency`` bounds simultaneous runs.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        agent: Any,
+        *,
+        map_inputs: Optional[Callable[[str], list[str]]] = None,
+        max_concurrency: int = 0,
+    ) -> None:
+        self.name = name
+        self.agent = agent
+        self.map_inputs = map_inputs
+        self.max_concurrency = max_concurrency
+        self.instructions = f"Map {agent.name} across N inputs."
+
+    async def run(
+        self,
+        prompt: str | list[str],
+        *,
+        deps: Any = None,
+        session_id=None,
+        identity=None,
+    ):
+        # Accept an explicit list of prompts, or derive them via map_inputs.
+        if isinstance(prompt, list):
+            inputs = prompt
+        elif self.map_inputs is not None:
+            inputs = self.map_inputs(prompt)
+        else:
+            inputs = [prompt]
+
+        sem = asyncio.Semaphore(self.max_concurrency) if self.max_concurrency > 0 else None
+
+        async def _one(p: str) -> RunResult:
+            if sem is not None:
+                async with sem:
+                    return await self.agent.run(p, deps=deps, identity=identity)
+            return await self.agent.run(p, deps=deps, identity=identity)
+
+        results = await asyncio.gather(*(_one(p) for p in inputs))
+        usage = Usage()
+        for r in results:
+            usage.add(r.usage)
+        return RunResult(
+            output=[r.output for r in results], usage=usage, run_id=self.name
+        )
 
 
 class LoopAgent(_WorkflowBase):
@@ -207,4 +276,11 @@ def _as_text(value: Any) -> str:
     return str(value)
 
 
-__all__ = ["SequentialAgent", "ParallelAgent", "LoopAgent", "Swarm", "SwarmState"]
+__all__ = [
+    "SequentialAgent",
+    "ParallelAgent",
+    "MapAgent",
+    "LoopAgent",
+    "Swarm",
+    "SwarmState",
+]
