@@ -20,7 +20,7 @@ registered under the ``metric`` component kind:
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from ..extensions import available as _available
 from ..extensions import get as _get

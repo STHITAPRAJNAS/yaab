@@ -34,7 +34,6 @@ async def test_a2a_task_poll_by_id():
 @pytest.mark.asyncio
 async def test_a2a_token_provider_used():
     pytest.importorskip("fastapi")
-    seen = {}
 
     async def transport(method, path, json):
         return {"name": "remote"}  # minimal card
