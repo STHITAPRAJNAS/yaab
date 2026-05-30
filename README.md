@@ -47,6 +47,10 @@ governance.
 | Prompt management + versioning | ✕ | ◑ | ✕ | ✕ | ✕ | **✓** |
 | Built-in RAG (provider-neutral) | ◑ cloud | ◑ cloud | ✕ | ◑ cloud | ◑ | **✓** |
 | RAG access control + citations + faithfulness | ✕ | ✕ | ✕ | ✕ | ✕ | **✓** |
+| Built-in tools + sandboxed code exec | ◑ | ✕ | ◑ | ◑ | ◑ | **✓** |
+| Eval (RAGAS / DeepEval adapters) | ◑ | ◑ | ◑ | ✕ | ◑ | **✓** |
+| AG-UI streaming + structured-output streaming | ✕ | ◑ | ◑ | ✕ | ◑ | **✓** |
+| Cloud backends (Aurora/pgvector/OpenSearch/Oracle/Chroma/Qdrant/Pinecone/Weaviate/Redis) | ◑ | ✕ | ◑ | ◑ | ◑ | **✓** |
 | **Agent registry + lifecycle FSM** | ✕ | ✕ | ✕ | ✕ | ✕ | **✓** |
 | **Guardrail / policy engine** | ◑ | ✕ | ◑ | ✕ | ◑ | **✓** |
 | **Tamper-evident audit + lineage** | ✕ | ✕ | ✕ | ✕ | ✕ | **✓** |
@@ -278,9 +282,54 @@ artifacts = ArtifactManager()
 await artifacts.save("report.pdf", data, session_id=s.id)   # auto-versioned
 ```
 
-Interop is first-class: import an **MCP** server's tools with `MCPClient`, and
-discover/delegate to remote agents over **A2A** with `RemoteAgent` (which is also
-a tool). See the docs below.
+Interop is first-class: import an **MCP** server's tools with `MCPClient` (or
+expose yours with `MCPServer`), and discover/delegate to remote agents over
+**A2A** with `RemoteAgent` (which is also a tool). See the docs below.
+
+## Built-in RAG (provider-neutral)
+
+A whole retrieval pipeline ships in the box — not delegated to a cloud service —
+with the governance pieces other SDKs lack:
+
+```python
+from yaab import Agent, KnowledgeBase
+from yaab.rag import load_directory
+
+kb = KnowledgeBase()                       # default: in-memory + Rust top-k
+kb.add(load_directory("./docs", glob="**/*.md"))   # pdf/html/csv/json loaders too
+agent = Agent("support", model="openai/gpt-4o", tools=[kb.as_tool()])
+```
+
+Per-user/document access control, source citations, dedup/incremental indexing,
+retrieval guardrails (context-poisoning defense), and faithfulness eval are all
+first-class. Swap the store for a cloud backend with one line — see below.
+
+## Batteries included
+
+Everything below is built in, extensible by `Protocol`, and selectable by name
+through the component registry — each integration is an optional extra:
+
+- **Built-in tools** — calculator, time, HTTP fetch, web search, and sandboxed
+  Python exec (subprocess by default; `DockerSandbox` for real isolation).
+- **Cloud backends** — sessions on Postgres/**Aurora**/Redis; vector stores on
+  **pgvector/Aurora**, **OpenSearch**, **Oracle 23ai**, Chroma, Qdrant,
+  Pinecone, Weaviate; graph checkpointers on Postgres/Aurora/Redis. All ship an
+  in-memory default and honor metadata filters for per-tenant isolation.
+- **Evaluation** — deterministic + LLM-judge metrics, plus **RAGAS** and
+  **DeepEval** adapters, behind one registry.
+- **Frontends & ops** — `yaab web` dev playground, **AG-UI** streaming
+  middleware, token + structured-output streaming, batch/offline inference,
+  resilience (rate limit + circuit breaker), YAML-config agents, OTel tracing
+  with Langfuse/Logfire/OTel audit sinks.
+
+```python
+from yaab import get_component, available_components
+available_components("vectorstore")   # memory, pgvector, aurora, chroma, qdrant, opensearch, oracle, pinecone, weaviate
+store = get_component("vectorstore", "opensearch", index="kb", hosts=[...])
+```
+
+See [Storage & backends](docs/storage-backends.md) and
+[Extending YAAB](docs/extending.md).
 
 ## Documentation
 
