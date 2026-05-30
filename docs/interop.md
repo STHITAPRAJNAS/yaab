@@ -112,6 +112,32 @@ result = await remote.run("Refund order 123")
 local = Agent("concierge", model="openai/gpt-4o", tools=[remote])
 ```
 
-Authentication uses a bearer token (`auth_token`); for OAuth 2.1 token exchange,
-wire your IdP and pass the resulting access token. See [Serving](serving.md) for
-the server-side auth schemes.
+Authentication uses a static bearer token (`auth_token`) or, for OAuth 2.1, a
+`token_provider` callable that returns a fresh access token per request (wire it
+to your IdP's token exchange/refresh):
+
+```python
+remote = RemoteAgent("https://billing", token_provider=lambda: idp.access_token())
+```
+
+### Long-running tasks: poll & stream
+
+The server stores submitted tasks so clients can poll by id, and exposes a
+streaming variant that emits `working` → `completed` status events:
+
+```python
+result = await remote.run("generate the report")
+task = await remote.get_task(result.run_id)     # poll: {"status": {"state": "completed"}, ...}
+```
+
+```
+POST /a2a/tasks         # submit, returns the completed task
+GET  /a2a/tasks/{id}    # poll a task by id
+POST /a2a/tasks/stream  # SSE: working → completed task-status events
+```
+
+### Hand back to the orchestrator
+
+In a [`Swarm`](multi-agent.md#swarm-autonomous-hand-off), every member gets a
+`handoff_to_<peer>` tool for *each* peer — including the entry/orchestrator
+agent — so a specialist can return control once its part is done.

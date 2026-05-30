@@ -24,17 +24,22 @@ class RemoteAgent:
         *,
         name: Optional[str] = None,
         auth_token: Optional[str] = None,
+        token_provider: Optional[Callable[[], str]] = None,
         transport: Optional[Transport] = None,
     ) -> None:
         self.url = url.rstrip("/")
         self.name = name or "remote_agent"
         self.auth_token = auth_token
+        # token_provider lets an OAuth2 client supply a fresh bearer token per
+        # request (token exchange / refresh handled by the caller's IdP client).
+        self.token_provider = token_provider
         self._transport = transport
         self._card: Optional[dict[str, Any]] = None
 
     # --- transport -----------------------------------------------------
     def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self.auth_token}"} if self.auth_token else {}
+        token = self.token_provider() if self.token_provider is not None else self.auth_token
+        return {"Authorization": f"Bearer {token}"} if token else {}
 
     async def _request(self, method: str, path: str, json: Optional[dict] = None) -> dict:
         if self._transport is not None:
@@ -82,6 +87,10 @@ class RemoteAgent:
         import asyncio
 
         return asyncio.run(self.run(prompt, **kwargs))
+
+    async def get_task(self, task_id: str) -> dict[str, Any]:
+        """Poll a long-running task by id (returns the A2A task object)."""
+        return await self._request("GET", f"/a2a/tasks/{task_id}", None)
 
     # --- Tool protocol -------------------------------------------------
     @property

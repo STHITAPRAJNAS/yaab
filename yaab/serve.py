@@ -17,6 +17,10 @@ from typing import Any, Optional
 
 from .auth import AuthError, AuthScheme, NoAuth
 
+# In-process store of submitted A2A tasks, so clients can poll by id. A durable
+# deployment would back this with the session/artifact services.
+_A2A_TASKS: dict[str, dict] = {}
+
 
 def fastapi_server_app(
     agent: Any,
@@ -113,28 +117,66 @@ def fastapi_server_app(
 
         return StreamingResponse(token_source(), media_type="text/event-stream")
 
-    @app.post("/a2a/tasks")
-    async def a2a_task(request: Request) -> Any:
-        """Minimal A2A task endpoint: accept a message, return a completed task."""
-        identity = _identify(request)
-        body = await request.json()
-        # A2A message: {"message": {"parts": [{"text": "..."}]}}
+    def _message_text(body: dict) -> str:
         message = body.get("message", {})
         parts = message.get("parts", [])
-        text = " ".join(p.get("text", "") for p in parts) or body.get("prompt", "")
-        result = await agent.run(text, identity=identity)
+        return " ".join(p.get("text", "") for p in parts) or body.get("prompt", "")
+
+    def _completed_task(task_id: str, output: Any) -> dict:
         from .runner import _safe
 
+        return {
+            "id": task_id,
+            "status": {"state": "completed"},
+            "artifacts": [{"name": "result", "parts": [{"text": str(_safe(output))}]}],
+        }
+
+    @app.post("/a2a/tasks")
+    async def a2a_task(request: Request) -> Any:
+        """A2A task endpoint: accept a message, return a completed task."""
+        identity = _identify(request)
+        body = await request.json()
+        text = _message_text(body)
         task_id = body.get("id") or f"task_{uuid.uuid4().hex[:12]}"
-        return JSONResponse(
-            {
-                "id": task_id,
-                "status": {"state": "completed"},
-                "artifacts": [
-                    {"name": "result", "parts": [{"text": str(_safe(result.output))}]}
-                ],
-            }
-        )
+        result = await agent.run(text, identity=identity)
+        task = _completed_task(task_id, result.output)
+        _A2A_TASKS[task_id] = task
+        return JSONResponse(task)
+
+    @app.get("/a2a/tasks/{task_id}")
+    async def a2a_get_task(task_id: str, request: Request) -> Any:
+        """Poll a previously-submitted task by id (long-running task support)."""
+        _identify(request)
+        task = _A2A_TASKS.get(task_id)
+        if task is None:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404, detail=f"unknown task {task_id}")
+        return JSONResponse(task)
+
+    @app.post("/a2a/tasks/stream")
+    async def a2a_task_stream(request: Request) -> Any:
+        """Stream an A2A task's progress as SSE task-status events."""
+        identity = _identify(request)
+        body = await request.json()
+        text = _message_text(body)
+        task_id = body.get("id") or f"task_{uuid.uuid4().hex[:12]}"
+        runner_ = runner or agent._get_runner()
+
+        async def task_events():
+            import json
+
+            yield f"data: {json.dumps({'id': task_id, 'status': {'state': 'working'}})}\n\n"
+            output = None
+            async for event in runner_.run_stream(agent, text, identity=identity):
+                if event.type.value == "final_output":
+                    output = event.payload.get("output")
+            task = _completed_task(task_id, output)
+            _A2A_TASKS[task_id] = task
+            yield f"data: {json.dumps(task)}\n\n"
+            yield "event: done\ndata: [DONE]\n\n"
+
+        return StreamingResponse(task_events(), media_type="text/event-stream")
 
     return app
 
