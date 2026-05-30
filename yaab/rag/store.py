@@ -164,4 +164,22 @@ class PgVectorStore:
 register("vectorstore", "memory", lambda **kw: InMemoryVectorStore())
 register("vectorstore", "pgvector", lambda **kw: PgVectorStore(**kw))
 
+
+# Register external store names eagerly (factories lazy-import the client libs),
+# so they appear in available("vectorstore") without importing chromadb/qdrant.
+def _make_chroma(**kw: Any) -> Any:
+    from .stores_external import ChromaVectorStore
+
+    return ChromaVectorStore(**kw)
+
+
+def _make_qdrant(**kw: Any) -> Any:
+    from .stores_external import QdrantVectorStore
+
+    return QdrantVectorStore(**kw)
+
+
+register("vectorstore", "chroma", _make_chroma)
+register("vectorstore", "qdrant", _make_qdrant)
+
 __all__ = ["VectorStore", "InMemoryVectorStore", "PgVectorStore", "Filter"]

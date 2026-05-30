@@ -129,7 +129,7 @@ def test_audit_plugin_records(tmp_path):
 
 
 def test_fastapi_app_builds():
-    fastapi = pytest.importorskip("fastapi")
+    pytest.importorskip("fastapi")
     from yaab.serve import fastapi_server_app
 
     agent = Agent("a", model=TestModel("hi"))
