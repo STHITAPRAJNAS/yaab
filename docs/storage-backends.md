@@ -75,6 +75,8 @@ Embedded-chunk storage + similarity search with metadata filtering. Protocol:
 | `qdrant` | `QdrantVectorStore` | `yaab[qdrant]` | in-memory, server, or Qdrant Cloud |
 | `opensearch` | `OpenSearchVectorStore` | `yaab[opensearch]` | **Amazon OpenSearch Service / Serverless**, self-managed |
 | `oracle` | `OracleVectorStore` | `yaab[oracle]` | **Oracle Database 23ai** AI Vector Search |
+| `pinecone` | `PineconeVectorStore` | `yaab[pinecone]` | Pinecone serverless/pod |
+| `weaviate` | `WeaviateVectorStore` | `yaab[weaviate]` | Weaviate (local or Cloud) |
 
 ```python
 from yaab.rag import KnowledgeBase
@@ -91,9 +93,22 @@ filters on OpenSearch).
 
 ## Checkpoints (durable graphs)
 
-Protocol: `Checkpointer`. `MemorySaver` (default) and `SQLiteSaver` ship; the
-`Checkpointer` protocol (`put`/`get`/`history`) makes Postgres/Redis a small
-adapter. See [Graph orchestration](graph.md#durable-execution--checkpoints).
+Durable graph state for crash recovery, resume, and time-travel. Protocol:
+`Checkpointer` (`put`/`get`/`history`).
+
+| Name | Class | Install |
+|---|---|---|
+| `memory` | `MemorySaver` | — (default) |
+| `sqlite` | `SQLiteSaver` | — |
+| `postgres` / `aurora` | `PostgresSaver` | `yaab[postgres]` |
+| `redis` | `RedisSaver` | `yaab[redis]` |
+
+```python
+from yaab.graph import StateGraph, PostgresSaver
+app = graph.compile(checkpointer=PostgresSaver("postgresql://…@aurora-endpoint/db"))
+```
+
+See [Graph orchestration](graph.md#durable-execution--checkpoints).
 
 ## Audit sinks
 
