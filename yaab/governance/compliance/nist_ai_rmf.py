@@ -38,7 +38,7 @@ class NISTAIRMFMapper:
                 status=ControlStatus.SATISFIED
                 if (card and card.intended_use_case)
                 else ControlStatus.PARTIAL,
-                evidence=[f"intended_use_case set"] if (card and card.intended_use_case) else [],
+                evidence=["intended_use_case set"] if (card and card.intended_use_case) else [],
             )
         )
         controls.append(

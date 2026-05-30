@@ -24,7 +24,16 @@ from __future__ import annotations
 
 from . import _core
 from .agent import Agent
+from .artifacts.manager import ArtifactManager
 from .content import Content, Part, PartKind
+from .extensions import available as available_components
+from .extensions import get as get_component
+from .extensions import register as register_component
+from .memory.manager import MemoryManager
+from .multiagent import LoopAgent, ParallelAgent, SequentialAgent, Swarm
+from .prompts import PromptRegistry
+from .sessions.manager import SessionManager
+from .skills import Skill
 from .exceptions import (
     GovernanceError,
     MaxStepsExceeded,
@@ -51,6 +60,22 @@ __all__ = [
     "tool",
     "FunctionTool",
     "AgentTool",
+    # multi-agent workflow patterns
+    "SequentialAgent",
+    "ParallelAgent",
+    "LoopAgent",
+    "Swarm",
+    # managers (ADK-style)
+    "SessionManager",
+    "MemoryManager",
+    "ArtifactManager",
+    # extensibility
+    "register_component",
+    "get_component",
+    "available_components",
+    # reusable building blocks
+    "Skill",
+    "PromptRegistry",
     "RunContext",
     "RunResult",
     "Message",

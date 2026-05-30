@@ -19,6 +19,8 @@ from .models import ModelProvider, resolve_model
 from .tools.base import Tool, coerce_tools
 from .types import Deps, Output, RunContext, RunResult
 
+_NoneType = type(None)  # module-level singleton (avoids a call in arg defaults)
+
 
 class Agent(Generic[Deps, Output]):
     """A type-safe agent: a model + instructions + tools + an output contract."""
@@ -30,7 +32,7 @@ class Agent(Generic[Deps, Output]):
         model: Union[str, ModelProvider] = "openai/gpt-4o",
         instructions: Union[str, Callable[[RunContext[Deps]], str]] = "",
         tools: Optional[list[Any]] = None,
-        deps_type: type = type(None),
+        deps_type: type = _NoneType,
         output_type: type = str,
         guardrails: Optional[list[Any]] = None,
         capabilities: Optional[list[Any]] = None,
@@ -120,6 +122,25 @@ class Agent(Generic[Deps, Output]):
     ) -> RunResult[Output]:
         """Run the agent's model-driven loop and return a typed result."""
         return await self._get_runner().run(
+            self, prompt, deps=deps, session_id=session_id, identity=identity
+        )
+
+    def stream(
+        self,
+        prompt: Any,
+        *,
+        deps: Deps = None,  # type: ignore[assignment]
+        session_id: Optional[str] = None,
+        identity: Optional[str] = None,
+    ) -> Any:
+        """Stream the answer token-by-token (single turn, no tool loop).
+
+        Returns an async iterator of text deltas::
+
+            async for token in agent.stream("tell me a joke"):
+                print(token, end="")
+        """
+        return self._get_runner().stream_text(
             self, prompt, deps=deps, session_id=session_id, identity=identity
         )
 

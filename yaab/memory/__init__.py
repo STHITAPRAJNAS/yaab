@@ -88,3 +88,6 @@ __all__ = [
     "hashing_embedder",
     "InMemoryVectorMemory",
 ]
+
+# Register built-in embedders in the component registry (side-effect import).
+from . import embedders as _embedders  # noqa: E402,F401
