@@ -221,7 +221,12 @@ class Experiment:
                     out = await out
                 cr.output = out
                 for ev in self.evaluators:
-                    cr.scores[ev.name] = ev.evaluate(case, out)
+                    # Support both sync (evaluate) and async (ascore) metrics, so
+                    # built-in, RAG, RAGAS, and DeepEval evaluators all work here.
+                    if hasattr(ev, "ascore"):
+                        cr.scores[ev.name] = await ev.ascore(case, out)
+                    else:
+                        cr.scores[ev.name] = ev.evaluate(case, out)
             except Exception as exc:  # noqa: BLE001 - record, don't abort the suite
                 cr.error = str(exc)
             result.results.append(cr)

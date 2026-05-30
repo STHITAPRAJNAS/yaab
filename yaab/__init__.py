@@ -39,6 +39,7 @@ from .sessions.manager import SessionManager
 from .skills import Skill
 from .state import State
 from .config import agent_from_dict, agent_from_yaml
+from .eval import available_metrics, get_metric, register_metric
 from .context import KeepAll, SummarizeHistory, TruncateMessages
 from .exceptions import (
     ApprovalRequired,
@@ -84,6 +85,10 @@ __all__ = [
     "register_component",
     "get_component",
     "available_components",
+    # eval metrics (built-in + RAGAS/DeepEval adapters)
+    "register_metric",
+    "get_metric",
+    "available_metrics",
     # reusable building blocks
     "Skill",
     "PromptRegistry",

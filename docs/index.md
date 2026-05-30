@@ -28,6 +28,7 @@ a first-class governance/registry/compliance layer that none of them ship.
 | [Graph orchestration](graph.md) | Durable `StateGraph`, checkpoints, HITL, channels, time-travel |
 | [Interop: MCP & A2A](interop.md) | MCP client/tools, A2A server + client (RemoteAgent) |
 | [Governance & compliance](governance.md) | Registry, lifecycle, guardrails, audit, evals, compliance mappers |
+| [Evaluation](evaluation.md) | Metric registry, RAGAS/DeepEval adapters, experiments, custom metrics |
 | [Optimization](optimization.md) | DSPy-style Signature/Module/Optimizer, compiled artifacts |
 | [Prompts & skills](prompts-skills.md) | Versioned prompt management, reusable skill bundles |
 | [Serving & auth](serving.md) | `fastapi_server_app`, A2A server, bearer/API-key/OAuth2 |

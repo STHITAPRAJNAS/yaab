@@ -46,6 +46,9 @@ qdrant = ["qdrant-client>=1.9"]
 # External audit/observability sinks.
 langfuse = ["langfuse>=2.0"]
 logfire = ["logfire>=0.30"]
+# External eval suites (adapters import these lazily).
+ragas = ["ragas>=0.1", "datasets>=2.0"]
+deepeval = ["deepeval>=1.0"]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",
