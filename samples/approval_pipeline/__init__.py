@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from yaab.graph import END, START, Channel, CompiledGraph, MemorySaver, StateGraph
+from yaab.graph import START, Channel, CompiledGraph, MemorySaver, StateGraph
 
 
 def build(checkpointer: Any = None) -> CompiledGraph:

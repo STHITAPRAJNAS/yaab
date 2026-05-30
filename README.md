@@ -428,4 +428,9 @@ Framework APIs evolve fast — pin versions and re-verify. Verify EU AI Act
 dates/fines against EUR-Lex and SR 11-7 language against the Federal Reserve's
 official letter.
 
-MIT licensed.
+## License
+
+YAAB is open source under the **MIT License** — see [`LICENSE`](LICENSE). The
+Rust core (`yaab-core`) is published under the same license. SPDX identifier:
+`MIT`. You're free to use, modify, and distribute it, including commercially,
+provided the copyright and license notice are retained.
