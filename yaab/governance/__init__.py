@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .approval import ToolApprovalPlugin
 from .audit import AuditEvent, AuditKind, AuditLog, AuditSink, SQLiteAuditSink
 from .authorization import (
     CallableAuthorizer,
@@ -79,6 +80,7 @@ __all__ = [
     "CallableAuthorizer",
     "Decision",
     "IdempotencyPlugin",
+    "ToolApprovalPlugin",
     # audit
     "AuditLog",
     "AuditEvent",

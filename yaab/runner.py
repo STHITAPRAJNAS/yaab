@@ -170,8 +170,13 @@ class Runner:
             final_output: Any = None
             produced = False
 
+            context_strategy = getattr(agent, "context_strategy", None)
+
             for _step in range(agent.max_steps):
                 check_controls()  # cancellation / timeout / usage caps
+                # Keep the conversation within the model's context window.
+                if context_strategy is not None:
+                    messages = await context_strategy.apply(messages, model=agent.model)
                 response = await self._call_model(
                     agent, ctx, messages, tool_schemas, output_schema, tool_choice
                 )

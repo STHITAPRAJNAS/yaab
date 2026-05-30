@@ -68,6 +68,20 @@ class NotRegisteredError(GovernanceError):
     """Raised in enforcing mode when an unregistered/unapproved agent runs."""
 
 
+class ApprovalRequired(GovernanceError):
+    """Raised when a tool call needs human approval that wasn't granted.
+
+    Carries the pending tool call so an out-of-band approval flow can surface it
+    to a human and resume.
+    """
+
+    def __init__(self, tool: str, arguments: dict, *, reason: str = "approval required") -> None:
+        super().__init__(f"approval required for tool '{tool}': {reason}")
+        self.tool = tool
+        self.arguments = arguments
+        self.reason = reason
+
+
 class LifecycleError(GovernanceError):
     """Raised on an illegal lifecycle state transition."""
 

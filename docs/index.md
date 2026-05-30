@@ -24,6 +24,7 @@ a first-class governance/registry/compliance layer that none of them ship.
 | [Multi-agent](multi-agent.md) | Sequential, Parallel, Loop, Swarm, agent-as-tool |
 | [Streaming & events](streaming-events.md) | Token streaming, the semantic event stream, SSE endpoints |
 | [Usage limits & run control](limits.md) | Token/request/tool caps, cancellation, timeouts |
+| [Robustness](robustness.md) | Built-in tools, context-window mgmt, HITL approval, resilience, YAML config |
 | [Graph orchestration](graph.md) | Durable `StateGraph`, checkpoints, HITL, channels, time-travel |
 | [Interop: MCP & A2A](interop.md) | MCP client/tools, A2A server + client (RemoteAgent) |
 | [Governance & compliance](governance.md) | Registry, lifecycle, guardrails, audit, evals, compliance mappers |
