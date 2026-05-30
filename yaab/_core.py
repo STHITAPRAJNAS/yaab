@@ -37,6 +37,7 @@ __all__ = [
     "encode_checkpoint",
     "decode_checkpoint",
     "reduce_channel",
+    "advance_superstep",
     "plan_supersteps",
     "hash_event",
     "verify_chain",
@@ -115,6 +116,35 @@ def reduce_channel(reducer: str, current: Any, update: Any) -> Any:
         b = update if isinstance(update, (int, float)) else 0
         return a + b
     return update
+
+
+def advance_superstep(
+    state: dict[str, Any],
+    reducers: dict[str, str],
+    updates: list[Any],
+) -> dict[str, Any]:
+    """Apply a whole superstep's node updates to ``state`` in one operation.
+
+    ``updates`` is a list of per-node update dicts (or ``None``), applied in
+    order; each key is reduced with the channel reducer named in ``reducers``
+    (defaulting to last-value). The Rust path does the entire fold in one call;
+    the pure-Python fallback reuses :func:`reduce_channel`.
+    """
+    if RUST:
+        out = _rust.advance_superstep(
+            json.dumps(state, separators=(",", ":")),
+            json.dumps(reducers, separators=(",", ":")),
+            json.dumps(updates, separators=(",", ":")),
+        )
+        return json.loads(out)
+    new_state = dict(state)
+    for update in updates:
+        if not update:
+            continue
+        for key, value in update.items():
+            reducer = reducers.get(key, "last_value")
+            new_state[key] = reduce_channel(reducer, new_state.get(key), value)
+    return new_state
 
 
 def plan_supersteps(nodes: list[str], edges: list[tuple[str, str]]) -> list[list[str]]:

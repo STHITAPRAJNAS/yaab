@@ -85,6 +85,28 @@ assert paused.interrupted
 done = app.invoke(thread_id="t1", resume=True)    # human approved
 ```
 
+## Choosing the engine (Python vs Rust)
+
+A compiled graph advances each superstep's state with one of two engines — your
+choice:
+
+```python
+app = g.compile(engine="auto")     # rust if yaab-core is built, else python (default)
+app = g.compile(engine="rust")     # force the native whole-superstep fold
+app = g.compile(engine="python")   # force the pure-Python engine
+print(app.engine)                   # "rust" | "python"
+```
+
+Both produce **identical results**. The Rust engine folds an entire superstep's
+node updates in a single native call (one cross-language hop per superstep
+instead of one per state key), which helps wide fan-outs and large state; the
+Python engine has zero native dependency. `engine="rust"` raises if the
+`yaab-core` extension isn't built — use `"auto"` to degrade gracefully.
+
+What is *not* in Rust: the graph's control flow — routing, conditional edges,
+HITL interrupts, checkpoint orchestration, and your node functions — all run in
+Python regardless of engine. Rust only does the deterministic state fold.
+
 ## Mixing with agents
 
 Nodes are plain functions, so call agents inside them:

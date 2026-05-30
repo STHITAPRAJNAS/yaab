@@ -2,9 +2,10 @@
 
 **YAAB is the agent SDK for teams that have to ship agents into production AND prove it to a regulator.**
 Type-safe like Pydantic AI, optimizable like DSPy, durable like LangGraph, clean
-like Google ADK, simple like Strands — on a universal LiteLLM model layer and a
-Rust core that makes orchestration lightning-fast. Governance, an agent
-registry, audit lineage, and policy guardrails are **first-class, not bolted on**.
+like Google ADK, simple like Strands — on a universal LiteLLM model layer, with a
+Rust core that accelerates the compute-bound hot paths (and an opt-in native
+graph engine). Governance, an agent registry, audit lineage, and policy
+guardrails are **first-class, not bolted on**.
 
 ```python
 from yaab import Agent
@@ -59,18 +60,36 @@ honest gap list.
 ## Architecture
 
 YAAB is **progressive disclosure**: three lines to a working agent, but every
-layer is openable. The Python layer is a thin, friendly API; the **Rust core
-(`yaab-core`) does the heavy lifting** — superstep scheduling, checkpoint
-serialization, channel reducers, vector similarity, and audit hash-chaining —
-with a pure-Python fallback so nothing ever blocks on a toolchain.
+layer is openable.
+
+**Python is the brain and the entire developer surface** — the `Agent`,
+`Runner`, model layer, tools, governance, orchestration logic, and every
+extension point are Python (~95% of the code). **Rust (`yaab-core`) is a small
+performance core** (~325 lines) holding the compute-bound primitives where
+native speed pays off: vector similarity, checkpoint serialization, channel
+reducers, BSP superstep planning + whole-superstep state folding, and
+tamper-evident audit hashing. Every Rust primitive has a **pure-Python
+fallback**, so YAAB installs and runs anywhere — Rust is an accelerator, never a
+hard dependency. This is the proven pydantic-core / Polars / Ruff pattern: a
+thin native core under a rich Python API.
 
 ```
 L5  Developer API (Python)   — Agent, tools, signatures, DI, skills
-L4  Orchestration            — fast path · durable graph · optimizable programs
+L4  Orchestration (Python)   — fast path · durable graph · optimizable programs
 L3  Governance & Registry    — registry, lifecycle, policy, audit, evals, compliance
 L2  Model Layer (LiteLLM)    — streaming, tools, structured output, fallbacks, cost
-L1  yaab-core (RUST/PyO3)    — scheduler · channels · checkpoints · vectors · hashing
+L1  yaab-core (RUST/PyO3)    — vectors · channels · checkpoints · scheduler · hashing
+        ↑ accelerates the hot paths called by L1–L4; pure-Python fallback always present
 ```
+
+What runs **where**, precisely:
+
+| Concern | Runs in |
+|---|---|
+| Agent loop, tool dispatch, model calls (I/O-bound) | **Python** (network is the bottleneck, not the loop) |
+| Governance, registry, lifecycle, compliance | **Python** |
+| Graph control flow (routing, HITL, checkp-orchestration) | **Python** |
+| Vector top-k, checkpoint (de)serialize, channel reduce, superstep fold, audit hash | **Rust** (Python fallback) |
 
 Check which core is active:
 
@@ -78,6 +97,22 @@ Check which core is active:
 import yaab
 print(yaab.BACKEND)   # "rust" or "python"
 ```
+
+### Opt-in Rust graph engine
+
+The durable graph lets you choose how each superstep's state is advanced — your
+call, per compiled graph:
+
+```python
+app = graph.compile(engine="auto")     # rust if the extension is built, else python (default)
+app = graph.compile(engine="rust")     # force the native whole-superstep fold (raises if unbuilt)
+app = graph.compile(engine="python")   # force the pure-Python engine
+print(app.engine)                       # "rust" | "python"
+```
+
+Both engines produce **identical results**; `rust` folds an entire superstep's
+state in one native call instead of one cross-language hop per key. The Python
+developer API is unchanged either way.
 
 ---
 

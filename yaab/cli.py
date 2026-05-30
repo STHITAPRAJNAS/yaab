@@ -29,8 +29,10 @@ def _info() -> int:
         import yaab_core  # noqa: F401
 
         print(f"  yaab-core (rust)    : {yaab_core.__version__}")
+        print("  graph engine        : rust available (compile(engine='auto') uses it)")
     except ImportError:
         print("  yaab-core (rust)    : not installed (pure-Python fallback active)")
+        print("  graph engine        : python (build yaab-core for the native engine)")
     return 0
 
 
