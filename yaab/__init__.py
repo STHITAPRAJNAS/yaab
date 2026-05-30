@@ -36,6 +36,7 @@ from .prompts import PromptRegistry
 from .rag import Document, KnowledgeBase
 from .sessions.manager import SessionManager
 from .skills import Skill
+from .state import State
 from .exceptions import (
     GovernanceError,
     MaxStepsExceeded,
@@ -74,6 +75,7 @@ __all__ = [
     "SessionManager",
     "MemoryManager",
     "ArtifactManager",
+    "State",
     # extensibility
     "register_component",
     "get_component",
