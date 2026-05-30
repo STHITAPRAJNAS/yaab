@@ -178,7 +178,7 @@ qa.load(artifact)   # deterministic in production
 
 ---
 
-## Governance — the differentiator
+## Governance
 
 Governance is opt-in by **mode** (`off` / `observe` / `enforcing`) so YAAB is
 frictionless for prototyping but enforces registry, approval, and guardrails in
@@ -336,6 +336,8 @@ See [Storage & backends](docs/storage-backends.md) and
 Full guides live in [`docs/`](docs/index.md):
 
 [**Get started**](docs/get-started.md) ·
+[Concepts](docs/concepts.md) ·
+[Samples](samples/README.md) ·
 [Quickstart](docs/quickstart.md) ·
 [Agents](docs/agents.md) ·
 [Tools](docs/tools.md) ·

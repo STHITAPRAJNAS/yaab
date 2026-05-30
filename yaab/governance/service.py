@@ -8,8 +8,8 @@ evaluator, and exposes a :class:`GovernanceMode` that the runner honors:
 * ``ENFORCING`` — unregistered/unapproved agents are refused and ``BLOCK``
   guardrail decisions stop the run.
 
-This three-mode switch is what lets one SDK serve both the developer and the
-regulator.
+The three modes let the same SDK run ungoverned in development and fully
+governed in production.
 """
 
 from __future__ import annotations

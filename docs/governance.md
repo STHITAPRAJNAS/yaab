@@ -1,6 +1,6 @@
 # Governance & compliance
 
-Governance is YAAB's differentiator and a **runtime concern**, not a document.
+Governance in YAAB is a **runtime concern**, not a document.
 It is opt-in by **mode**, so prototyping stays frictionless while production
 enforces registration, approval, and guardrails.
 

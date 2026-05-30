@@ -1,8 +1,7 @@
 """Built-in, provider-neutral RAG (retrieval-augmented generation).
 
 Unlike SDKs that delegate RAG to a managed cloud service, YAAB ships the whole
-pipeline as open, swappable components — and adds the governance pieces the
-ecosystem still lacks: per-user/document access control at retrieval, source
+pipeline as open, swappable components — and includes governance pieces: per-user/document access control at retrieval, source
 citations, embedding caching, incremental dedup indexing, retrieval guardrails,
 and RAG faithfulness evaluation.
 

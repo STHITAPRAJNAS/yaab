@@ -54,7 +54,7 @@ Legend: **✓** first-class · **◑** partial / simplified · **✕** absent.
 The bottom block — registry, lifecycle, audit, compliance, Rust core — is where
 YAAB is categorically ahead: **no incumbent ships any of it.**
 
-## 2. Where YAAB already wins
+## 2. What YAAB provides that the others don't (or only partially)
 
 - **One runtime, three paradigms.** Fast path (Strands), durable graph
   (LangGraph), and optimizable programs (DSPy) compose over the same Runner and

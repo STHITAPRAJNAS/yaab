@@ -1,4 +1,4 @@
-"""Governance, registry & compliance — YAAB's first-class differentiator."""
+"""Governance, registry & compliance: registry, lifecycle, policy, audit, and compliance."""
 
 from __future__ import annotations
 

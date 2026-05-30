@@ -76,7 +76,7 @@ kb = KnowledgeBase(store=OracleVectorStore(dsn="...", user="...", password="..."
 # Chroma (yaab[chroma]) and Qdrant (yaab[qdrant]) likewise.
 ```
 
-## Governance features (the differentiators)
+## Governance features
 
 ### Per-user / document-level access control
 

@@ -6,6 +6,19 @@ All notable changes to YAAB are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `samples/` — six end-to-end sample apps & patterns (customer support, research
+  assistant, document Q&A, approval pipeline, triage swarm, coding helper), each
+  runnable offline and against a real/free model via `YAAB_SAMPLE_MODEL`, with a
+  test that validates each on a deterministic model.
+- `docs/concepts.md` — what every component is for, with disambiguation of the
+  confusable pairs (Checkpointer vs Session, Memory vs RAG, authorization vs
+  approval vs guardrails, optimizer vs evaluator).
+
+### Changed
+- Docs/README reworded to be descriptive rather than promotional (removed
+  "differentiator"/marketing framing); refreshed the project-layout tree.
+
 ## [0.1.0] — initial alpha
 
 First public release.
