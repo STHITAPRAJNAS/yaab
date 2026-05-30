@@ -10,15 +10,15 @@ from yaab.testing import TestModel
 
 @pytest.mark.asyncio
 async def test_a2a_client_roundtrip_in_process():
-    """RemoteAgent talks to a real get_fastapi_app server via an in-process transport."""
+    """RemoteAgent talks to a real fastapi_server_app server via an in-process transport."""
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
     from yaab.a2a import RemoteAgent
-    from yaab.serve import get_fastapi_app
+    from yaab.serve import fastapi_server_app
 
     server_agent = Agent("remote", model=TestModel("remote says hi"), registry_id="remote")
-    client = TestClient(get_fastapi_app(server_agent, base_url="http://server"))
+    client = TestClient(fastapi_server_app(server_agent, base_url="http://server"))
 
     async def transport(method, path, json):
         resp = client.request(method, path, json=json)
@@ -42,10 +42,10 @@ async def test_a2a_remote_agent_as_tool():
     from fastapi.testclient import TestClient
 
     from yaab.a2a import RemoteAgent
-    from yaab.serve import get_fastapi_app
+    from yaab.serve import fastapi_server_app
 
     server_agent = Agent("remote", model=TestModel("delegated result"))
-    client = TestClient(get_fastapi_app(server_agent))
+    client = TestClient(fastapi_server_app(server_agent))
 
     async def transport(method, path, json):
         return client.request(method, path, json=json).json()
@@ -116,10 +116,10 @@ def test_chat_stream_endpoint():
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
-    from yaab.serve import get_fastapi_app
+    from yaab.serve import fastapi_server_app
 
     agent = Agent("a", model=TestModel("hello streamed world"))
-    client = TestClient(get_fastapi_app(agent))
+    client = TestClient(fastapi_server_app(agent))
     with client.stream("POST", "/chat/stream", json={"prompt": "hi"}) as resp:
         assert resp.status_code == 200
         body = "".join(resp.iter_text())

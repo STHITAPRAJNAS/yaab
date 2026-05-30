@@ -26,7 +26,7 @@ a first-class governance/registry/compliance layer that none of them ship.
 | [Governance & compliance](governance.md) | Registry, lifecycle, guardrails, audit, evals, compliance mappers |
 | [Optimization](optimization.md) | DSPy-style Signature/Module/Optimizer, compiled artifacts |
 | [Prompts & skills](prompts-skills.md) | Versioned prompt management, reusable skill bundles |
-| [Serving & auth](serving.md) | `get_fastapi_app`, A2A server, bearer/API-key/OAuth2 |
+| [Serving & auth](serving.md) | `fastapi_server_app`, A2A server, bearer/API-key/OAuth2 |
 | [Extending YAAB](extending.md) | The component registry, protocols, entry points |
 | [Deployment](DEPLOYMENT.md) | Local → Cloud Run / Fargate / Lambda / K8s, durable backends |
 | [Comparison & gaps](COMPARISON.md) | Feature matrix vs. ADK/DSPy/Pydantic AI/Strands/LangGraph |

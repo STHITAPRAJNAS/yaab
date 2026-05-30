@@ -40,7 +40,7 @@ governance.
 | Optimizable programs (compile) | ✕ | ✓ | ✕ | ✕ | ✕ | **✓** |
 | Universal models (LiteLLM) | ◑ | ◑ | ✓ | ✓ | ◑ | **✓** |
 | MCP + A2A interop | ✓ | ✕ | ◑ | ◑ | ✕ | **✓** |
-| `get_fastapi_app` / serve as A2A server | ✕ | ✕ | ✕ | ◑ | ✕ | **✓** |
+| `fastapi_server_app` / serve as A2A server | ✕ | ✕ | ✕ | ◑ | ✕ | **✓** |
 | Pluggable auth (bearer / API key / OAuth2)| ◑ | ✕ | ✕ | ◑ | ✕ | **✓** |
 | OTel GenAI-convention tracing | ✓ | ◑ | ✓ | ✓ | ◑ | **✓** |
 | Prompt management + versioning | ✕ | ◑ | ✕ | ✕ | ✕ | **✓** |
@@ -196,11 +196,11 @@ Local one-liner, or mount the ASGI app in any cloud (Lambda, Cloud Run, Fargate,
 
 ```python
 from yaab import Agent
-from yaab.serve import get_fastapi_app
+from yaab.serve import fastapi_server_app
 from yaab.auth import BearerTokenAuth
 
 agent = Agent("assistant", model="openai/gpt-4o")
-app = get_fastapi_app(agent, auth=BearerTokenAuth({"secret-token": "alice"}))
+app = fastapi_server_app(agent, auth=BearerTokenAuth({"secret-token": "alice"}))
 # uvicorn module:app  →  exposes /run, /a2a/tasks, /.well-known/agent.json, /health
 ```
 

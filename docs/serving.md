@@ -3,14 +3,14 @@
 Any agent is an ASGI app, so anything that hosts ASGI hosts YAAB — from a local
 one-liner to Cloud Run / Fargate / Lambda / K8s.
 
-## get_fastapi_app
+## fastapi_server_app
 
 ```python
 from yaab import Agent
-from yaab.serve import get_fastapi_app
+from yaab.serve import fastapi_server_app
 
 agent = Agent("assistant", model="openai/gpt-4o", registry_id="assistant")
-app = get_fastapi_app(agent, base_url="https://my-service")
+app = fastapi_server_app(agent, base_url="https://my-service")
 # uvicorn module:app
 ```
 
@@ -40,20 +40,20 @@ audit log, and the scheme is advertised in the agent card's `securitySchemes`.
 from yaab.auth import NoAuth, BearerTokenAuth, APIKeyAuth, OAuth2
 
 # Development: open access
-get_fastapi_app(agent, auth=NoAuth())
+fastapi_server_app(agent, auth=NoAuth())
 
 # Static bearer tokens → identities
-get_fastapi_app(agent, auth=BearerTokenAuth({"secret-token": "alice"}))
+fastapi_server_app(agent, auth=BearerTokenAuth({"secret-token": "alice"}))
 
 # API key header
-get_fastapi_app(agent, auth=APIKeyAuth({"key-123": "service-a"}, header="x-api-key"))
+fastapi_server_app(agent, auth=APIKeyAuth({"key-123": "service-a"}, header="x-api-key"))
 
 # OAuth 2.1 (A2A standard): delegate token validation to your IdP
 def verify(token: str) -> str | None:
     claims = my_idp.introspect(token)
     return claims.get("sub") if claims.get("active") else None
 
-get_fastapi_app(agent, auth=OAuth2(verify,
+fastapi_server_app(agent, auth=OAuth2(verify,
     authorization_url="https://idp/authorize", token_url="https://idp/token"))
 ```
 
@@ -85,5 +85,5 @@ from yaab import Runner
 from yaab.sessions import SQLiteSessionService
 
 runner = Runner(session_service=SQLiteSessionService("sessions.db"))
-app = get_fastapi_app(agent, runner=runner)
+app = fastapi_server_app(agent, runner=runner)
 ```

@@ -55,8 +55,8 @@ POST /chat/stream   # token deltas as SSE (data: <token>), terminated by [DONE]
 ```
 
 ```python
-from yaab.serve import get_fastapi_app
-app = get_fastapi_app(agent)   # mount with uvicorn / your ASGI server
+from yaab.serve import fastapi_server_app
+app = fastapi_server_app(agent)   # mount with uvicorn / your ASGI server
 ```
 
 Consume with any SSE client:

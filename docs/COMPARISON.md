@@ -29,7 +29,7 @@ Legend: **✓** first-class · **◑** partial / simplified · **✕** absent.
 | Multi-agent (Sequential/Parallel/Loop/Swarm) | ✓ | ✕ | ◑ | ✓ | ✓ | **✓** | `multiagent.py` |
 | MCP (tools + client) | ✓ | ✕ | ◑ | ✓ | ✕ | **✓** (stdio+transport) | `tools/mcp_client.py` |
 | A2A (server + cards + outbound client) | ✓ | ✕ | ◑ | ◑ | ✕ | **✓** | `serve.py`, `a2a/client.py` |
-| `get_fastapi_app` / serve | ✕ | ✕ | ✕ | ◑ | ✕ | **✓** | `serve.py` |
+| `fastapi_server_app` / serve | ✕ | ✕ | ✕ | ◑ | ✕ | **✓** | `serve.py` |
 | Pluggable auth (bearer/API key/OAuth2) | ◑ | ✕ | ✕ | ◑ | ✕ | **✓** | `auth.py` |
 | Event-driven streamed run | ✓ | ✕ | ✓ | ✓ | ✓ | **✓** | `runner.run_stream` |
 | Token-level streaming + SSE | ✓ | ✕ | ✓ | ✓ | ◑ | **✓** | `agent.stream`, `serve.py` |
@@ -66,7 +66,7 @@ YAAB is categorically ahead: **no incumbent ships any of it.**
   reducers, vector similarity, and audit hashing live in `yaab-core`; the Python
   layer is a thin, friendly wrapper. A pure-Python fallback keeps it installable
   anywhere (`YAAB_NO_RUST=1` exercises it in CI).
-- **Serve + interop out of the box.** `get_fastapi_app` exposes native, A2A, and
+- **Serve + interop out of the box.** `fastapi_server_app` exposes native, A2A, and
   discovery endpoints with pluggable auth — a single function from local to cloud.
 
 ## 3. Honest gaps (the road to "better than all combined")

@@ -1,6 +1,6 @@
 """Serve agents over HTTP — a FastAPI app and an A2A-compatible server.
 
-``get_fastapi_app(agent)`` returns a ready-to-mount ASGI app exposing:
+``fastapi_server_app(agent)`` returns a ready-to-mount ASGI app exposing:
 
 * ``GET  /.well-known/agent.json`` — the A2A Agent Card (discovery);
 * ``POST /run``                    — run the agent (YAAB-native);
@@ -18,7 +18,7 @@ from typing import Any, Optional
 from .auth import AuthError, AuthScheme, NoAuth
 
 
-def get_fastapi_app(
+def fastapi_server_app(
     agent: Any,
     *,
     runner: Optional[Any] = None,
@@ -171,8 +171,8 @@ def serve(
         import uvicorn
     except ImportError as exc:
         raise RuntimeError("uvicorn is required to serve. `pip install uvicorn`.") from exc
-    app = get_fastapi_app(agent, auth=auth, base_url=f"http://{host}:{port}")
+    app = fastapi_server_app(agent, auth=auth, base_url=f"http://{host}:{port}")
     uvicorn.run(app, host=host, port=port)
 
 
-__all__ = ["get_fastapi_app", "serve"]
+__all__ = ["fastapi_server_app", "serve"]
