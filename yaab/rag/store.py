@@ -188,7 +188,24 @@ def _make_qdrant(**kw: Any) -> Any:
     return QdrantVectorStore(**kw)
 
 
+def _make_opensearch(**kw: Any) -> Any:
+    from .stores_external import OpenSearchVectorStore
+
+    return OpenSearchVectorStore(**kw)
+
+
+def _make_oracle(**kw: Any) -> Any:
+    from .stores_external import OracleVectorStore
+
+    return OracleVectorStore(**kw)
+
+
 register("vectorstore", "chroma", _make_chroma)
 register("vectorstore", "qdrant", _make_qdrant)
+register("vectorstore", "opensearch", _make_opensearch)
+register("vectorstore", "oracle", _make_oracle)
+# Aurora PostgreSQL (and any Postgres with the pgvector extension) is served by
+# the pgvector store — the connection string just points at the Aurora endpoint.
+register("vectorstore", "aurora", lambda **kw: PgVectorStore(**kw))
 
 __all__ = ["VectorStore", "InMemoryVectorStore", "PgVectorStore", "Filter"]

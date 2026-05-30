@@ -34,8 +34,10 @@ rust = ["yaab-core>=0.1.0"]
 litellm = ["litellm>=1.40"]
 # OpenTelemetry GenAI instrumentation sinks.
 otel = ["opentelemetry-api>=1.25", "opentelemetry-sdk>=1.25"]
-# Postgres-backed session/checkpoint/registry/audit backends + pgvector store.
+# Postgres / Aurora PostgreSQL session backend + pgvector store.
 postgres = ["psycopg[binary]>=3.1"]
+# Redis / ElastiCache / MemoryDB session backend.
+redis = ["redis>=5.0"]
 # HTTP fetch / web-search / A2A-client built-in tools.
 http = ["httpx>=0.27"]
 # Serving (FastAPI app, SSE, AG-UI middleware).
@@ -47,6 +49,8 @@ rag = ["pypdf>=4.0", "beautifulsoup4>=4.12"]
 # External vector stores.
 chroma = ["chromadb>=0.5"]
 qdrant = ["qdrant-client>=1.9"]
+opensearch = ["opensearch-py>=2.4"]
+oracle = ["oracledb>=2.0"]
 # External audit/observability sinks.
 langfuse = ["langfuse>=2.0"]
 logfire = ["logfire>=0.30"]
