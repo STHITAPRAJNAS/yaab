@@ -38,7 +38,9 @@ def test_rbac_authorizer_deny_list():
 
 
 def test_rbac_authorizer_allow_list_and_capability():
-    auth = RBACAuthorizer(allow=["update_inventory"], require_capability={"update_inventory": "write"})
+    auth = RBACAuthorizer(
+        allow=["update_inventory"], require_capability={"update_inventory": "write"}
+    )
     ctx = RunContext()
     # Not allowed without the capability.
     assert not auth.authorize("update_inventory", {}, ctx).allowed

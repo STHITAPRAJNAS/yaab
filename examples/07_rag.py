@@ -29,15 +29,17 @@ async def main():
         print(f"  [{r.citation()}] {r.text}  (score={r.score:.2f})")
 
     # 3) Incremental update: re-index one source without duplicating.
-    kb.reindex(Document(text="Expense reports now use the new portal.", source="hr.md"),
-               source="hr.md")
+    kb.reindex(
+        Document(text="Expense reports now use the new portal.", source="hr.md"), source="hr.md"
+    )
     print("after reindex:", kb.count())
 
     # 4) Give retrieval to an agent as a tool.
     agent = Agent(
         "assistant",
-        model=TestModel(custom_output="File it in the finance portal.",
-                        call_tools=["search_handbook"]),
+        model=TestModel(
+            custom_output="File it in the finance portal.", call_tools=["search_handbook"]
+        ),
         tools=[kb.as_tool()],
     )
     answer = await agent.run("Where do expense reports go?")

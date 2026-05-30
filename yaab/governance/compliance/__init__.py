@@ -7,8 +7,6 @@ point) with :func:`available_mappers`.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from .base import ComplianceMapper, ComplianceReport, ControlResult, ControlStatus
 from .eu_ai_act import EUAIActMapper
 from .iso_42001 import ISO42001Mapper
@@ -41,7 +39,7 @@ def available_mappers() -> dict[str, type]:
     return mappers
 
 
-def get_mapper(regime: str) -> Optional[ComplianceMapper]:
+def get_mapper(regime: str) -> ComplianceMapper | None:
     cls = available_mappers().get(regime)
     return cls() if cls else None
 

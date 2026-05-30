@@ -8,7 +8,8 @@ OTel is optional; without it the wrapper is a transparent pass-through.
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 from ..observability import genai_span
 from ..types import Message
@@ -27,9 +28,9 @@ class InstrumentedModel:
         self,
         messages: list[Message],
         *,
-        tools: Optional[list[dict[str, Any]]] = None,
-        output_schema: Optional[dict[str, Any]] = None,
-        tool_choice: Optional[Any] = None,
+        tools: list[dict[str, Any]] | None = None,
+        output_schema: dict[str, Any] | None = None,
+        tool_choice: Any | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
         attrs = {
@@ -57,7 +58,7 @@ class InstrumentedModel:
         self,
         messages: list[Message],
         *,
-        tools: Optional[list[dict[str, Any]]] = None,
+        tools: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         return self.inner.stream(messages, tools=tools, **kwargs)

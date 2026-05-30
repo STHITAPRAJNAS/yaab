@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, AsyncIterator, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 from ..exceptions import ModelError
 from ..types import Message, ToolCall, Usage
@@ -38,12 +39,12 @@ class LiteLLMModel:
         self,
         model: str,
         *,
-        fallbacks: Optional[list[str]] = None,
+        fallbacks: list[str] | None = None,
         max_retries: int = 2,
         retry_base_delay: float = 0.5,
-        temperature: Optional[float] = None,
-        api_base: Optional[str] = None,
-        api_key: Optional[str] = None,
+        temperature: float | None = None,
+        api_base: str | None = None,
+        api_key: str | None = None,
         track_cost: bool = True,
         **default_params: Any,
     ) -> None:
@@ -73,9 +74,9 @@ class LiteLLMModel:
         self,
         messages: list[Message],
         *,
-        tools: Optional[list[dict[str, Any]]] = None,
-        output_schema: Optional[dict[str, Any]] = None,
-        tool_choice: Optional[Any] = None,
+        tools: list[dict[str, Any]] | None = None,
+        output_schema: dict[str, Any] | None = None,
+        tool_choice: Any | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
         litellm = _require_litellm()
@@ -94,13 +95,11 @@ class LiteLLMModel:
 
         # Try the primary model, then each fallback, with backoff retries.
         candidates = [self.model, *self.fallbacks]
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         for candidate in candidates:
             for attempt in range(self.max_retries + 1):
                 try:
-                    resp = await litellm.acompletion(
-                        model=candidate, messages=payload, **extra
-                    )
+                    resp = await litellm.acompletion(model=candidate, messages=payload, **extra)
                     return self._normalize(resp, candidate, litellm)
                 except Exception as exc:  # noqa: BLE001 - normalize provider errors
                     last_error = exc
@@ -147,7 +146,7 @@ class LiteLLMModel:
         self,
         messages: list[Message],
         *,
-        tools: Optional[list[dict[str, Any]]] = None,
+        tools: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         litellm = _require_litellm()

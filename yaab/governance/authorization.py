@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Callable, Optional, Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import Any, Protocol, runtime_checkable
 
 from ..plugins import Plugin
 from ..types import RunContext
@@ -38,11 +39,11 @@ class Decision:
         self.reason = reason
 
     @classmethod
-    def allow(cls, reason: str = "") -> "Decision":
+    def allow(cls, reason: str = "") -> Decision:
         return cls(True, reason)
 
     @classmethod
-    def deny(cls, reason: str = "denied") -> "Decision":
+    def deny(cls, reason: str = "denied") -> Decision:
         return cls(False, reason)
 
 
@@ -50,8 +51,7 @@ class Decision:
 class ToolAuthorizer(Protocol):
     """Decides whether a tool call may proceed."""
 
-    def authorize(self, tool: str, args: dict[str, Any], ctx: RunContext) -> Decision:
-        ...
+    def authorize(self, tool: str, args: dict[str, Any], ctx: RunContext) -> Decision: ...
 
 
 class RBACAuthorizer:
@@ -66,9 +66,9 @@ class RBACAuthorizer:
     def __init__(
         self,
         *,
-        allow: Optional[list[str]] = None,
-        deny: Optional[list[str]] = None,
-        require_capability: Optional[dict[str, str]] = None,
+        allow: list[str] | None = None,
+        deny: list[str] | None = None,
+        require_capability: dict[str, str] | None = None,
     ) -> None:
         self.allow = set(allow) if allow is not None else None
         self.deny = set(deny or [])
@@ -115,7 +115,7 @@ class ToolAuthorizationPlugin(Plugin):
         self,
         authorizers: list[ToolAuthorizer],
         *,
-        audit: Optional[AuditLog] = None,
+        audit: AuditLog | None = None,
         hard: bool = False,
     ) -> None:
         self.authorizers = authorizers
@@ -164,8 +164,8 @@ class IdempotencyPlugin(Plugin):
     def __init__(
         self,
         *,
-        tools: Optional[list[str]] = None,
-        key_fn: Optional[Callable[[str, dict[str, Any]], str]] = None,
+        tools: list[str] | None = None,
+        key_fn: Callable[[str, dict[str, Any]], str] | None = None,
         per_run: bool = False,
     ) -> None:
         self.tools = set(tools) if tools is not None else None

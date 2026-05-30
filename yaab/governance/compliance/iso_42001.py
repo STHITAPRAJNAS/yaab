@@ -6,8 +6,6 @@ governance data model (lifecycle, operational controls, performance evaluation).
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ..audit import AuditLog
 from ..registry import AgentRegistry
 from .base import ComplianceReport, ControlResult, ControlStatus
@@ -17,7 +15,7 @@ class ISO42001Mapper:
     regime = "iso_42001"
 
     def map(
-        self, registry: AgentRegistry, audit: AuditLog, agent_id: Optional[str] = None
+        self, registry: AgentRegistry, audit: AuditLog, agent_id: str | None = None
     ) -> ComplianceReport:
         card = registry.get(agent_id) if agent_id else None
         controls = [

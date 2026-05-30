@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -37,7 +37,7 @@ class ControlResult(BaseModel):
 
 class ComplianceReport(BaseModel):
     regime: str
-    agent_id: Optional[str] = None
+    agent_id: str | None = None
     generated_at: float = Field(default_factory=time.time)
     controls: list[ControlResult] = Field(default_factory=list)
 
@@ -79,11 +79,10 @@ class ComplianceMapper(Protocol):
         self,
         registry: AgentRegistry,
         audit: AuditLog,
-        agent_id: Optional[str] = None,
-    ) -> ComplianceReport:
-        ...
+        agent_id: str | None = None,
+    ) -> ComplianceReport: ...
 
 
-def _audit_kinds(audit: AuditLog, agent_id: Optional[str]) -> set[str]:
+def _audit_kinds(audit: AuditLog, agent_id: str | None) -> set[str]:
     events = audit.for_agent(agent_id) if agent_id else audit.events
     return {e.kind.value for e in events}

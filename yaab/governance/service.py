@@ -15,7 +15,6 @@ regulator.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
 
 from ..exceptions import NotRegisteredError, PolicyViolation
 from .audit import AuditKind, AuditLog
@@ -37,9 +36,9 @@ class GovernanceService:
         self,
         *,
         mode: GovernanceMode = GovernanceMode.OBSERVE,
-        registry: Optional[AgentRegistry] = None,
-        policy: Optional[PolicyEngine] = None,
-        audit: Optional[AuditLog] = None,
+        registry: AgentRegistry | None = None,
+        policy: PolicyEngine | None = None,
+        audit: AuditLog | None = None,
     ) -> None:
         self.mode = mode
         self.registry = registry or AgentRegistry()
@@ -48,14 +47,12 @@ class GovernanceService:
         self.lifecycle = LifecycleManager(self.registry, self.audit)
 
     # --- registry gate -------------------------------------------------
-    def check_registered(self, agent_id: Optional[str], identity: Optional[str]) -> None:
+    def check_registered(self, agent_id: str | None, identity: str | None) -> None:
         """Enforce registration + approval before a run (enforcing mode only)."""
         if self.mode is not GovernanceMode.ENFORCING:
             return
         if not agent_id:
-            raise NotRegisteredError(
-                "enforcing mode requires the agent to have a registry_id"
-            )
+            raise NotRegisteredError("enforcing mode requires the agent to have a registry_id")
         if not self.registry.is_approved(agent_id):
             self.audit.record(
                 AuditKind.REGISTRY,
@@ -65,8 +62,7 @@ class GovernanceService:
                 reason="not registered or not approved",
             )
             raise NotRegisteredError(
-                f"agent '{agent_id}' is not registered+approved; refusing to run "
-                "in enforcing mode"
+                f"agent '{agent_id}' is not registered+approved; refusing to run in enforcing mode"
             )
 
     # --- guardrails ----------------------------------------------------
@@ -75,8 +71,8 @@ class GovernanceService:
         text: str,
         stage: Stage,
         *,
-        agent_id: Optional[str] = None,
-        identity: Optional[str] = None,
+        agent_id: str | None = None,
+        identity: str | None = None,
     ) -> str:
         """Run guardrails. Returns possibly-redacted text; may raise on BLOCK.
 
@@ -107,18 +103,14 @@ class GovernanceService:
             )
         return new_text if new_text else text
 
-    def record_run_start(
-        self, agent_id: Optional[str], identity: Optional[str], prompt: str
-    ) -> None:
+    def record_run_start(self, agent_id: str | None, identity: str | None, prompt: str) -> None:
         if self.mode is GovernanceMode.OFF:
             return
         self.audit.record(
             AuditKind.RUN_START, agent_id=agent_id, identity=identity, prompt=prompt[:500]
         )
 
-    def record_run_end(
-        self, agent_id: Optional[str], identity: Optional[str], output_repr: str
-    ) -> None:
+    def record_run_end(self, agent_id: str | None, identity: str | None, output_repr: str) -> None:
         if self.mode is GovernanceMode.OFF:
             return
         self.audit.record(

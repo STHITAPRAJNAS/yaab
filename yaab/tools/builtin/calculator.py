@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import ast
 import operator
+from collections.abc import Callable
 
 from ..base import tool
 
-_OPS = {
+_OPS: dict[type, Callable[..., float]] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,

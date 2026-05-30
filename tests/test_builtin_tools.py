@@ -45,9 +45,7 @@ async def test_python_exec_runs_and_captures_stdout():
 
 @pytest.mark.asyncio
 async def test_python_exec_timeout():
-    out = await python_exec.execute(
-        RunContext(), code="while True: pass", timeout_seconds=0.5
-    )
+    out = await python_exec.execute(RunContext(), code="while True: pass", timeout_seconds=0.5)
     assert "timeout" in out
 
 

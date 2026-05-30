@@ -17,8 +17,9 @@ traces** (Strands #1292, OpenAI #2393):
 from __future__ import annotations
 
 import os
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import Any, Callable, Iterator, Optional
+from typing import Any
 
 try:  # pragma: no cover - depends on optional extra
     from opentelemetry import trace
@@ -42,7 +43,7 @@ _TRACING_ENABLED = os.environ.get("YAAB_DISABLE_TRACING") != "1"
 
 # Optional redactor: (key, value) -> value, applied to every span attribute.
 Redactor = Callable[[str, Any], Any]
-_REDACTOR: Optional[Redactor] = None
+_REDACTOR: Redactor | None = None
 
 
 def has_otel() -> bool:
@@ -60,7 +61,7 @@ def set_tracing_enabled(enabled: bool) -> None:
     _TRACING_ENABLED = enabled
 
 
-def set_trace_redactor(redactor: Optional[Redactor]) -> None:
+def set_trace_redactor(redactor: Redactor | None) -> None:
     """Register (or clear) a redactor applied to every span attribute value.
 
     The redactor receives ``(key, value)`` and returns the value to record —
@@ -81,7 +82,7 @@ def _apply_redactor(key: str, value: Any) -> Any:
 
 
 @contextmanager
-def genai_span(name: str, attributes: dict[str, Any]) -> Iterator[Optional[Any]]:
+def genai_span(name: str, attributes: dict[str, Any]) -> Iterator[Any | None]:
     """Open a span named ``gen_ai.<name>`` with the given attributes.
 
     Yields the span (or ``None`` when tracing is disabled / OTel absent) so

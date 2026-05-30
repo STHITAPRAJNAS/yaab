@@ -9,7 +9,7 @@ audit log.
 from __future__ import annotations
 
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -24,7 +24,7 @@ class Document(BaseModel):
 
     id: str = Field(default_factory=lambda: f"doc_{uuid.uuid4().hex[:12]}")
     text: str
-    source: Optional[str] = None
+    source: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -37,8 +37,8 @@ class Chunk(BaseModel):
 
     id: str = Field(default_factory=lambda: f"chunk_{uuid.uuid4().hex[:12]}")
     text: str
-    document_id: Optional[str] = None
-    source: Optional[str] = None
+    document_id: str | None = None
+    source: str | None = None
     index: int = 0  # position within the parent document
     embedding: list[float] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

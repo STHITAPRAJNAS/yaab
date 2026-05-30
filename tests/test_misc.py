@@ -43,8 +43,9 @@ def test_skill_attaches_tools_and_instructions():
         """Search."""
         return "result"
 
-    skill = Skill("research", instructions="Always search first.", tools=[search],
-                  permissions=["net:read"])
+    skill = Skill(
+        "research", instructions="Always search first.", tools=[search], permissions=["net:read"]
+    )
     agent = Agent("a", model=TestModel("ok"), instructions="Base.", skills=[skill])
     assert any(t.name == "search" for t in agent.tools)
     assert "Always search first." in agent.instructions
@@ -85,10 +86,10 @@ async def test_bootstrap_optimizer_freezes_artifact():
 @pytest.mark.asyncio
 async def test_cost_budget_plugin_aborts():
     from yaab import Runner
-    from yaab.plugins.builtins import BudgetExceeded
 
     # TestModel reports cost 0, so simulate via a plugin that bumps cost.
     from yaab.plugins import Plugin
+    from yaab.plugins.builtins import BudgetExceeded
 
     class Expensive(Plugin):
         async def after_model(self, ctx, agent, response):

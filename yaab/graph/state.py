@@ -13,7 +13,8 @@ path — the one you reach for when an auditor or SLA needs explicit control flo
 from __future__ import annotations
 
 import inspect
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -84,25 +85,25 @@ class StateGraph:
 
     def __init__(
         self,
-        state_schema: Optional[type] = None,
+        state_schema: type | None = None,
         *,
-        channels: Optional[dict[str, Channel]] = None,
+        channels: dict[str, Channel] | None = None,
     ) -> None:
         self.state_schema = state_schema
         self.channels: dict[str, Channel] = channels or {}
         self.nodes: dict[str, NodeFn] = {}
         self.edges: dict[str, list[str]] = {}
         self.conditional: dict[str, tuple[Router, dict[str, str]]] = {}
-        self.entry: Optional[str] = None
+        self.entry: str | None = None
 
     # --- construction --------------------------------------------------
-    def add_node(self, name: str, fn: NodeFn) -> "StateGraph":
+    def add_node(self, name: str, fn: NodeFn) -> StateGraph:
         if name in (START, END):
             raise YaabError(f"'{name}' is a reserved node name")
         self.nodes[name] = fn
         return self
 
-    def add_edge(self, src: str, dst: str) -> "StateGraph":
+    def add_edge(self, src: str, dst: str) -> StateGraph:
         self.edges.setdefault(src, []).append(dst)
         if src == START:
             self.entry = dst
@@ -110,28 +111,28 @@ class StateGraph:
 
     def add_conditional_edges(
         self, src: str, router: Router, mapping: dict[str, str]
-    ) -> "StateGraph":
+    ) -> StateGraph:
         self.conditional[src] = (router, mapping)
         return self
 
-    def set_entry_point(self, name: str) -> "StateGraph":
+    def set_entry_point(self, name: str) -> StateGraph:
         self.entry = name
         return self
 
-    def set_finish_point(self, name: str) -> "StateGraph":
+    def set_finish_point(self, name: str) -> StateGraph:
         self.edges.setdefault(name, []).append(END)
         return self
 
-    def add_channel(self, key: str, channel: Channel) -> "StateGraph":
+    def add_channel(self, key: str, channel: Channel) -> StateGraph:
         self.channels[key] = channel
         return self
 
     def compile(
         self,
-        checkpointer: Optional[Checkpointer] = None,
+        checkpointer: Checkpointer | None = None,
         *,
         engine: str = "auto",
-    ) -> "CompiledGraph":
+    ) -> CompiledGraph:
         """Compile the graph to an executable form.
 
         ``engine`` selects how a superstep's state is advanced:
@@ -146,7 +147,9 @@ class StateGraph:
         superstep instead of one per key).
         """
         if self.entry is None:
-            raise YaabError("graph has no entry point; call set_entry_point or add_edge(START, ...)")
+            raise YaabError(
+                "graph has no entry point; call set_entry_point or add_edge(START, ...)"
+            )
         if engine not in ("auto", "python", "rust"):
             raise YaabError(f"unknown engine {engine!r}; use 'auto', 'python', or 'rust'")
         if engine == "rust" and not _core.RUST:
@@ -213,7 +216,7 @@ class CompiledGraph:
 
     async def ainvoke(
         self,
-        inputs: Optional[dict[str, Any]] = None,
+        inputs: dict[str, Any] | None = None,
         *,
         thread_id: str = "default",
         resume: Any = _MISSING,
@@ -284,7 +287,7 @@ class CompiledGraph:
 
         return GraphResult(state=state, interrupted=False, steps=step)
 
-    def invoke(self, inputs: Optional[dict[str, Any]] = None, **kwargs: Any) -> GraphResult:
+    def invoke(self, inputs: dict[str, Any] | None = None, **kwargs: Any) -> GraphResult:
         import asyncio
 
         return asyncio.run(self.ainvoke(inputs, **kwargs))

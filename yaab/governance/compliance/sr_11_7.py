@@ -8,8 +8,6 @@ requirements.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ..audit import AuditLog
 from ..registry import AgentRegistry, ApprovalStatus
 from .base import (
@@ -24,7 +22,7 @@ class SR117Mapper:
     regime = "sr_11_7"
 
     def map(
-        self, registry: AgentRegistry, audit: AuditLog, agent_id: Optional[str] = None
+        self, registry: AgentRegistry, audit: AuditLog, agent_id: str | None = None
     ) -> ComplianceReport:
         kinds = _audit_kinds(audit, agent_id)
         card = registry.get(agent_id) if agent_id else None
@@ -47,9 +45,7 @@ class SR117Mapper:
             ControlResult(
                 id="SR11-7.2a",
                 title="Conceptual soundness evaluated",
-                status=ControlStatus.SATISFIED
-                if "lifecycle" in kinds
-                else ControlStatus.PARTIAL,
+                status=ControlStatus.SATISFIED if "lifecycle" in kinds else ControlStatus.PARTIAL,
                 evidence=["lifecycle transitions recorded"] if "lifecycle" in kinds else [],
             )
         )

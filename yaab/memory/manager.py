@@ -8,7 +8,7 @@ workflow, made backend-agnostic.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from ..types import Role
 from . import InMemoryVectorMemory, MemoryRecord, MemoryService
@@ -20,7 +20,7 @@ DEFAULT_USER = "default"
 class MemoryManager:
     """Manage long-term memory scoped by app and user."""
 
-    def __init__(self, service: Optional[MemoryService] = None) -> None:
+    def __init__(self, service: MemoryService | None = None) -> None:
         self.service = service or InMemoryVectorMemory()
 
     @staticmethod
@@ -33,7 +33,7 @@ class MemoryManager:
         *,
         app_name: str = DEFAULT_APP,
         user_id: str = DEFAULT_USER,
-        metadata: Optional[dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> MemoryRecord:
         meta = {**self._ns(app_name, user_id), **(metadata or {})}
         return await self.service.add(text, metadata=meta)

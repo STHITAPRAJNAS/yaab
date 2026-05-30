@@ -11,7 +11,10 @@ name = "yaab_core"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.23", features = ["extension-module"] }
+# abi3-py311: build a single stable-ABI wheel that works on CPython 3.11+ —
+# including future versions (3.13, 3.14, …) — so users never fall back to the
+# pure-Python core just because their interpreter is newer than our wheels.
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py311"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

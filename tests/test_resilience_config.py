@@ -51,8 +51,7 @@ async def test_resilient_model_records_failure_and_opens():
         async def complete(self, messages, **kwargs):
             raise RuntimeError("provider down")
 
-        def stream(self, messages, **kwargs):
-            ...
+        def stream(self, messages, **kwargs): ...
 
     cb = CircuitBreaker(threshold=1, cooldown=10)
     model = ResilientModel(Failing(), circuit_breaker=cb)

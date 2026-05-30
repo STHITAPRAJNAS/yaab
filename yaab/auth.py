@@ -8,7 +8,7 @@ changing the agent. A scheme maps an incoming request's headers to an
 
 from __future__ import annotations
 
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from .exceptions import YaabError
 
@@ -21,7 +21,7 @@ class AuthError(YaabError):
 class AuthScheme(Protocol):
     name: str
 
-    def authenticate(self, headers: dict[str, str]) -> Optional[str]:
+    def authenticate(self, headers: dict[str, str]) -> str | None:
         """Return the caller identity, or raise :class:`AuthError`."""
         ...
 
@@ -35,7 +35,7 @@ class NoAuth:
 
     name = "none"
 
-    def authenticate(self, headers: dict[str, str]) -> Optional[str]:
+    def authenticate(self, headers: dict[str, str]) -> str | None:
         return "anonymous"
 
     def describe(self) -> dict:
@@ -51,7 +51,7 @@ class BearerTokenAuth:
         # token -> identity
         self._tokens = tokens
 
-    def authenticate(self, headers: dict[str, str]) -> Optional[str]:
+    def authenticate(self, headers: dict[str, str]) -> str | None:
         header = headers.get("authorization") or headers.get("Authorization", "")
         if not header.lower().startswith("bearer "):
             raise AuthError("missing or malformed Authorization header")
@@ -74,7 +74,7 @@ class APIKeyAuth:
         self._keys = keys
         self.header = header.lower()
 
-    def authenticate(self, headers: dict[str, str]) -> Optional[str]:
+    def authenticate(self, headers: dict[str, str]) -> str | None:
         lowered = {k.lower(): v for k, v in headers.items()}
         key = lowered.get(self.header)
         identity = self._keys.get(key) if key else None
@@ -101,7 +101,7 @@ class OAuth2:
         self.authorization_url = authorization_url
         self.token_url = token_url
 
-    def authenticate(self, headers: dict[str, str]) -> Optional[str]:
+    def authenticate(self, headers: dict[str, str]) -> str | None:
         header = headers.get("authorization") or headers.get("Authorization", "")
         if not header.lower().startswith("bearer "):
             raise AuthError("missing OAuth bearer token")

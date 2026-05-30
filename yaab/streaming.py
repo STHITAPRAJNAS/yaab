@@ -13,10 +13,11 @@ incomplete JSON fragment still parses into the best-effort object available.
 from __future__ import annotations
 
 import json
-from typing import Any, AsyncIterator, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 
-def parse_partial_json(buffer: str) -> Optional[Any]:
+def parse_partial_json(buffer: str) -> Any | None:
     """Best-effort parse of a possibly-incomplete JSON string.
 
     Closes dangling strings/brackets and trims trailing commas so a prefix of a
@@ -80,7 +81,7 @@ async def stream_structured(
     *,
     output_type: type,
     deps: Any = None,
-    identity: Optional[str] = None,
+    identity: str | None = None,
 ) -> AsyncIterator[Any]:
     """Yield partial instances of ``output_type`` as the model streams JSON.
 
@@ -100,11 +101,15 @@ async def stream_structured(
         prompt,
         original=prompt,
     )
+    model_cls: type[BaseModel] | None = (
+        output_type
+        if isinstance(output_type, type) and issubclass(output_type, BaseModel)
+        else None
+    )
     schema_hint = ""
-    if isinstance(output_type, type) and issubclass(output_type, BaseModel):
-        schema_hint = (
-            "\n\nRespond ONLY with a JSON object matching this schema:\n"
-            + json.dumps(output_type.model_json_schema())
+    if model_cls is not None:
+        schema_hint = "\n\nRespond ONLY with a JSON object matching this schema:\n" + json.dumps(
+            model_cls.model_json_schema()
         )
     ctx_messages.append(Message(role=Role.SYSTEM, content=f"Output JSON only.{schema_hint}"))
 
@@ -121,8 +126,8 @@ async def stream_structured(
         last_emitted = partial
         # Lenient: build the model from whatever fields exist so far.
         try:
-            if isinstance(output_type, type) and issubclass(output_type, BaseModel):
-                yield output_type.model_construct(**partial) if isinstance(partial, dict) else partial
+            if model_cls is not None and isinstance(partial, dict):
+                yield model_cls.model_construct(**partial)
             else:
                 yield partial
         except Exception:  # noqa: BLE001 - skip un-constructable partials
@@ -138,7 +143,7 @@ async def stream_structured(
                 yield last_emitted
 
 
-def _mk_ctx(deps: Any, identity: Optional[str]):
+def _mk_ctx(deps: Any, identity: str | None):
     from .types import RunContext
 
     return RunContext(deps=deps, identity=identity)

@@ -9,11 +9,12 @@ analysis evidence, and the same metrics drive the optimizer layer.
 from __future__ import annotations
 
 import time
-from typing import Any, Awaitable, Callable, Optional, Protocol, Union, runtime_checkable
+from collections.abc import Awaitable, Callable
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
-TaskFn = Callable[[Any], Union[Any, Awaitable[Any]]]
+TaskFn = Callable[[Any], Any | Awaitable[Any]]
 
 
 class Case(BaseModel):
@@ -170,7 +171,7 @@ class CaseResult(BaseModel):
     case: str
     output: Any = None
     scores: dict[str, float] = Field(default_factory=dict)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ExperimentResult(BaseModel):

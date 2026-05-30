@@ -16,7 +16,7 @@ import sqlite3
 import time
 import uuid
 from enum import Enum
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -43,9 +43,9 @@ class AuditEvent(BaseModel):
     id: str = Field(default_factory=lambda: f"evt_{uuid.uuid4().hex[:12]}")
     timestamp: float = Field(default_factory=time.time)
     kind: AuditKind
-    agent_id: Optional[str] = None
-    version: Optional[str] = None
-    identity: Optional[str] = None
+    agent_id: str | None = None
+    version: str | None = None
+    identity: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
     prev_hash: str = GENESIS
     hash: str = ""
@@ -71,8 +71,7 @@ class AuditEvent(BaseModel):
 class AuditSink(Protocol):
     """A destination for audit events (OTel collector, Logfire, SQL, ...)."""
 
-    def write(self, event: AuditEvent) -> None:
-        ...
+    def write(self, event: AuditEvent) -> None: ...
 
 
 class InMemoryAuditSink:
@@ -114,7 +113,7 @@ class SQLiteAuditSink:
 class AuditLog:
     """The hash-chained audit ledger."""
 
-    def __init__(self, sinks: Optional[list[AuditSink]] = None) -> None:
+    def __init__(self, sinks: list[AuditSink] | None = None) -> None:
         self._events: list[AuditEvent] = []
         self._last_hash = GENESIS
         self.sinks: list[AuditSink] = sinks if sinks is not None else [InMemoryAuditSink()]
@@ -123,9 +122,9 @@ class AuditLog:
         self,
         kind: AuditKind,
         *,
-        agent_id: Optional[str] = None,
-        version: Optional[str] = None,
-        identity: Optional[str] = None,
+        agent_id: str | None = None,
+        version: str | None = None,
+        identity: str | None = None,
         **payload: Any,
     ) -> AuditEvent:
         event = AuditEvent(

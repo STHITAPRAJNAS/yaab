@@ -23,7 +23,8 @@ never breaks ``import yaab``.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable
+from collections.abc import Callable, Iterable
+from typing import Any
 
 Factory = Callable[..., Any]
 
@@ -57,9 +58,9 @@ class ComponentError(KeyError):
 def register(kind: str, name: str, factory: Factory | None = None) -> Any:
     """Register a component factory. Usable as a call or a decorator.
 
-        register("model", "echo", EchoModel)
-        @register("model", "echo")
-        def make(**kw): ...
+    register("model", "echo", EchoModel)
+    @register("model", "echo")
+    def make(**kw): ...
     """
 
     def _do(f: Factory) -> Factory:
@@ -108,9 +109,7 @@ def get(kind: str, name: str, /, **kwargs: Any) -> Any:
     _discover(kind)
     table = _REGISTRY.get(kind, {})
     if name not in table:
-        raise ComponentError(
-            f"no '{kind}' component named '{name}'. Available: {sorted(table)}"
-        )
+        raise ComponentError(f"no '{kind}' component named '{name}'. Available: {sorted(table)}")
     return table[name](**kwargs)
 
 

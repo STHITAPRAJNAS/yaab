@@ -18,10 +18,10 @@ def test_scope_of():
 def test_state_routes_by_prefix():
     app, user = {}, {}
     st = State(user=user, app=app)
-    st["k"] = 1            # session
-    st["app:cfg"] = "v"    # app
+    st["k"] = 1  # session
+    st["app:cfg"] = "v"  # app
     st["user:pref"] = "p"  # user
-    st["temp:tmp"] = "t"   # temp (ephemeral)
+    st["temp:tmp"] = "t"  # temp (ephemeral)
 
     assert st["k"] == 1
     assert app["app:cfg"] == "v"
@@ -57,9 +57,9 @@ async def test_session_manager_resolve_state_scopes():
     s2 = await mgr.create_session(app_name="bank", user_id="alice")
 
     st1 = await mgr.resolve_state(s1.id, app_name="bank", user_id="alice")
-    st1["user:tier"] = "gold"   # shared across alice's sessions
-    st1["app:region"] = "eu"    # shared across the app
-    st1["local"] = "only-s1"    # session-scoped
+    st1["user:tier"] = "gold"  # shared across alice's sessions
+    st1["app:region"] = "eu"  # shared across the app
+    st1["local"] = "only-s1"  # session-scoped
 
     # A second session for the same user sees user:/app: but not session-local.
     st2 = await mgr.resolve_state(s2.id, app_name="bank", user_id="alice")
@@ -70,7 +70,8 @@ async def test_session_manager_resolve_state_scopes():
     # A different user does NOT see alice's user: state.
     st3 = await mgr.resolve_state(
         (await mgr.create_session(app_name="bank", user_id="bob")).id,
-        app_name="bank", user_id="bob",
+        app_name="bank",
+        user_id="bob",
     )
     assert "user:tier" not in st3
     assert st3["app:region"] == "eu"  # but app: state is global

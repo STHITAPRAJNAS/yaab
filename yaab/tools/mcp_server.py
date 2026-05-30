@@ -12,7 +12,7 @@ else; an in-process handler is exactly what tests (and the YAAB MCPClient) drive
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from ..types import RunContext
 
@@ -28,7 +28,7 @@ class MCPServer:
         self.version = version
 
     @classmethod
-    def from_agent(cls, agent: Any, **kwargs: Any) -> "MCPServer":
+    def from_agent(cls, agent: Any, **kwargs: Any) -> MCPServer:
         """Expose an agent's tools as an MCP server."""
         return cls(list(agent.tools), name=kwargs.pop("name", agent.name), **kwargs)
 
@@ -46,7 +46,7 @@ class MCPServer:
         except Exception as exc:  # noqa: BLE001 - surface as a JSON-RPC error
             return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32603, "message": str(exc)}}
 
-    async def _dispatch(self, method: Optional[str], params: dict[str, Any]) -> Any:
+    async def _dispatch(self, method: str | None, params: dict[str, Any]) -> Any:
         if method == "initialize":
             return {
                 "protocolVersion": PROTOCOL_VERSION,

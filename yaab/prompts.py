@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import time
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -44,7 +43,7 @@ class PromptTemplate(BaseModel):
         return hashlib.sha256(template.encode()).hexdigest()[:16]
 
     @classmethod
-    def create(cls, name: str, template: str, *, notes: str = "") -> "PromptTemplate":
+    def create(cls, name: str, template: str, *, notes: str = "") -> PromptTemplate:
         pt = cls(name=name)
         pt.add_version(template, notes=notes)
         return pt
@@ -60,14 +59,14 @@ class PromptTemplate(BaseModel):
         self.active = version.version
         return version
 
-    def get(self, version: Optional[int] = None) -> PromptVersion:
+    def get(self, version: int | None = None) -> PromptVersion:
         target = version or self.active
         for v in self.versions:
             if v.version == target:
                 return v
         raise YaabError(f"prompt '{self.name}' has no version {target}")
 
-    def render(self, *, version: Optional[int] = None, **values: object) -> str:
+    def render(self, *, version: int | None = None, **values: object) -> str:
         return self.get(version).render(**values)
 
 
@@ -89,7 +88,7 @@ class PromptRegistry:
             raise YaabError(f"unknown prompt '{name}'")
         return self._prompts[name]
 
-    def render(self, name: str, /, *, version: Optional[int] = None, **values: object) -> str:
+    def render(self, name: str, /, *, version: int | None = None, **values: object) -> str:
         return self.get(name).render(version=version, **values)
 
     def list(self) -> list[str]:

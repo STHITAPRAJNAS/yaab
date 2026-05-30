@@ -9,15 +9,15 @@ the default toolset degrades gracefully offline.
 
 from __future__ import annotations
 
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
 
 from ..base import tool
 
 SearchProvider = Callable[[str, int], Awaitable[list[dict]]]
-_provider: Optional[SearchProvider] = None
+_provider: SearchProvider | None = None
 
 
-def set_search_provider(provider: Optional[SearchProvider]) -> None:
+def set_search_provider(provider: SearchProvider | None) -> None:
     """Register the backend used by :func:`web_search` (or clear it with None)."""
     global _provider
     _provider = provider

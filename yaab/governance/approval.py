@@ -20,7 +20,8 @@ naturally with the authorization layer.
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from ..exceptions import ApprovalRequired
 from ..plugins import Plugin
@@ -39,10 +40,10 @@ class ToolApprovalPlugin(Plugin):
     def __init__(
         self,
         *,
-        tools: Optional[list[str]] = None,
-        needs_approval: Optional[NeedsApproval] = None,
-        approver: Optional[Approver] = None,
-        audit: Optional[AuditLog] = None,
+        tools: list[str] | None = None,
+        needs_approval: NeedsApproval | None = None,
+        approver: Approver | None = None,
+        audit: AuditLog | None = None,
     ) -> None:
         if tools is None and needs_approval is None:
             raise ValueError("specify `tools` and/or `needs_approval`")

@@ -12,7 +12,8 @@ provides that over the same agents/embedders.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -23,7 +24,7 @@ class BatchItem(BaseModel):
     index: int
     input: Any = None
     output: Any = None
-    error: Optional[str] = None
+    error: str | None = None
     ok: bool = True
 
 
@@ -48,7 +49,7 @@ async def batch_map(
     inputs: list[Any],
     *,
     concurrency: int = 8,
-    on_progress: Optional[Callable[[int, int], None]] = None,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> BatchResult:
     """Run ``fn`` over ``inputs`` with bounded concurrency, tolerating failures.
 
@@ -84,7 +85,7 @@ async def batch_run(
     prompts: list[str],
     *,
     concurrency: int = 8,
-    on_progress: Optional[Callable[[int, int], None]] = None,
+    on_progress: Callable[[int, int], None] | None = None,
     **run_kwargs: Any,
 ) -> BatchResult:
     """Run an agent over many prompts concurrently; outputs are the run outputs."""

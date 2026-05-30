@@ -8,7 +8,7 @@ Their client libraries are imported lazily — install only what you use.
 from __future__ import annotations
 
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from ..extensions import register
 from .store import Filter
@@ -26,7 +26,7 @@ class ChromaVectorStore:
         self,
         *,
         collection: str = "yaab",
-        path: Optional[str] = None,
+        path: str | None = None,
         client: Any = None,
     ) -> None:
         try:
@@ -48,16 +48,21 @@ class ChromaVectorStore:
             ids=[c.id for c in embedded],
             embeddings=[c.embedding for c in embedded],
             documents=[c.text for c in embedded],
-            metadatas=[{**c.metadata, "_source": c.source or "", "_doc": c.document_id or "",
-                        "_idx": c.index} for c in embedded],
+            metadatas=[
+                {
+                    **c.metadata,
+                    "_source": c.source or "",
+                    "_doc": c.document_id or "",
+                    "_idx": c.index,
+                }
+                for c in embedded
+            ],
         )
 
     def query(
-        self, embedding: list[float], *, k: int = 5, where: Optional[Filter] = None
+        self, embedding: list[float], *, k: int = 5, where: Filter | None = None
     ) -> list[RetrievedChunk]:
-        res = self._col.query(
-            query_embeddings=[embedding], n_results=k, where=where or None
-        )
+        res = self._col.query(query_embeddings=[embedding], n_results=k, where=where or None)
         out: list[RetrievedChunk] = []
         ids = res.get("ids", [[]])[0]
         docs = res.get("documents", [[]])[0]
@@ -66,14 +71,17 @@ class ChromaVectorStore:
         for cid, text, meta, dist in zip(ids, docs, metas, dists, strict=False):
             meta = dict(meta or {})
             chunk = Chunk(
-                id=cid, text=text, source=meta.pop("_source", None) or None,
-                document_id=meta.pop("_doc", None) or None, index=int(meta.pop("_idx", 0)),
+                id=cid,
+                text=text,
+                source=meta.pop("_source", None) or None,
+                document_id=meta.pop("_doc", None) or None,
+                index=int(meta.pop("_idx", 0)),
                 metadata=meta,
             )
             out.append(RetrievedChunk(chunk=chunk, score=1.0 - float(dist)))
         return out
 
-    def delete(self, *, where: Optional[Filter] = None) -> int:
+    def delete(self, *, where: Filter | None = None) -> int:
         before = self.count()
         self._col.delete(where=where or None)
         return before - self.count()
@@ -89,7 +97,7 @@ class QdrantVectorStore:
         self,
         *,
         collection: str = "yaab",
-        url: Optional[str] = None,
+        url: str | None = None,
         location: str = ":memory:",
         dim: int = 1536,
         client: Any = None,
@@ -99,9 +107,7 @@ class QdrantVectorStore:
             from qdrant_client.models import Distance, VectorParams  # type: ignore
         except ImportError as exc:  # pragma: no cover - optional extra
             raise RuntimeError("qdrant-client is required. `pip install qdrant-client`.") from exc
-        self._client = client or (
-            QdrantClient(url=url) if url else QdrantClient(location=location)
-        )
+        self._client = client or (QdrantClient(url=url) if url else QdrantClient(location=location))
         self._collection = collection
         if not self._client.collection_exists(collection):
             self._client.create_collection(
@@ -116,8 +122,13 @@ class QdrantVectorStore:
             PointStruct(
                 id=str(uuid.uuid4()),
                 vector=c.embedding,
-                payload={"text": c.text, "source": c.source, "document_id": c.document_id,
-                         "index": c.index, **c.metadata},
+                payload={
+                    "text": c.text,
+                    "source": c.source,
+                    "document_id": c.document_id,
+                    "index": c.index,
+                    **c.metadata,
+                },
             )
             for c in chunks
             if c.embedding
@@ -126,15 +137,18 @@ class QdrantVectorStore:
             self._client.upsert(collection_name=self._collection, points=points)
 
     def query(
-        self, embedding: list[float], *, k: int = 5, where: Optional[Filter] = None
+        self, embedding: list[float], *, k: int = 5, where: Filter | None = None
     ) -> list[RetrievedChunk]:
         flt = None
         if where:
-            from qdrant_client.models import FieldCondition, Filter as QFilter, MatchValue  # type: ignore
+            from qdrant_client.models import FieldCondition, MatchValue  # type: ignore
+            from qdrant_client.models import Filter as QFilter
 
             flt = QFilter(
-                must=[FieldCondition(key=key, match=MatchValue(value=val))
-                      for key, val in where.items()]
+                must=[
+                    FieldCondition(key=key, match=MatchValue(value=val))
+                    for key, val in where.items()
+                ]
             )
         hits = self._client.search(
             collection_name=self._collection, query_vector=embedding, limit=k, query_filter=flt
@@ -143,22 +157,29 @@ class QdrantVectorStore:
         for h in hits:
             p = dict(h.payload or {})
             chunk = Chunk(
-                text=p.pop("text", ""), source=p.pop("source", None),
-                document_id=p.pop("document_id", None), index=int(p.pop("index", 0)),
+                text=p.pop("text", ""),
+                source=p.pop("source", None),
+                document_id=p.pop("document_id", None),
+                index=int(p.pop("index", 0)),
                 metadata=p,
             )
             out.append(RetrievedChunk(chunk=chunk, score=float(h.score)))
         return out
 
-    def delete(self, *, where: Optional[Filter] = None) -> int:
+    def delete(self, *, where: Filter | None = None) -> int:
         before = self.count()
         if where is None:
             self._client.delete_collection(self._collection)
             return before
-        from qdrant_client.models import FieldCondition, Filter as QFilter, FilterSelector, MatchValue  # type: ignore
+        from qdrant_client.models import FieldCondition, FilterSelector, MatchValue  # type: ignore
+        from qdrant_client.models import Filter as QFilter
 
-        flt = QFilter(must=[FieldCondition(key=k, match=MatchValue(value=v)) for k, v in where.items()])
-        self._client.delete(collection_name=self._collection, points_selector=FilterSelector(filter=flt))
+        flt = QFilter(
+            must=[FieldCondition(key=k, match=MatchValue(value=v)) for k, v in where.items()]
+        )
+        self._client.delete(
+            collection_name=self._collection, points_selector=FilterSelector(filter=flt)
+        )
         return before - self.count()
 
     def count(self) -> int:

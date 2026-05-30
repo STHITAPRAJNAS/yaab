@@ -13,7 +13,8 @@ The three-line "hello agent" works with zero ceremony; every layer underneath
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable, Generic, Optional, Union
+from collections.abc import Callable
+from typing import Any, Generic
 
 from .models import ModelProvider, resolve_model
 from .tools.base import Tool, coerce_tools
@@ -29,20 +30,20 @@ class Agent(Generic[Deps, Output]):
         self,
         name: str,
         *,
-        model: Union[str, ModelProvider] = "openai/gpt-4o",
-        instructions: Union[str, Callable[[RunContext[Deps]], str]] = "",
-        tools: Optional[list[Any]] = None,
+        model: str | ModelProvider = "openai/gpt-4o",
+        instructions: str | Callable[[RunContext[Deps]], str] = "",
+        tools: list[Any] | None = None,
         deps_type: type = _NoneType,
         output_type: type = str,
-        guardrails: Optional[list[Any]] = None,
-        capabilities: Optional[list[Any]] = None,
-        skills: Optional[list[Any]] = None,
-        registry_id: Optional[str] = None,
+        guardrails: list[Any] | None = None,
+        capabilities: list[Any] | None = None,
+        skills: list[Any] | None = None,
+        registry_id: str | None = None,
         max_steps: int = 8,
         output_retries: int = 2,
-        tool_choice: Optional[Any] = None,
-        context_strategy: Optional[Any] = None,
-        runner: Optional[Any] = None,
+        tool_choice: Any | None = None,
+        context_strategy: Any | None = None,
+        runner: Any | None = None,
         instrument: bool = True,
     ) -> None:
         self.name = name
@@ -82,7 +83,7 @@ class Agent(Generic[Deps, Output]):
             instructions = "\n\n".join(base + instruction_fragments)
         self.instructions = instructions
 
-        self._model: Optional[ModelProvider] = None
+        self._model: ModelProvider | None = None
         self._runner = runner
 
     @property
@@ -97,7 +98,7 @@ class Agent(Generic[Deps, Output]):
             self._model = provider
         return self._model
 
-    def tool(self, fn: Optional[Callable[..., Any]] = None, **kwargs: Any) -> Any:
+    def tool(self, fn: Callable[..., Any] | None = None, **kwargs: Any) -> Any:
         """Register a tool on this agent (decorator form)."""
         from .tools.base import FunctionTool
 
@@ -107,7 +108,7 @@ class Agent(Generic[Deps, Output]):
 
         return wrap(fn) if fn is not None else wrap
 
-    def as_tool(self, *, name: Optional[str] = None, description: Optional[str] = None) -> Any:
+    def as_tool(self, *, name: str | None = None, description: str | None = None) -> Any:
         """Expose this agent as a tool for another agent (Agent-as-Tool)."""
         from .tools.agent_tool import AgentTool
 
@@ -125,11 +126,11 @@ class Agent(Generic[Deps, Output]):
         prompt: str,
         *,
         deps: Deps = None,  # type: ignore[assignment]
-        session_id: Optional[str] = None,
-        identity: Optional[str] = None,
-        usage_limits: Optional[Any] = None,
-        cancellation: Optional[Any] = None,
-        timeout: Optional[float] = None,
+        session_id: str | None = None,
+        identity: str | None = None,
+        usage_limits: Any | None = None,
+        cancellation: Any | None = None,
+        timeout: float | None = None,
     ) -> RunResult[Output]:
         """Run the agent's model-driven loop and return a typed result.
 
@@ -153,8 +154,8 @@ class Agent(Generic[Deps, Output]):
         prompt: Any,
         *,
         deps: Deps = None,  # type: ignore[assignment]
-        session_id: Optional[str] = None,
-        identity: Optional[str] = None,
+        session_id: str | None = None,
+        identity: str | None = None,
     ) -> Any:
         """Stream the answer token-by-token (single turn, no tool loop).
 
@@ -171,9 +172,9 @@ class Agent(Generic[Deps, Output]):
         self,
         prompt: Any,
         *,
-        output_type: Optional[type] = None,
+        output_type: type | None = None,
         deps: Deps = None,  # type: ignore[assignment]
-        identity: Optional[str] = None,
+        identity: str | None = None,
     ) -> Any:
         """Stream partial typed objects as the model generates JSON.
 
@@ -193,11 +194,11 @@ class Agent(Generic[Deps, Output]):
         prompt: str,
         *,
         deps: Deps = None,  # type: ignore[assignment]
-        session_id: Optional[str] = None,
-        identity: Optional[str] = None,
-        usage_limits: Optional[Any] = None,
-        cancellation: Optional[Any] = None,
-        timeout: Optional[float] = None,
+        session_id: str | None = None,
+        identity: str | None = None,
+        usage_limits: Any | None = None,
+        cancellation: Any | None = None,
+        timeout: float | None = None,
     ) -> RunResult[Output]:
         """Synchronous convenience wrapper around :meth:`run`."""
         return asyncio.run(

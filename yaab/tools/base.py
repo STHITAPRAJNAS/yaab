@@ -10,7 +10,8 @@ ergonomics as Pydantic AI's ``@agent.tool``.
 from __future__ import annotations
 
 import inspect
-from typing import Any, Callable, Optional, Protocol, get_type_hints, runtime_checkable
+from collections.abc import Callable
+from typing import Any, Protocol, get_type_hints, runtime_checkable
 
 from pydantic import create_model
 
@@ -47,8 +48,8 @@ class FunctionTool:
         self,
         fn: Callable[..., Any],
         *,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
     ) -> None:
         self.fn = fn
         self.name = name or fn.__name__
@@ -109,10 +110,10 @@ def _is_run_context(annotation: Any) -> bool:
 
 
 def tool(
-    fn: Optional[Callable[..., Any]] = None,
+    fn: Callable[..., Any] | None = None,
     *,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
+    name: str | None = None,
+    description: str | None = None,
 ) -> Any:
     """Decorator turning a typed function into a :class:`FunctionTool`.
 
@@ -131,9 +132,7 @@ def coerce_tools(items: list[Any]) -> list[Tool]:
     """Coerce a mixed list of callables/tools into :class:`Tool` instances."""
     out: list[Tool] = []
     for item in items:
-        if isinstance(item, FunctionTool) or (
-            hasattr(item, "schema") and hasattr(item, "execute")
-        ):
+        if isinstance(item, FunctionTool) or (hasattr(item, "schema") and hasattr(item, "execute")):
             out.append(item)
         elif callable(item):
             out.append(FunctionTool(item))

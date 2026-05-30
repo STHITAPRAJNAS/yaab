@@ -13,7 +13,7 @@ imported lazily so importing YAAB never requires a web stack.
 """
 
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from .auth import AuthError, AuthScheme, NoAuth
 
@@ -25,8 +25,8 @@ _A2A_TASKS: dict[str, dict] = {}
 def fastapi_server_app(
     agent: Any,
     *,
-    runner: Optional[Any] = None,
-    auth: Optional[AuthScheme] = None,
+    runner: Any | None = None,
+    auth: AuthScheme | None = None,
     base_url: str = "",
 ) -> Any:
     """Build a FastAPI app that serves ``agent`` (YAAB-native + A2A endpoints)."""
@@ -70,9 +70,7 @@ def fastapi_server_app(
         identity = _identify(request)
         body = await request.json()
         prompt = body.get("prompt") or body.get("input") or ""
-        result = await agent.run(
-            prompt, session_id=body.get("session_id"), identity=identity
-        )
+        result = await agent.run(prompt, session_id=body.get("session_id"), identity=identity)
         from .runner import _safe
 
         return JSONResponse(
@@ -206,7 +204,7 @@ def serve(
     *,
     host: str = "127.0.0.1",
     port: int = 8000,
-    auth: Optional[AuthScheme] = None,
+    auth: AuthScheme | None = None,
 ) -> None:  # pragma: no cover - thin uvicorn wrapper
     """Run the agent's FastAPI app with uvicorn (blocking)."""
     try:

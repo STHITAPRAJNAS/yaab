@@ -18,15 +18,14 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 _PREAMBLE = "import builtins, math, json, statistics, re\nimport sys as _sys\n"
 
 
 @runtime_checkable
 class Sandbox(Protocol):
-    async def run(self, code: str, *, timeout: float) -> str:
-        ...
+    async def run(self, code: str, *, timeout: float) -> str: ...
 
 
 class SubprocessSandbox:
@@ -36,7 +35,9 @@ class SubprocessSandbox:
         try:
             proc = subprocess.run(
                 [sys.executable, "-I", "-c", _PREAMBLE + code],
-                capture_output=True, text=True, timeout=timeout,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
             )
         except subprocess.TimeoutExpired:
             return f"error: execution exceeded {timeout}s timeout"
@@ -70,9 +71,19 @@ class DockerSandbox:
 
     async def run(self, code: str, *, timeout: float) -> str:
         cmd = [
-            "docker", "run", "--rm", "-i",
-            "--memory", self.memory, "--cpus", self.cpus,
-            "--read-only", "--cap-drop", "ALL", "--pids-limit", "64",
+            "docker",
+            "run",
+            "--rm",
+            "-i",
+            "--memory",
+            self.memory,
+            "--cpus",
+            self.cpus,
+            "--read-only",
+            "--cap-drop",
+            "ALL",
+            "--pids-limit",
+            "64",
         ]
         if not self.network:
             cmd += ["--network", "none"]
@@ -91,10 +102,10 @@ class DockerSandbox:
         return proc.stdout.strip() or "(no output)"
 
 
-_default_sandbox: Optional[Sandbox] = None
+_default_sandbox: Sandbox | None = None
 
 
-def set_default_sandbox(sandbox: Optional[Sandbox]) -> None:
+def set_default_sandbox(sandbox: Sandbox | None) -> None:
     """Set the sandbox used by the built-in ``python_exec`` tool."""
     global _default_sandbox
     _default_sandbox = sandbox

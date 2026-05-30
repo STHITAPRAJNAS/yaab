@@ -9,7 +9,7 @@ can tune and then freeze into a deployable, versioned artifact.
 from __future__ import annotations
 
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -45,7 +45,7 @@ class Module:
             else signature
         )
         self._model_spec = model
-        self._model: Optional[ModelProvider] = None
+        self._model: ModelProvider | None = None
         self.demos: list[dict[str, Any]] = []
 
     @property
@@ -70,7 +70,7 @@ class Module:
         resp = await self.model.complete([Message(role=Role.USER, content=prompt)])
         return self.signature.parse_output(resp.content)
 
-    def load(self, artifact: CompiledArtifact) -> "Module":
+    def load(self, artifact: CompiledArtifact) -> Module:
         """Apply a compiled artifact (instructions + demos) to this module."""
         if artifact.instructions:
             self.signature.instructions = artifact.instructions
@@ -98,7 +98,9 @@ class ChainOfThought(Module):
         from .signature import FieldSpec
 
         if not any(f.name == "reasoning" for f in self.signature.outputs):
-            self.signature.outputs.insert(0, FieldSpec(name="reasoning", description="Think step by step."))
+            self.signature.outputs.insert(
+                0, FieldSpec(name="reasoning", description="Think step by step.")
+            )
 
 
 class ReAct(Module):
@@ -108,19 +110,23 @@ class ReAct(Module):
     so optimization and execution share one runtime.
     """
 
-    def __init__(self, signature: str | Signature, *, tools: Optional[list[Any]] = None, **kwargs: Any):
+    def __init__(
+        self, signature: str | Signature, *, tools: list[Any] | None = None, **kwargs: Any
+    ):
         super().__init__(signature, **kwargs)
         self.tools = tools or []
 
     async def forward(self, **inputs: Any) -> dict[str, str]:
         from ..agent import Agent
 
-        agent = Agent(
+        agent: Agent = Agent(
             "react",
             model=self._model_spec,
             instructions=self.signature.instructions or "Reason step by step, using tools.",
             tools=self.tools,
         )
-        prompt = self.signature.render_prompt({k: str(v) for k, v in inputs.items()}, demos=self.demos)
+        prompt = self.signature.render_prompt(
+            {k: str(v) for k, v in inputs.items()}, demos=self.demos
+        )
         result = await agent.run(prompt)
         return self.signature.parse_output(result.output)

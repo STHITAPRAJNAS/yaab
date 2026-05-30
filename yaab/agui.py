@@ -19,7 +19,8 @@ Reference event types (subset of the AG-UI spec):
 
 import time
 import uuid
-from typing import Any, AsyncIterator, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 from .types import EventType
 
@@ -47,9 +48,9 @@ async def run_agui(
     agent: Any,
     prompt: str,
     *,
-    runner: Optional[Any] = None,
-    thread_id: Optional[str] = None,
-    run_id: Optional[str] = None,
+    runner: Any | None = None,
+    thread_id: str | None = None,
+    run_id: str | None = None,
     **run_kwargs: Any,
 ) -> AsyncIterator[dict[str, Any]]:
     """Run an agent and yield AG-UI protocol events.
@@ -146,7 +147,7 @@ async def run_agui(
         yield _evt(AGUIEventType.RUN_ERROR, runId=run_id, message=str(exc))
 
 
-def agui_sse_app(agent: Any, *, runner: Optional[Any] = None, auth: Optional[Any] = None) -> Any:
+def agui_sse_app(agent: Any, *, runner: Any | None = None, auth: Any | None = None) -> Any:
     """Build a FastAPI app exposing the agent over AG-UI SSE at ``POST /agui``.
 
     The request body is an AG-UI run input: ``{"threadId": ..., "runId": ...,
@@ -178,8 +179,12 @@ def agui_sse_app(agent: Any, *, runner: Optional[Any] = None, auth: Optional[Any
 
         async def event_source():
             async for ev in run_agui(
-                agent, prompt, runner=runner, thread_id=thread_id,
-                run_id=run_id, identity=identity,
+                agent,
+                prompt,
+                runner=runner,
+                thread_id=thread_id,
+                run_id=run_id,
+                identity=identity,
             ):
                 yield f"data: {json.dumps(ev)}\n\n"
 

@@ -8,9 +8,9 @@ from yaab.governance.audit import AuditKind
 
 def test_drift_monitor_flags_regression():
     mon = DriftMonitor(baseline_window=3, recent_window=3, threshold=0.1)
-    for s in [0.9, 0.92, 0.88]:      # baseline ~0.9
+    for s in [0.9, 0.92, 0.88]:  # baseline ~0.9
         mon.record_score("a", s)
-    for s in [0.6, 0.58, 0.62]:      # recent ~0.6
+    for s in [0.6, 0.58, 0.62]:  # recent ~0.6
         mon.record_score("a", s)
     report = mon.report("a")
     assert report.drifted is True

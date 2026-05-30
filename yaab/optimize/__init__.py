@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .module import ChainOfThought, CompiledArtifact, Module, Predict, ReAct
-from .optimizer import GEPA, MIPROv2, BootstrapFewShot, Metric, Optimizer
+from .optimizer import GEPA, BootstrapFewShot, Metric, MIPROv2, Optimizer
 from .signature import FieldSpec, Signature
 
 __all__ = [

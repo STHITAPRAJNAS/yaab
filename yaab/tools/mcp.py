@@ -10,7 +10,8 @@ without pulling a hard dependency into the core.
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from ..types import RunContext
 

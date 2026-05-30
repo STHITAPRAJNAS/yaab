@@ -14,7 +14,7 @@ Built-ins (audit, governance enforcement, cost budget) live in
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from ..models.base import ModelResponse
 from ..types import Message, RunContext
@@ -28,30 +28,27 @@ class Plugin:
 
     name: str = "plugin"
 
-    async def before_run(self, ctx: RunContext, agent: str, prompt: str) -> None:
-        ...
+    async def before_run(self, ctx: RunContext, agent: str, prompt: str) -> None: ...
 
-    async def after_run(self, ctx: RunContext, agent: str, output: Any) -> None:
-        ...
+    async def after_run(self, ctx: RunContext, agent: str, output: Any) -> None: ...
 
-    async def on_user_message(self, ctx: RunContext, agent: str, message: Message) -> None:
-        ...
+    async def on_user_message(self, ctx: RunContext, agent: str, message: Message) -> None: ...
 
     async def before_model(
         self, ctx: RunContext, agent: str, messages: list[Message]
-    ) -> Optional[ModelResponse]:
+    ) -> ModelResponse | None:
         """Return a :class:`ModelResponse` to short-circuit the model call."""
         return None
 
     async def after_model(
         self, ctx: RunContext, agent: str, response: ModelResponse
-    ) -> Optional[ModelResponse]:
+    ) -> ModelResponse | None:
         """Return a replacement response to amend the model output."""
         return None
 
     async def repair_tool_args(
         self, ctx: RunContext, agent: str, tool: str, args: dict[str, Any]
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Pre-process/repair raw tool-call args before they are validated.
 
         Return a replacement args dict to use instead, or ``None`` to leave the

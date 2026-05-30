@@ -8,8 +8,6 @@ is a one-line change (ADK #2524/#935, OpenAI #3017).
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ..types import Message
 from .base import Session
 
@@ -33,11 +31,10 @@ class PostgresSessionService:
         self._conn = psycopg.connect(dsn, autocommit=True)
         self._table = table
         self._conn.execute(
-            f"CREATE TABLE IF NOT EXISTS {table} "
-            f"(id TEXT PRIMARY KEY, data JSONB NOT NULL)"
+            f"CREATE TABLE IF NOT EXISTS {table} (id TEXT PRIMARY KEY, data JSONB NOT NULL)"
         )
 
-    def _load(self, session_id: str) -> Optional[Session]:
+    def _load(self, session_id: str) -> Session | None:
         row = self._conn.execute(
             f"SELECT data FROM {self._table} WHERE id = %s", (session_id,)
         ).fetchone()
@@ -54,10 +51,10 @@ class PostgresSessionService:
             (session.id, json.dumps(session.model_dump())),
         )
 
-    async def get(self, session_id: str) -> Optional[Session]:
+    async def get(self, session_id: str) -> Session | None:
         return self._load(session_id)
 
-    async def get_or_create(self, session_id: Optional[str] = None) -> Session:
+    async def get_or_create(self, session_id: str | None = None) -> Session:
         if session_id:
             existing = self._load(session_id)
             if existing is not None:

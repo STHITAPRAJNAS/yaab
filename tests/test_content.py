@@ -54,8 +54,9 @@ def test_message_carries_multimodal_parts():
 @pytest.mark.asyncio
 async def test_agent_accepts_content_prompt():
     agent = Agent("a", model=TestModel("saw it"))
-    c = Content(role=Role.USER, parts=[Part.text_part("what is this?"),
-                                       Part.data_part(b"img", "image/png")])
+    c = Content(
+        role=Role.USER, parts=[Part.text_part("what is this?"), Part.data_part(b"img", "image/png")]
+    )
     result = await agent.run(c)
     assert result.output == "saw it"
 

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ..types import Message
 from .base import Session
 
@@ -14,10 +12,10 @@ class InMemorySessionService:
     def __init__(self) -> None:
         self._store: dict[str, Session] = {}
 
-    async def get(self, session_id: str) -> Optional[Session]:
+    async def get(self, session_id: str) -> Session | None:
         return self._store.get(session_id)
 
-    async def get_or_create(self, session_id: Optional[str] = None) -> Session:
+    async def get_or_create(self, session_id: str | None = None) -> Session:
         if session_id and session_id in self._store:
             return self._store[session_id]
         session = Session(id=session_id) if session_id else Session()

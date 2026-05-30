@@ -7,7 +7,7 @@ semantic). The default backend is in-process; swap in object storage for prod.
 from __future__ import annotations
 
 import uuid
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -22,14 +22,11 @@ class Artifact(BaseModel):
 
 @runtime_checkable
 class ArtifactService(Protocol):
-    async def put(self, name: str, data: bytes, *, mime_type: str = ...) -> Artifact:
-        ...
+    async def put(self, name: str, data: bytes, *, mime_type: str = ...) -> Artifact: ...
 
-    async def get(self, artifact_id: str) -> Optional[bytes]:
-        ...
+    async def get(self, artifact_id: str) -> bytes | None: ...
 
-    async def info(self, artifact_id: str) -> Optional[Artifact]:
-        ...
+    async def info(self, artifact_id: str) -> Artifact | None: ...
 
 
 class InMemoryArtifactService:
@@ -47,10 +44,10 @@ class InMemoryArtifactService:
         self._meta[art.id] = art
         return art
 
-    async def get(self, artifact_id: str) -> Optional[bytes]:
+    async def get(self, artifact_id: str) -> bytes | None:
         return self._data.get(artifact_id)
 
-    async def info(self, artifact_id: str) -> Optional[Artifact]:
+    async def info(self, artifact_id: str) -> Artifact | None:
         return self._meta.get(artifact_id)
 
 

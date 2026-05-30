@@ -20,7 +20,8 @@ registered under the ``metric`` component kind:
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from ..extensions import available as _available
 from ..extensions import get as _get
@@ -111,8 +112,8 @@ def _register_rag_metrics() -> None:
 _register_rag_metrics()
 
 # Register the external-suite adapters lazily (factories import on demand).
-from .adapters import ragas as _ragas_adapter  # noqa: E402
 from .adapters import deepeval as _deepeval_adapter  # noqa: E402
+from .adapters import ragas as _ragas_adapter  # noqa: E402
 
 _ragas_adapter.register()
 _deepeval_adapter.register()

@@ -18,8 +18,12 @@ async def main():
     # 2) Semantic event stream (UIs / tracing / audit).
     print("events:")
     async for event in agent._get_runner().run_stream(agent, "say hi"):
-        print("  -", event.type.value, "|", {k: v for k, v in event.payload.items()
-                                              if k not in ("result",)})
+        print(
+            "  -",
+            event.type.value,
+            "|",
+            {k: v for k, v in event.payload.items() if k not in ("result",)},
+        )
 
 
 asyncio.run(main())

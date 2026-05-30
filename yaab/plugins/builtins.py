@@ -7,7 +7,7 @@ enforcement (registry gate + guardrails) is wired directly into the Runner via
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from ..exceptions import YaabError
 from ..governance.audit import AuditKind, AuditLog
@@ -30,7 +30,7 @@ class AuditPlugin(Plugin):
 
     async def after_model(
         self, ctx: RunContext, agent: str, response: ModelResponse
-    ) -> Optional[ModelResponse]:
+    ) -> ModelResponse | None:
         self.audit.record(
             AuditKind.MODEL_CALL,
             identity=ctx.identity,
@@ -57,7 +57,7 @@ class CostBudgetPlugin(Plugin):
 
     async def after_model(
         self, ctx: RunContext, agent: str, response: ModelResponse
-    ) -> Optional[ModelResponse]:
+    ) -> ModelResponse | None:
         if ctx.usage.cost_usd > self.max_usd:
             raise BudgetExceeded(
                 f"run exceeded cost budget: ${ctx.usage.cost_usd:.4f} > ${self.max_usd:.4f}"
@@ -80,7 +80,7 @@ class CachingPlugin(Plugin):
 
     async def before_model(
         self, ctx: RunContext, agent: str, messages: list[Message]
-    ) -> Optional[ModelResponse]:
+    ) -> ModelResponse | None:
         self._last_key = self._key(messages)
         cached = self._cache.get(self._last_key)
         if cached is not None:
@@ -92,7 +92,7 @@ class CachingPlugin(Plugin):
 
     async def after_model(
         self, ctx: RunContext, agent: str, response: ModelResponse
-    ) -> Optional[ModelResponse]:
+    ) -> ModelResponse | None:
         # Cache only terminal (non-tool) responses to keep keys stable.
         if self._last_key and not response.has_tool_calls:
             self._cache[self._last_key] = response

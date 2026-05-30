@@ -18,7 +18,6 @@ Both are optional; with neither set, runs behave exactly as before.
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 from .exceptions import RunCancelled, UsageLimitExceeded
 from .types import Usage
@@ -34,13 +33,13 @@ class UsageLimits:
     def __init__(
         self,
         *,
-        max_requests: Optional[int] = None,
-        max_input_tokens: Optional[int] = None,
-        max_output_tokens: Optional[int] = None,
-        max_total_tokens: Optional[int] = None,
-        max_tool_calls: Optional[int] = None,
-        per_tool_calls: Optional[dict[str, int]] = None,
-        max_wall_seconds: Optional[float] = None,
+        max_requests: int | None = None,
+        max_input_tokens: int | None = None,
+        max_output_tokens: int | None = None,
+        max_total_tokens: int | None = None,
+        max_tool_calls: int | None = None,
+        per_tool_calls: dict[str, int] | None = None,
+        max_wall_seconds: float | None = None,
     ) -> None:
         self.max_requests = max_requests
         self.max_input_tokens = max_input_tokens
@@ -100,13 +99,13 @@ class CancellationToken:
     explicit cancels flow through one path.
     """
 
-    def __init__(self, *, deadline: Optional[float] = None) -> None:
+    def __init__(self, *, deadline: float | None = None) -> None:
         self._cancelled = False
         self._reason = "cancelled"
         self.deadline = deadline
 
     @classmethod
-    def with_timeout(cls, seconds: float) -> "CancellationToken":
+    def with_timeout(cls, seconds: float) -> CancellationToken:
         return cls(deadline=time.monotonic() + seconds)
 
     @property

@@ -17,8 +17,9 @@ import csv
 import io
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from .types import Document
 
@@ -82,7 +83,9 @@ def load_pdf(path: str) -> list[Document]:
     return docs
 
 
-def load_csv(path: str, *, encoding: str = "utf-8", text_columns: Optional[list[str]] = None) -> list[Document]:
+def load_csv(
+    path: str, *, encoding: str = "utf-8", text_columns: list[str] | None = None
+) -> list[Document]:
     """Load a CSV as one Document per row (``col: value`` lines)."""
     docs: list[Document] = []
     with open(path, encoding=encoding, newline="") as fh:
@@ -105,7 +108,7 @@ def load_json(path: str, *, encoding: str = "utf-8") -> list[Document]:
 
 
 # --- dispatch -----------------------------------------------------------
-_LOADERS = {
+_LOADERS: dict[str, Callable[[str], list[Document]]] = {
     ".txt": load_text,
     ".md": load_markdown,
     ".markdown": load_markdown,
@@ -127,9 +130,7 @@ def load(path: str) -> list[Document]:
     return loader(path)
 
 
-def load_directory(
-    directory: str, *, glob: str = "**/*", recursive: bool = True
-) -> list[Document]:
+def load_directory(directory: str, *, glob: str = "**/*", recursive: bool = True) -> list[Document]:
     """Load every supported file under ``directory`` matching ``glob``."""
     root = Path(directory)
     paths = root.glob(glob) if recursive else root.glob(glob.replace("**/", ""))

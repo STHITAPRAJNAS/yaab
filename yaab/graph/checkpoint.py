@@ -9,21 +9,18 @@ up later. Serialization goes through the Rust-accelerated framed encoder in
 from __future__ import annotations
 
 import sqlite3
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from .. import _core
 
 
 @runtime_checkable
 class Checkpointer(Protocol):
-    def put(self, thread_id: str, step: int, state: dict[str, Any]) -> None:
-        ...
+    def put(self, thread_id: str, step: int, state: dict[str, Any]) -> None: ...
 
-    def get(self, thread_id: str) -> Optional[tuple[int, dict[str, Any]]]:
-        ...
+    def get(self, thread_id: str) -> tuple[int, dict[str, Any]] | None: ...
 
-    def history(self, thread_id: str) -> list[tuple[int, dict[str, Any]]]:
-        ...
+    def history(self, thread_id: str) -> list[tuple[int, dict[str, Any]]]: ...
 
 
 class MemorySaver:
@@ -36,7 +33,7 @@ class MemorySaver:
         blob = _core.encode_checkpoint(state)
         self._store.setdefault(thread_id, []).append((step, blob))
 
-    def get(self, thread_id: str) -> Optional[tuple[int, dict[str, Any]]]:
+    def get(self, thread_id: str) -> tuple[int, dict[str, Any]] | None:
         history = self._store.get(thread_id)
         if not history:
             return None
@@ -65,7 +62,7 @@ class SQLiteSaver:
         )
         self._conn.commit()
 
-    def get(self, thread_id: str) -> Optional[tuple[int, dict[str, Any]]]:
+    def get(self, thread_id: str) -> tuple[int, dict[str, Any]] | None:
         row = self._conn.execute(
             "SELECT step, blob FROM checkpoints WHERE thread_id = ? ORDER BY step DESC LIMIT 1",
             (thread_id,),

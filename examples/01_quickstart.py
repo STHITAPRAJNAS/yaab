@@ -9,7 +9,6 @@ from pydantic import BaseModel
 from yaab import Agent, tool
 from yaab.testing import TestModel
 
-
 # 1) Three-line agent ---------------------------------------------------
 agent = Agent("assistant", model=TestModel("Hello! How can I help?"))
 print("simple:", agent.run_sync("hi").output)

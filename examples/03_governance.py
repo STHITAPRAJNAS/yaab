@@ -40,7 +40,10 @@ steps = [
 ]
 for state, evidence in steps:
     gov.lifecycle.transition(
-        "kyc-bot", state, actor="validator@bank", evidence=[EvidenceArtifact(kind=k) for k in evidence]
+        "kyc-bot",
+        state,
+        actor="validator@bank",
+        evidence=[EvidenceArtifact(kind=k) for k in evidence],
     )
 print("approved:", gov.registry.is_approved("kyc-bot"))
 

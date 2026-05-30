@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from yaab import Agent, Swarm
-from yaab.multiagent import SwarmState
 from yaab.models.test_model import TestModel
+from yaab.multiagent import SwarmState
 
 
 @pytest.mark.asyncio

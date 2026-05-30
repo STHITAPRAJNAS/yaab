@@ -9,7 +9,7 @@ backend (in-memory, SQLite, Postgres, Redis) works unchanged.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from ..types import Message, Role
 from .base import Session, SessionService
@@ -25,12 +25,12 @@ DEFAULT_USER = "default"
 class SessionManager:
     """Manage conversation sessions scoped by app and user."""
 
-    def __init__(self, service: Optional[SessionService] = None) -> None:
+    def __init__(self, service: SessionService | None = None) -> None:
         self.service = service or InMemorySessionService()
         # (app, user) -> ordered list of session ids (best-effort index).
         self._index: dict[tuple[str, str], list[str]] = {}
         # Shared state stores for the prefix scopes (ADK-style).
-        self._app_state: dict[str, dict[str, Any]] = {}            # app -> app: state
+        self._app_state: dict[str, dict[str, Any]] = {}  # app -> app: state
         self._user_state: dict[tuple[str, str], dict[str, Any]] = {}  # (app,user) -> user: state
 
     @staticmethod
@@ -42,8 +42,8 @@ class SessionManager:
         *,
         app_name: str = DEFAULT_APP,
         user_id: str = DEFAULT_USER,
-        session_id: Optional[str] = None,
-        state: Optional[dict[str, Any]] = None,
+        session_id: str | None = None,
+        state: dict[str, Any] | None = None,
     ) -> Session:
         session = await self.service.get_or_create(
             self._key(app_name, user_id, session_id) if session_id else None
@@ -58,7 +58,7 @@ class SessionManager:
 
     async def get_session(
         self, *, app_name: str = DEFAULT_APP, user_id: str = DEFAULT_USER, session_id: str
-    ) -> Optional[Session]:
+    ) -> Session | None:
         # Accept either a bare id or an already-scoped key.
         direct = await self.service.get(session_id)
         if direct is not None:
@@ -70,7 +70,7 @@ class SessionManager:
         *,
         app_name: str = DEFAULT_APP,
         user_id: str = DEFAULT_USER,
-        limit: Optional[int] = None,
+        limit: int | None = None,
         offset: int = 0,
     ) -> list[str]:
         """List a user's session ids, with optional pagination (ADK #4621)."""
@@ -111,7 +111,7 @@ class SessionManager:
         *,
         app_name: str = DEFAULT_APP,
         user_id: str = DEFAULT_USER,
-    ) -> "State":
+    ) -> State:
         """Build a prefix-routed :class:`~yaab.state.State` for a session.
 
         Reads/writes to ``app:``/``user:`` keys hit the shared stores; ``temp:``
@@ -125,7 +125,7 @@ class SessionManager:
         user_store = self._user_state.setdefault((app_name, user_id), {})
         return State(session=session.state, user=user_store, app=app_store)
 
-    async def save_state(self, session_id: str, state: "State") -> None:
+    async def save_state(self, session_id: str, state: State) -> None:
         """Persist the durable (non-temp) subset of a resolved State."""
         session = await self.service.get_or_create(session_id)
         # session.state is the same dict the State wrote into; just persist it.
