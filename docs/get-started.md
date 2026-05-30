@@ -117,7 +117,7 @@ panel = ParallelAgent("review", [legal, finance, risk])
 Also `MapAgent`, `LoopAgent`, `Swarm`, and agent-as-tool — see
 [Multi-agent](multi-agent.md).
 
-## 8. Add governance (the differentiator)
+## 8. Add governance
 
 ```python
 from yaab import Runner
