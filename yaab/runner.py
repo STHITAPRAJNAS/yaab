@@ -168,6 +168,9 @@ class Runner:
 
             final_output: Any = None
             produced = False
+            # Per-run retry budget. Kept local so a reused agent isn't mutated
+            # (the configured agent.output_retries must hold for every run).
+            output_retries_left = agent.output_retries
 
             context_strategy = getattr(agent, "context_strategy", None)
 
@@ -224,9 +227,9 @@ class Runner:
                     break
                 except ValidationError as exc:
                     # Reflection/retry: feed the validation error back to the model.
-                    if agent.output_retries <= 0:
+                    if output_retries_left <= 0:
                         raise
-                    agent.output_retries -= 1
+                    output_retries_left -= 1
                     messages.append(Message(role=Role.ASSISTANT, content=response.content))
                     messages.append(
                         Message(
