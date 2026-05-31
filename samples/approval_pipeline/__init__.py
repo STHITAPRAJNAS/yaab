@@ -44,7 +44,3 @@ def run(amount: int = 10_000, approve_decision: bool = True) -> dict[str, Any]:
     assert paused.interrupted, "expected a human-approval pause"
     done = app.invoke(thread_id="txn-1", resume=approve_decision)
     return done.state
-
-
-if __name__ == "__main__":
-    print(run())

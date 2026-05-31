@@ -42,9 +42,3 @@ async def run(task: str = "Compute the sum of 0..9 in Python.", model: Any = Non
     agent, runner = build(model)
     result = await runner.run(agent, task)
     return result.output
-
-
-if __name__ == "__main__":
-    import asyncio
-
-    print(asyncio.run(run()))
