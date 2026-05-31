@@ -32,6 +32,7 @@ import time
 import traceback
 from pathlib import Path
 
+
 # ---- .env loader (no python-dotenv dependency) -------------------------
 def _load_dotenv() -> None:
     env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -164,13 +165,14 @@ async def c_tool_choice_required():
 
     agent = Agent("t", model=MODEL, tools=[lookup], tool_choice="required",
                   instructions="Always call the lookup tool.")
-    r = await agent.run("What is the meaning of life?")
+    await agent.run("What is the meaning of life?")
     assert called["n"] >= 1, "required tool_choice did not force a call"
     return f"forced tool call ({called['n']}x)"
 
 
 async def c_structured_output():
     from pydantic import BaseModel
+
     from yaab import Agent
 
     class Capital(BaseModel):
@@ -185,6 +187,7 @@ async def c_structured_output():
 
 async def c_structured_nested():
     from pydantic import BaseModel
+
     from yaab import Agent
 
     class Item(BaseModel):
@@ -204,6 +207,7 @@ async def c_structured_nested():
 
 async def c_structured_streaming():
     from pydantic import BaseModel
+
     from yaab import Agent
 
     class Profile(BaseModel):
@@ -269,9 +273,9 @@ async def c_swarm():
     from yaab.multiagent import SwarmState
 
     triage = Agent("triage", model=MODEL,
-                   instructions="You triage support. For billing issues, hand off to the billing agent.")
+                   instructions="You triage support. For billing issues, hand off to billing.")
     billing = Agent("billing", model=MODEL,
-                    instructions="You are billing support. Resolve the billing issue in one sentence.")
+                    instructions="You are billing support. Resolve the issue in one sentence.")
     swarm = Swarm("support", [triage, billing], entry="triage")
     r = await swarm.run("I was double charged on my invoice.", deps=SwarmState())
     assert r.output and len(r.output) > 3, r.output
@@ -284,7 +288,7 @@ async def c_agent_as_tool():
     translator = Agent("translator", model=MODEL,
                        instructions="Translate the input to French. Output only the translation.")
     main = Agent("main", model=MODEL, tools=[translator.as_tool(name="translate")],
-                 instructions="Use the translate tool to translate the user's text, then return it.")
+                 instructions="Use the translate tool on the user's text, then return it.")
     r = await main.run("Translate 'good morning' to French.")
     assert r.output, r.output
     return f"{r.output[:50]!r}"
@@ -293,7 +297,7 @@ async def c_agent_as_tool():
 async def c_graph_agent_hitl():
     """Durable graph whose node calls a live agent, with an HITL approval gate."""
     from yaab import Agent
-    from yaab.graph import END, START, MemorySaver, StateGraph
+    from yaab.graph import START, MemorySaver, StateGraph
 
     drafter = Agent("drafter", model=MODEL,
                     instructions="Write a one-sentence marketing tagline for the product.")
@@ -325,7 +329,7 @@ async def c_rag_citation():
     from yaab import Agent, Document, KnowledgeBase
 
     kb = KnowledgeBase(name="docs")
-    kb.add(Document(text="The YAAB SDK was released in 2026 under the MIT license.", source="about.md"))
+    kb.add(Document(text="YAAB was released in 2026 under the MIT license.", source="about.md"))
     kb.add(Document(text="Bananas are a good source of potassium.", source="food.md"))
     hits = await kb.retrieve("What license is YAAB under?", k=1)
     assert "MIT" in hits[0].text, hits[0].text
@@ -354,8 +358,14 @@ async def c_rag_faithfulness():
 async def c_governance_audit():
     from yaab import Agent, Runner
     from yaab.exceptions import NotRegisteredError
-    from yaab.governance import (AgentCard, EvidenceArtifact, GovernanceMode,
-                                 GovernanceService, LifecycleState, RiskTier)
+    from yaab.governance import (
+        AgentCard,
+        EvidenceArtifact,
+        GovernanceMode,
+        GovernanceService,
+        LifecycleState,
+        RiskTier,
+    )
 
     gov = GovernanceService(mode=GovernanceMode.ENFORCING)
     gov.registry.register(AgentCard(agent_id="kyc", name="KYC", risk_tier=RiskTier.HIGH))
@@ -388,13 +398,19 @@ async def c_central_registry_live():
     try:
         import httpx
     except ImportError:
-        raise _Skip("httpx not installed")
+        raise _Skip("httpx not installed") from None
     import json as _json
 
     from yaab import Agent, Runner
     from yaab.exceptions import NotRegisteredError
-    from yaab.governance import (AgentCard, AgentRegistry, ApprovalStatus,
-                                 GovernanceMode, GovernanceService, RemoteRegistryBackend)
+    from yaab.governance import (
+        AgentCard,
+        AgentRegistry,
+        ApprovalStatus,
+        GovernanceMode,
+        GovernanceService,
+        RemoteRegistryBackend,
+    )
 
     store: dict[str, dict] = {}
 
@@ -444,8 +460,13 @@ async def c_central_registry_live():
 async def c_guardrail_block():
     from yaab import Agent, Runner
     from yaab.exceptions import PolicyViolation
-    from yaab.governance import (AgentCard, EvidenceArtifact, GovernanceMode,
-                                 GovernanceService, LifecycleState)
+    from yaab.governance import (
+        AgentCard,
+        EvidenceArtifact,
+        GovernanceMode,
+        GovernanceService,
+        LifecycleState,
+    )
 
     gov = GovernanceService(mode=GovernanceMode.ENFORCING)
     gov.registry.register(AgentCard(agent_id="g", name="G"))
@@ -509,7 +530,7 @@ async def c_a2a():
     try:
         from fastapi.testclient import TestClient
     except ImportError:
-        raise _Skip("fastapi not installed")
+        raise _Skip("fastapi not installed") from None
     from yaab import Agent
     from yaab.a2a import RemoteAgent
     from yaab.serve import fastapi_server_app
@@ -614,6 +635,7 @@ async def c_output_retry_reuse():
     """Run the SAME agent twice forcing schema retries — exposes output_retries
     permanent mutation (a second run should still have full retries)."""
     from pydantic import BaseModel, field_validator
+
     from yaab import Agent
 
     class Strict(BaseModel):
