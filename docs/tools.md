@@ -64,6 +64,13 @@ A bare tool name is expanded to the provider's
 `{"type": "function", "function": {"name": ...}}` form. Use `"required"` to force
 the agent to call a tool before producing a final answer.
 
+A forcing choice (`"required"` or a pinned tool name) applies to the **first**
+model call only. After the agent has called a tool, the choice is relaxed to
+`"auto"` so the model can read the tool result and produce a final answer —
+otherwise every turn would be forced to call a tool and the run could never
+finish. This is the "force at least one tool call" semantics, not "force a tool
+call on every turn".
+
 ## Repairing malformed tool args
 
 When a model emits tool-call arguments that don't match the schema, a plugin can

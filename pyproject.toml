@@ -69,7 +69,12 @@ dev = [
     "fastapi>=0.110",
     "pyyaml>=6.0",
 ]
-all = ["yaab[rust,litellm,otel,postgres,http,serve,yaml,rag]"]
+# Everything that installs from PyPI today. The Rust core (`rust` extra) is
+# deliberately NOT bundled here: it ships as a separately-published `yaab-core`
+# wheel and YAAB falls back to its pure-Python core when absent, so folding it
+# into `all` would make `pip install 'yaab[all]'` fail wherever that wheel isn't
+# available. Install the accelerator explicitly with `pip install 'yaab[rust]'`.
+all = ["yaab[litellm,otel,postgres,http,serve,yaml,rag]"]
 
 [project.scripts]
 yaab = "yaab.cli:main"

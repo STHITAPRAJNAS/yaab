@@ -71,6 +71,22 @@ prompt automatically:
 runner = Runner(memory_service=InMemoryVectorMemory())
 ```
 
+When the backend is namespace-aware (a `MemoryManager`), the Runner threads the
+run's `identity` into the search as `user_id`, and a `memory_app_name` as
+`app_name`, so **scoped** memory is reachable from the Agent path — and stays
+isolated across users:
+
+```python
+memory = MemoryManager()
+await memory.add("Alice's deadline is March 15.", app_name="bank", user_id="alice")
+
+runner = Runner(memory_service=memory, memory_app_name="bank")
+await runner.run(agent, "When is my deadline?", identity="alice")  # recalls it
+await runner.run(agent, "When is my deadline?", identity="bob")    # sees nothing
+```
+
+Without `identity`/`memory_app_name` the search targets the `default` namespace.
+
 ## Artifacts (versioned blobs)
 
 ```python

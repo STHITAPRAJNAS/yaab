@@ -14,6 +14,27 @@ All notable changes to YAAB are documented here. The format follows
 - `docs/concepts.md` — what every component is for, with disambiguation of the
   confusable pairs (Checkpointer vs Session, Memory vs RAG, authorization vs
   approval vs guardrails, optimizer vs evaluator).
+- `scripts/live_e2e.py` — comprehensive live-LLM end-to-end harness (28 complex
+  scenarios, provider-agnostic, rate-limit aware) complementing the offline
+  `scripts/smoke_all.py`.
+- `Runner(memory_app_name=...)` — the Runner now threads the run `identity` →
+  `user_id` (and `memory_app_name` → `app_name`) into namespace-aware memory
+  backends, so scoped long-term memory is reachable from the Agent path and
+  isolated per user.
+
+### Fixed
+- `tool_choice="required"` (or a pinned tool name) no longer loops until
+  `MaxStepsExceeded`: it forces the first model call only, then relaxes to
+  `"auto"` so the model can finalize ("force at least one tool call").
+- Structured-output streaming now tolerates Markdown code fences (```json …```)
+  that providers like Gemini/Claude emit despite a JSON-only instruction —
+  previously it yielded no partials.
+- `output_retries` is no longer permanently decremented on the shared `Agent`
+  across runs; the per-run retry budget is local, so a reused agent keeps its
+  configured budget.
+- `pip install 'yaab[all]'` no longer fails: the `all` extra no longer bundles
+  the `rust` extra (the `yaab-core` accelerator wheel is published separately
+  and has a pure-Python fallback). Install it explicitly with `yaab[rust]`.
 
 ### Changed
 - Docs/README reworded to be descriptive rather than promotional (removed
