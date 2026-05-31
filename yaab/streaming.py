@@ -17,6 +17,26 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 
+def _strip_code_fence(s: str) -> str:
+    """Strip a leading ```/```json fence (and any trailing ```), even when the
+    closing fence hasn't streamed in yet.
+
+    Many providers (Gemini, Claude, others) wrap JSON output in a Markdown code
+    fence despite a JSON-only instruction. Tolerating it keeps structured-output
+    streaming from yielding nothing.
+    """
+    if not s.startswith("```"):
+        return s
+    # Drop the opening fence line: ``` optionally followed by a language tag.
+    newline = s.find("\n")
+    s = s[newline + 1 :] if newline != -1 else s[3:]
+    # Drop a trailing closing fence if present.
+    fence = s.rfind("```")
+    if fence != -1:
+        s = s[:fence]
+    return s.strip()
+
+
 def parse_partial_json(buffer: str) -> Any | None:
     """Best-effort parse of a possibly-incomplete JSON string.
 
@@ -24,7 +44,7 @@ def parse_partial_json(buffer: str) -> Any | None:
     JSON document yields the object built so far. Returns ``None`` if nothing
     parseable is present yet.
     """
-    s = buffer.strip()
+    s = _strip_code_fence(buffer.strip())
     if not s:
         return None
     # Fast path: already valid.

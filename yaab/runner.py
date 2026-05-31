@@ -51,12 +51,15 @@ class Runner:
         artifact_service: Any | None = None,
         governance: GovernanceService | None = None,
         plugins: list[Plugin] | None = None,
+        memory_app_name: str | None = None,
     ) -> None:
         self.session_service = session_service or InMemorySessionService()
         self.memory_service = memory_service
         self.artifact_service = artifact_service
         self.governance = governance
         self.plugins: list[Plugin] = list(plugins or [])
+        #: App scope passed to a namespace-aware memory backend's search.
+        self.memory_app_name = memory_app_name
 
     def add_plugin(self, plugin: Plugin) -> Runner:
         self.plugins.append(plugin)
@@ -165,6 +168,12 @@ class Runner:
             tool_schemas = [t.schema() for t in agent.tools] or None
             output_adapter, output_schema = _output_spec(agent.output_type)
             tool_choice = _normalize_tool_choice(getattr(agent, "tool_choice", None), tool_schemas)
+            # A forcing tool_choice ("required" or a pinned function) must apply to
+            # the first model call only — otherwise every turn is forced to call a
+            # tool and the model can never emit a final answer (infinite loop until
+            # max_steps). After a tool round we relax it to "auto" so the loop can
+            # finalize. "auto"/"none"/None are not forcing and pass through unchanged.
+            effective_tool_choice = tool_choice
 
             final_output: Any = None
             produced = False
@@ -180,7 +189,7 @@ class Runner:
                 if context_strategy is not None:
                     messages = await context_strategy.apply(messages, model=agent.model)
                 response = await self._call_model(
-                    agent, ctx, messages, tool_schemas, output_schema, tool_choice
+                    agent, ctx, messages, tool_schemas, output_schema, effective_tool_choice
                 )
                 # Re-check usage now that this request's tokens are counted.
                 if usage_limits is not None:
@@ -218,6 +227,9 @@ class Runner:
                                 content=_to_text(result_value),
                             )
                         )
+                    # Forcing choice has done its job; let the next turn finalize.
+                    if _is_forcing_tool_choice(effective_tool_choice):
+                        effective_tool_choice = "auto"
                     continue
 
                 # No tool calls -> attempt to finalize.
@@ -329,15 +341,38 @@ class Runner:
             if session is not None:
                 messages.extend(session.messages)
 
-        # Optionally fold in retrieved long-term memory.
+        # Optionally fold in retrieved long-term memory. Thread the run's
+        # identity (and the runner's app scope) into the search when the memory
+        # backend is namespace-aware (e.g. MemoryManager) so per-user/app scoped
+        # memory is actually reachable from the Agent path — not just the
+        # "default" namespace.
         if self.memory_service is not None:
-            hits = await self.memory_service.search(prompt, k=3)
+            hits = await self._memory_search(prompt, ctx)
             if hits:
                 recalled = "\n".join(f"- {rec.text}" for rec, _ in hits)
                 messages.append(Message(role=Role.SYSTEM, content=f"Relevant memory:\n{recalled}"))
 
         messages.append(_user_message(prompt, original))
         return messages
+
+    async def _memory_search(self, prompt: str, ctx: RunContext) -> Any:
+        """Search long-term memory, threading identity/app into namespace-aware
+        backends while staying compatible with the plain ``search(query, k)``
+        protocol.
+        """
+        import inspect
+
+        search = self.memory_service.search
+        try:
+            params = inspect.signature(search).parameters
+        except (TypeError, ValueError):  # builtins / C funcs without a signature
+            params = {}
+        kwargs: dict[str, Any] = {"k": 3}
+        if "user_id" in params and ctx.identity is not None:
+            kwargs["user_id"] = ctx.identity
+        if "app_name" in params and self.memory_app_name is not None:
+            kwargs["app_name"] = self.memory_app_name
+        return await search(prompt, **kwargs)
 
     async def _call_model(
         self,
@@ -428,6 +463,17 @@ def _normalize_tool_choice(choice: Any, tool_schemas: list[dict[str, Any]] | Non
         if choice in known:
             return {"type": "function", "function": {"name": choice}}
     return choice
+
+
+def _is_forcing_tool_choice(choice: Any) -> bool:
+    """True if ``choice`` compels a tool call (so it must be relaxed after one).
+
+    Forcing forms: the literal ``"required"`` and a pinned-function dict
+    (``{"type": "function", ...}``). ``None``/``"auto"``/``"none"`` don't force.
+    """
+    if choice == "required":
+        return True
+    return isinstance(choice, dict) and choice.get("type") == "function"
 
 
 def _output_spec(output_type: type) -> tuple[TypeAdapter | None, dict[str, Any] | None]:
