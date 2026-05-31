@@ -191,3 +191,65 @@ yaab compliance report sr_11_7 --db registry.db
 
 Add a regime by implementing the `ComplianceMapper` protocol and registering it
 under the `yaab.compliance` entry point — no core change required.
+
+
+## Central registry & custom fields
+
+The registry is a facade over a pluggable `RegistryBackend` (`upsert` / `fetch`
+/ `all`). Built-ins: `InMemoryRegistryBackend`, `SQLiteRegistryBackend`, and
+`RemoteRegistryBackend` for a central/enterprise HTTP system-of-record. Point
+governance at your central registry and the enforcing run-gate reads approval
+status from it on every run:
+
+```python
+import httpx
+from yaab import Runner
+from yaab.governance import (
+    AgentRegistry, RemoteRegistryBackend, GovernanceService, GovernanceMode,
+)
+
+registry = AgentRegistry(
+    RemoteRegistryBackend(
+        base_url="https://registry.internal/api",
+        headers={"authorization": "Bearer <token>"},
+    )
+)
+gov = GovernanceService(mode=GovernanceMode.ENFORCING, registry=registry)
+runner = Runner(governance=gov)
+```
+
+The expected REST contract (override paths to fit your service):
+
+```
+PUT  {base_url}/agents/{agent_id}   body: AgentCard JSON  -> 2xx
+GET  {base_url}/agents/{agent_id}   -> AgentCard JSON (404 if absent)
+GET  {base_url}/agents             -> [AgentCard, ...] or {"agents": [...]}
+```
+
+### Org-specific attributes (usecase_id, blueprint, ...)
+
+`AgentCard` carries a typed `metadata` dict for organization-specific attributes,
+and sets `extra="allow"` so any additional fields your central registry uses
+round-trip losslessly through JSON:
+
+```python
+from yaab.governance import AgentCard
+
+card = AgentCard(
+    agent_id="support-bot",
+    name="Support Bot",
+    intended_use_case="Customer support triage",
+    metadata={"usecase_id": "UC-123", "blueprint": "rag-support-v2"},
+    # or as top-level extra fields — both are preserved:
+    cost_center="CX-7",
+)
+registry.register(card)
+
+got = registry.get("support-bot")
+got.metadata["usecase_id"]   # "UC-123"
+got.cost_center              # "CX-7"  (extra field, preserved)
+```
+
+`metadata` also surfaces in `registry.inventory()` (the SR 11-7 / EU AI Act
+model-inventory view), so your custom keys appear alongside risk tier, approval
+status, and lifecycle state.

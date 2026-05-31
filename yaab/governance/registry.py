@@ -16,7 +16,7 @@ import time
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RiskTier(str, Enum):
@@ -54,7 +54,15 @@ class DecisionAuthority(str, Enum):
 
 
 class AgentCard(BaseModel):
-    """The registry record for one agent version (A2A-compatible superset)."""
+    """The registry record for one agent version (A2A-compatible superset).
+
+    ``extra="allow"`` so a central/enterprise registry can attach its own fields
+    (e.g. ``usecase_id``, ``blueprint``, cost-center) and have them round-trip
+    losslessly through ``model_dump``/JSON. Prefer the typed ``metadata`` dict for
+    organization-specific attributes you want to query consistently.
+    """
+
+    model_config = ConfigDict(extra="allow")
 
     # Identity & ownership
     agent_id: str
@@ -87,6 +95,10 @@ class AgentCard(BaseModel):
     incident_history: list[dict[str, Any]] = Field(default_factory=list)
     model_card_url: str | None = None
     lineage: dict[str, list[str]] = Field(default_factory=dict)
+
+    # Organization-specific attributes (free-form, central-registry friendly):
+    # e.g. {"usecase_id": "UC-123", "blueprint": "rag-support-v2", "cost_center": "..."}
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     # Bookkeeping
     lifecycle_state: str = "DRAFT"
@@ -169,6 +181,68 @@ class SQLiteRegistryBackend:
         return [AgentCard.model_validate_json(r[0]) for r in rows]
 
 
+class RemoteRegistryBackend:
+    """RegistryBackend backed by a central/enterprise HTTP registry service.
+
+    Lets governance enforce against an org-wide system-of-record instead of a
+    local store: ``register()`` writes through to the remote service, and the
+    enforcing run-gate reads approval status from it on every run.
+
+    Expected REST contract (override ``*_path`` to adapt to your service):
+
+        PUT  {base_url}/agents/{agent_id}   body: AgentCard JSON  -> 2xx
+        GET  {base_url}/agents/{agent_id}   -> AgentCard JSON (404 if absent)
+        GET  {base_url}/agents             -> [AgentCard, ...] or {"agents": [...]}
+
+    Because ``AgentCard`` allows extra fields, any custom attributes your central
+    registry returns (``usecase_id``, ``blueprint``, ...) round-trip intact.
+
+    A pre-built ``httpx.Client`` may be injected (handy for tests via
+    ``httpx.MockTransport``); otherwise one is created from ``base_url`` +
+    ``headers`` + ``timeout``. Requires the ``http`` extra (``pip install
+    'yaab[http]'``).
+    """
+
+    def __init__(
+        self,
+        base_url: str = "",
+        *,
+        headers: dict[str, str] | None = None,
+        timeout: float = 10.0,
+        client: Any | None = None,
+    ) -> None:
+        if client is not None:
+            self._client = client
+        else:
+            import httpx
+
+            self._client = httpx.Client(
+                base_url=base_url.rstrip("/"), headers=headers or {}, timeout=timeout
+            )
+
+    def upsert(self, card: AgentCard) -> None:
+        resp = self._client.put(
+            f"/agents/{card.agent_id}",
+            content=card.model_dump_json(),
+            headers={"content-type": "application/json"},
+        )
+        resp.raise_for_status()
+
+    def fetch(self, agent_id: str) -> AgentCard | None:
+        resp = self._client.get(f"/agents/{agent_id}")
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return AgentCard.model_validate(resp.json())
+
+    def all(self) -> list[AgentCard]:
+        resp = self._client.get("/agents")
+        resp.raise_for_status()
+        body = resp.json()
+        items = body.get("agents", []) if isinstance(body, dict) else body
+        return [AgentCard.model_validate(x) for x in items]
+
+
 class AgentRegistry:
     """The registry facade over a pluggable backend."""
 
@@ -206,6 +280,7 @@ class AgentRegistry:
                     "lifecycle_state": c.lifecycle_state,
                     "last_audit_date": c.last_audit_date,
                     "deployment_environment": c.deployment_environment,
+                    "metadata": c.metadata,
                 }
             )
         return rows

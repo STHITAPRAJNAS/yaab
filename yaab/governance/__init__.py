@@ -46,6 +46,7 @@ from .registry import (
     ApprovalStatus,
     DecisionAuthority,
     EUActCategory,
+    RemoteRegistryBackend,
     RiskTier,
     SQLiteRegistryBackend,
 )
@@ -63,6 +64,7 @@ __all__ = [
     "ApprovalStatus",
     "DecisionAuthority",
     "SQLiteRegistryBackend",
+    "RemoteRegistryBackend",
     # lifecycle
     "LifecycleManager",
     "LifecycleState",
