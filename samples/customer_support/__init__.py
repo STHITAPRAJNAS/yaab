@@ -67,9 +67,3 @@ async def run(query: str = "How long do refunds take?", model: Any = None) -> st
     agent, runner = build(model)
     result = await runner.run(agent, query, identity="customer:demo")
     return result.output
-
-
-if __name__ == "__main__":
-    import asyncio
-
-    print(asyncio.run(run()))

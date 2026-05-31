@@ -14,24 +14,43 @@ async def test_customer_support():
 
 
 @pytest.mark.asyncio
-async def test_research_assistant():
-    from samples import research_assistant
+async def test_personal_assistant_sessions_and_memory():
+    from samples import personal_assistant
 
-    out = await research_assistant.run("unit testing")
-    assert isinstance(out, str) and out
+    out = await personal_assistant.run()
+    # SQLite session persisted both turns of session 1 (2 user + 2 assistant msgs).
+    assert out["session1_history_messages"] == 4
+    # The callback wrote the durable fact to long-term memory...
+    assert any("alice" in f.lower() for f in out["learned_facts"])
+    # ...and a brand-new session recalls it from long-term memory.
+    assert any("alice" in r.lower() for r in out["recalled_in_session2"])
+    assert out["total_tokens"] > 0  # usage callback accumulated tokens
 
 
 @pytest.mark.asyncio
-async def test_document_qa():
-    from samples import document_qa
+async def test_memory_patterns_episodic_vs_long_term():
+    from samples import memory_patterns
 
-    out = await document_qa.run("How much PTO do I get?")
-    assert "answer" in out
-    assert out["citations"]  # retrieval produced cited chunks
-    assert any(
-        "pto" in c.lower() or "policy" in c.lower() or "security" in c.lower()
-        for c in out["citations"]
-    )
+    out = await memory_patterns.run()
+    # Episodic memory lives in the session; a fresh session starts empty.
+    assert out["episodic_turns_in_trip_session"] == 6
+    assert out["new_session_episodic_turns"] == 0
+    # The episode's user turns were consolidated into long-term memory...
+    assert out["consolidated_to_long_term"] == 3
+    # ...and recalled across sessions, scoped to this user only.
+    assert any("vegetarian" in t.lower() for t in out["recalled_dietary"])
+    assert out["other_user_recall_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_multi_agent_state_handoff():
+    from samples import multi_agent_state
+
+    out = await multi_agent_state.run()
+    # The extractor wrote the ticket; the reporter read exactly that, via shared deps.
+    assert out["ticket_written_by_extractor"] == {"intent": "refund", "order_id": "A100"}
+    assert out["ticket_read_by_reporter"] == out["ticket_written_by_extractor"]
+    assert out["handoff_ok"] is True
 
 
 def test_approval_pipeline_approved():

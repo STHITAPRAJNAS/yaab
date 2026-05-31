@@ -50,9 +50,3 @@ async def run(
     swarm = build(model, route_to=route_to)
     result = await swarm.run(message, deps=SwarmState())
     return result.output
-
-
-if __name__ == "__main__":
-    import asyncio
-
-    print(asyncio.run(run()))

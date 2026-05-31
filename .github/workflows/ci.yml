@@ -32,8 +32,8 @@ jobs:
 
       - name: Lint (ruff)
         run: |
-          ruff check yaab/ tests/ examples/
-          ruff format --check yaab/ tests/
+          ruff check yaab/ tests/ examples/ samples/
+          ruff format --check yaab/ tests/ samples/
 
       - name: Type check (mypy)
         run: mypy yaab/
