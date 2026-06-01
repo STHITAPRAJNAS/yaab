@@ -8,12 +8,13 @@ govern → deploy), Python-first and provider-neutral.
 
 ```bash
 pip install yaab                 # SDK + high-performance async-first Python core
-pip install 'yaab[rust]'         # + the prebuilt Rust performance core (optional)
 pip install 'yaab[litellm]'      # talk to real models (OpenAI, Anthropic, Bedrock, …)
 ```
 
-`pip install yaab` works everywhere with no build tooling. Add `[rust]` for the
-accelerated core; YAAB auto-selects it and falls back transparently. Check:
+`pip install yaab` works everywhere with no build tooling. The optional Rust
+performance core is built from source (`pip install maturin && maturin develop
+-m yaab-core/Cargo.toml --release`); YAAB auto-selects it when present and falls
+back transparently. Check:
 
 ```python
 import yaab; print(yaab.BACKEND)   # "rust" or "python"
@@ -58,7 +59,7 @@ print(agent.run_sync("Weather in Paris?").output)
 Or grab the built-in toolbox:
 
 ```python
-from yaab.tools.builtin import default_toolset   # calculator, time, http_get, web_search
+from yaab.tools.builtin import default_toolset   # calculator, current_time, http_get, web_search
 agent = Agent("a", model="openai/gpt-4o", tools=default_toolset())
 ```
 

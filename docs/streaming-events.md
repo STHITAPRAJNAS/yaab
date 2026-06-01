@@ -20,30 +20,39 @@ serve layer exposes this as Server-Sent Events at `POST /chat/stream`
 
 ## The semantic event stream
 
-`run_stream` yields a typed `Event` per step of the full loop:
+`agent.stream_events(...)` drives the **whole tool loop** and yields a typed
+`Event` for every step — token deltas, tool calls, sub-agent transfers, and the
+final result:
 
 ```python
-runner = agent._get_runner()
-async for event in runner.run_stream(agent, "What's the weather in Paris?"):
-    print(event.type, event.payload)
+from yaab import EventType
+
+async for event in agent.stream_events("What's the weather in Paris?"):
+    if event.type is EventType.TEXT_DELTA:
+        print(event.payload["delta"], end="", flush=True)
+    elif event.type is EventType.TOOL_CALL:
+        print(f"\n[calling {event.payload['name']}]")
 ```
 
-Event types (`yaab.EventType`):
+Event types (`yaab.EventType`) and when the runner emits them:
 
 | Type | When | Key payload |
 |---|---|---|
 | `RUN_START` | run begins | `prompt` |
 | `USER_MESSAGE` | user turn recorded | `content` |
-| `MODEL_DELTA` | token delta, or a reasoning trace | `delta` / `reasoning` |
+| `TEXT_DELTA` | token delta (only on `stream_events` / `Runner.stream_run`) | `delta` |
+| `MODEL_DELTA` | a reasoning/thinking trace arrives | `reasoning` |
 | `MODEL_RESPONSE` | a model reply | `content`, `tool_calls` |
 | `TOOL_CALL` | a tool is invoked | `name`, `arguments` |
 | `TOOL_RESULT` | a tool returns | `name`, `result` |
-| `GUARDRAIL` | a guard fires | `scanner`, `action` |
+| `AGENT_TRANSFER` | run delegated to a sub-agent | `to` |
 | `FINAL_OUTPUT` | final answer produced | `output` |
 | `RUN_END` | run complete | `result` |
 | `ERROR` | run failed | `error` |
 
-The non-streaming `run`/`run_sync` collect these into `result.events`.
+The non-streaming `run`/`run_sync` collect the same events (minus `TEXT_DELTA`)
+into `result.events`, so you can audit a finished run the same way you'd watch a
+live one.
 
 ### Reasoning traces
 

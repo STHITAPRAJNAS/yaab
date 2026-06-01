@@ -17,6 +17,7 @@ swappable backends.
 ```python
 from yaab import SessionManager
 from yaab.sessions import SQLiteSessionService
+from yaab.types import Role
 
 sessions = SessionManager(SQLiteSessionService("sessions.db"))
 
@@ -68,6 +69,8 @@ Attach a `MemoryService` to a `Runner` to fold retrieved memories into the syste
 prompt automatically:
 
 ```python
+from yaab import Runner
+
 runner = Runner(memory_service=InMemoryVectorMemory())
 ```
 
