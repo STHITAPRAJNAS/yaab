@@ -55,6 +55,8 @@ class TestModel:
         self.calls: list[list[Message]] = []
         #: Records the tool_choice passed on each complete() call, for assertions.
         self.tool_choices: list[Any] = []
+        #: Records the extra provider kwargs (model_settings) per call.
+        self.call_kwargs: list[dict[str, Any]] = []
         self._tools_called = False
 
     async def complete(
@@ -68,6 +70,7 @@ class TestModel:
     ) -> ModelResponse:
         self.calls.append(list(messages))
         self.tool_choices.append(tool_choice)
+        self.call_kwargs.append(dict(kwargs))
         usage = Usage(requests=1, input_tokens=10, output_tokens=5, total_tokens=15)
 
         if self.responses is not None:
@@ -105,8 +108,16 @@ class TestModel:
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         resp = await self.complete(messages, tools=tools, **kwargs)
-        for token in resp.content.split(" "):
-            yield StreamChunk(delta=token + " ")
+        # Surface tool calls so the streaming tool loop can drive them; otherwise
+        # stream the text answer token-by-token.
+        if resp.tool_calls:
+            for tc in resp.tool_calls:
+                yield StreamChunk(tool_call=tc)
+        else:
+            # Tokenize so the deltas reconstruct the content exactly (no spurious
+            # trailing space): first word as-is, each subsequent prefixed by space.
+            for i, word in enumerate(resp.content.split(" ")):
+                yield StreamChunk(delta=word if i == 0 else " " + word)
         yield StreamChunk(done=True)
 
 

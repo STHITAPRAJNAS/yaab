@@ -43,6 +43,9 @@ class Agent(Generic[Deps, Output]):
         output_retries: int = 2,
         tool_choice: Any | None = None,
         context_strategy: Any | None = None,
+        parallel_tools: bool = True,
+        max_parallel_tools: int = 0,
+        model_settings: dict[str, Any] | None = None,
         runner: Any | None = None,
         instrument: bool = True,
     ) -> None:
@@ -62,6 +65,15 @@ class Agent(Generic[Deps, Output]):
         #: Optional ContextStrategy that trims/summarizes history before each
         #: model call to stay within the context window.
         self.context_strategy = context_strategy
+        #: Execute a turn's multiple tool calls concurrently (default). Set False
+        #: for ordering-sensitive tools that must run one at a time.
+        self.parallel_tools = parallel_tools
+        #: Cap on concurrent tool executions (0 = unbounded) when parallel.
+        self.max_parallel_tools = max_parallel_tools
+        #: Arbitrary provider kwargs forwarded to the model on every call
+        #: (temperature, top_p, seed, max_tokens, reasoning_effort, stop,
+        #: extra_body, extra_headers, …) — anything LiteLLM / the model accepts.
+        self.model_settings: dict[str, Any] = dict(model_settings or {})
         self.instrument = instrument
         self.permissions: list[str] = []
 
@@ -120,6 +132,18 @@ class Agent(Generic[Deps, Output]):
 
             self._runner = Runner()
         return self._runner
+
+    def reset(self) -> Agent[Deps, Output]:
+        """Reset per-agent run state so the instance is clean for reuse.
+
+        Clears the cached (lazily-resolved, tracing-wrapped) model provider so the
+        next run re-resolves it. Conversation history is **not** held on the Agent
+        — it lives in the session service — so to clear a conversation, start a new
+        ``session_id`` or clear it via your :class:`SessionManager`. Returns
+        ``self`` for chaining.
+        """
+        self._model = None
+        return self
 
     async def run(
         self,
@@ -188,6 +212,40 @@ class Agent(Generic[Deps, Output]):
 
         ot = output_type or self.output_type
         return _stream_structured(self, prompt, output_type=ot, deps=deps, identity=identity)
+
+    def stream_events(
+        self,
+        prompt: str,
+        *,
+        deps: Deps = None,  # type: ignore[assignment]
+        session_id: str | None = None,
+        identity: str | None = None,
+        usage_limits: Any | None = None,
+        cancellation: Any | None = None,
+        timeout: float | None = None,
+    ) -> Any:
+        """Stream the full multi-step run as typed events, tokens included.
+
+        Yields :class:`~yaab.types.Event` objects: ``TEXT_DELTA`` token deltas as
+        the model generates, ``TOOL_CALL``/``TOOL_RESULT`` as tools run mid-run,
+        and a terminal ``FINAL_OUTPUT`` + ``RUN_END`` (which carries the
+        :class:`~yaab.types.RunResult`). Unlike :meth:`stream` this drives the
+        whole tool loop, not just the answering turn::
+
+            async for event in agent.stream_events("..."):
+                if event.type is EventType.TEXT_DELTA:
+                    print(event.payload["delta"], end="")
+        """
+        return self._get_runner().stream_run(
+            self,
+            prompt,
+            deps=deps,
+            session_id=session_id,
+            identity=identity,
+            usage_limits=usage_limits,
+            cancellation=cancellation,
+            timeout=timeout,
+        )
 
     def run_sync(
         self,

@@ -21,6 +21,35 @@ from ..types import Message, ToolCall, Usage
 from .base import ModelResponse, StreamChunk
 
 
+def _retry_after_seconds(exc: Exception) -> float | None:
+    """Extract a provider-suggested retry delay (seconds) from an error.
+
+    Honors, in order: a ``retry_after`` attribute, a ``Retry-After`` response
+    header, or a "try again in N seconds" phrase in the message. Returns ``None``
+    when no hint is present (caller falls back to its backoff schedule).
+    """
+    val = getattr(exc, "retry_after", None)
+    if val is not None:
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            pass
+    headers = getattr(exc, "response_headers", None) or getattr(exc, "headers", None)
+    if isinstance(headers, dict):
+        for key in ("retry-after", "Retry-After", "x-ratelimit-reset"):
+            if key in headers:
+                try:
+                    return float(headers[key])
+                except (TypeError, ValueError):
+                    pass
+    import re
+
+    m = re.search(r"(?:try again|retry) in (\d+(?:\.\d+)?)\s*s", str(exc), re.IGNORECASE)
+    if m:
+        return float(m.group(1))
+    return None
+
+
 def _require_litellm() -> Any:
     try:
         import litellm
@@ -104,7 +133,15 @@ class LiteLLMModel:
                 except Exception as exc:  # noqa: BLE001 - normalize provider errors
                     last_error = exc
                     if attempt < self.max_retries:
-                        await asyncio.sleep(self.retry_base_delay * (2**attempt))
+                        # Honor the provider's Retry-After hint when present, else
+                        # fall back to exponential backoff.
+                        retry_after = _retry_after_seconds(exc)
+                        delay = (
+                            retry_after
+                            if retry_after is not None
+                            else self.retry_base_delay * (2**attempt)
+                        )
+                        await asyncio.sleep(delay)
         raise ModelError(f"all model candidates failed: {last_error}") from last_error
 
     def _normalize(self, resp: Any, model: str, litellm: Any) -> ModelResponse:
@@ -124,6 +161,13 @@ class LiteLLMModel:
             usage.input_tokens = getattr(raw_usage, "prompt_tokens", 0) or 0
             usage.output_tokens = getattr(raw_usage, "completion_tokens", 0) or 0
             usage.total_tokens = getattr(raw_usage, "total_tokens", 0) or 0
+            # Cached prompt tokens: OpenAI exposes prompt_tokens_details.cached_tokens;
+            # Anthropic uses cache_read_input_tokens. Capture whichever is present.
+            details = getattr(raw_usage, "prompt_tokens_details", None)
+            cached = getattr(details, "cached_tokens", None) if details is not None else None
+            if cached is None:
+                cached = getattr(raw_usage, "cache_read_input_tokens", None)
+            usage.cached_input_tokens = int(cached or 0)
         if self.track_cost:
             try:
                 usage.cost_usd = float(litellm.completion_cost(completion_response=resp) or 0.0)
@@ -147,6 +191,7 @@ class LiteLLMModel:
         messages: list[Message],
         *,
         tools: list[dict[str, Any]] | None = None,
+        tool_choice: Any | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         litellm = _require_litellm()
@@ -154,12 +199,40 @@ class LiteLLMModel:
         extra = self._params(**kwargs)
         if tools:
             extra["tools"] = tools
+            if tool_choice is not None:
+                extra["tool_choice"] = tool_choice
         response = await litellm.acompletion(
             model=self.model, messages=payload, stream=True, **extra
         )
+        # Accumulate streamed tool-call fragments (id/name/args arrive in pieces,
+        # keyed by index) so we can emit assembled ToolCalls at the end.
+        pending: dict[int, dict[str, Any]] = {}
         async for chunk in response:
             delta = chunk.choices[0].delta
             text = getattr(delta, "content", None)
             if text:
                 yield StreamChunk(delta=text)
+            for tcd in getattr(delta, "tool_calls", None) or []:
+                idx = getattr(tcd, "index", 0) or 0
+                slot = pending.setdefault(idx, {"id": None, "name": "", "args": ""})
+                if getattr(tcd, "id", None):
+                    slot["id"] = tcd.id
+                fn = getattr(tcd, "function", None)
+                if fn is not None:
+                    if getattr(fn, "name", None):
+                        slot["name"] = fn.name
+                    if getattr(fn, "arguments", None):
+                        slot["args"] += fn.arguments
+        for idx in sorted(pending):
+            slot = pending[idx]
+            if not slot["name"]:
+                continue
+            try:
+                args = json.loads(slot["args"] or "{}")
+            except (json.JSONDecodeError, TypeError):
+                args = {}
+            tc_kwargs: dict[str, Any] = {"name": slot["name"], "arguments": args}
+            if slot["id"]:
+                tc_kwargs["id"] = slot["id"]
+            yield StreamChunk(tool_call=ToolCall(**tc_kwargs))
         yield StreamChunk(done=True)

@@ -78,6 +78,9 @@ class Usage(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
+    #: Prompt tokens served from the provider's prompt cache (subset of
+    #: input_tokens) — billed cheaper; surfaced for cost attribution.
+    cached_input_tokens: int = 0
     cost_usd: float = 0.0
 
     def add(self, other: Usage) -> None:
@@ -85,6 +88,7 @@ class Usage(BaseModel):
         self.input_tokens += other.input_tokens
         self.output_tokens += other.output_tokens
         self.total_tokens += other.total_tokens
+        self.cached_input_tokens += other.cached_input_tokens
         self.cost_usd += other.cost_usd
 
 
@@ -120,6 +124,8 @@ class EventType(str, Enum):
     USER_MESSAGE = "user_message"
     MODEL_REQUEST = "model_request"
     MODEL_DELTA = "model_delta"
+    #: A token-level text delta during a streaming run (Runner.stream_run).
+    TEXT_DELTA = "text_delta"
     MODEL_RESPONSE = "model_response"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"

@@ -24,7 +24,7 @@ from typing import Any
 try:  # pragma: no cover - depends on optional extra
     from opentelemetry import trace
 
-    _tracer = trace.get_tracer("yaab")
+    _tracer: Any = trace.get_tracer("yaab")
     _HAS_OTEL = True
 except ImportError:  # pragma: no cover
     _tracer = None

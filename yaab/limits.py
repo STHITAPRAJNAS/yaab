@@ -72,6 +72,20 @@ class UsageLimits:
                 limit="total_tokens",
             )
 
+    def check_wall_clock(self, started_at: float) -> None:
+        """Raise if the run has exceeded its wall-clock budget.
+
+        ``started_at`` is a ``time.monotonic()`` timestamp from the run's start.
+        """
+        if self.max_wall_seconds is None:
+            return
+        elapsed = time.monotonic() - started_at
+        if elapsed > self.max_wall_seconds:
+            raise UsageLimitExceeded(
+                f"wall-clock limit exceeded: {elapsed:.3f}s > {self.max_wall_seconds}s",
+                limit="wall_seconds",
+            )
+
     def check_tool_call(self, tool_name: str, counts: dict[str, int]) -> None:
         """Raise if invoking ``tool_name`` would breach an overall/per-tool cap.
 

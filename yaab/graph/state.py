@@ -244,18 +244,27 @@ class CompiledGraph:
             next_frontier: list[str] = []
             batch: list[dict[str, Any]] = []  # collected updates for the Rust barrier
             superstep_base = dict(state)  # state at the superstep barrier (Rust fold input)
-            for node in active:
+            for idx, node in enumerate(active):
                 fn = self.graph.nodes[node]
                 ctx = GraphContext(thread_id, deps, resume=resume_for_first)
                 resume_for_first = _MISSING  # only the first resumed node consumes it
                 try:
                     updates = await _maybe_await(fn, state, ctx)
                 except Interrupt as itr:
-                    # Park this node (and the rest of the frontier) and surface.
+                    # Park the interrupted node plus the nodes in this superstep
+                    # that have NOT run yet — but never the already-executed ones
+                    # (their updates are committed in `state`; re-running them would
+                    # double-apply under accumulating reducers). Successors computed
+                    # from the already-executed nodes are preserved via next_frontier.
+                    parked: list[str] = [node]
+                    for n in active[idx + 1 :]:
+                        if n not in parked:
+                            parked.append(n)
+                    for n in next_frontier:
+                        if n not in parked:
+                            parked.append(n)
                     self.checkpointer.put(
-                        thread_id,
-                        step,
-                        {"state": state, "frontier": [node, *[n for n in active if n != node]]},
+                        thread_id, step, {"state": state, "frontier": parked}
                     )
                     return GraphResult(
                         state=state, interrupted=True, interrupt_value=itr.value, steps=step

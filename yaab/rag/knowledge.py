@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..memory import Embedder, hashing_embedder
+from ..memory import Embedder, resolve_embedder
 from .chunking import CharacterChunker, Chunker
 from .rerank import Reranker
 from .store import Filter, InMemoryVectorStore, VectorStore
@@ -26,7 +26,7 @@ class KnowledgeBase:
     def __init__(
         self,
         *,
-        embedder: Embedder | None = None,
+        embedder: Embedder | str | None = None,
         store: VectorStore | None = None,
         chunker: Chunker | None = None,
         reranker: Reranker | None = None,
@@ -34,7 +34,7 @@ class KnowledgeBase:
         min_score: float = 0.0,
         name: str = "knowledge",
     ) -> None:
-        self.embedder = embedder or hashing_embedder()
+        self.embedder = resolve_embedder(embedder)
         self.store = store or InMemoryVectorStore()
         self.chunker = chunker or CharacterChunker()
         self.reranker = reranker

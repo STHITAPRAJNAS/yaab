@@ -75,8 +75,33 @@ gov.policy = PolicyEngine([
 ])
 ```
 
-Bring your own by implementing the `GuardrailScanner` protocol (adapters for
-LLM Guard / NeMo Guardrails fit here).
+Bring your own by implementing the `GuardrailScanner` protocol.
+
+### Industry guardrail adapters (out of the box)
+
+Adapters for the standard engines ship in `yaab.governance.guardrails`, each
+behind the same `GuardrailScanner` protocol so they drop straight into the
+`PolicyEngine` or are selectable from the component registry. The heavy deps are
+optional extras, imported lazily.
+
+```python
+from yaab.governance import PresidioPIIScanner, LLMGuardScanner, NeMoGuardrailsScanner
+
+gov.policy = PolicyEngine([
+    PresidioPIIScanner(),                 # pip install 'yaab[presidio]' — NER-based PII
+    LLMGuardScanner(),                    # pip install 'yaab[llm-guard]' — Protect AI scanners
+    NeMoGuardrailsScanner(rails=my_rails) # pip install 'yaab[nemo]'      — NVIDIA NeMo rails
+])
+
+# …or by name through the component registry:
+from yaab import get_component, available_components
+available_components("guardrail")   # ['llm_guard', 'nemo', 'pii', 'presidio', 'prompt_injection', ...]
+pii = get_component("guardrail", "presidio")
+```
+
+Each adapter also accepts an injected engine (`PresidioPIIScanner(analyzer=…)`,
+`LLMGuardScanner(input_scanners=[…])`, `NeMoGuardrailsScanner(check=…)`) for
+custom configuration and offline testing.
 
 ## Tool authorization & idempotency
 

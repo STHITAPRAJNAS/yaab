@@ -29,17 +29,70 @@ class MCPClient:
 
     PROTOCOL_VERSION = "2024-11-05"
 
-    def __init__(self, transport: RPCTransport) -> None:
+    def __init__(self, transport: RPCTransport, *, sampling_handler: Any | None = None) -> None:
         self._transport = transport
         self._id = 0
         self._initialized = False
         self._proc: asyncio.subprocess.Process | None = None
+        #: Handler for server-initiated sampling/createMessage requests (lets a
+        #: server delegate completions to this client's model).
+        self.sampling_handler = sampling_handler
 
     # --- constructors --------------------------------------------------
     @classmethod
-    def from_transport(cls, transport: RPCTransport) -> MCPClient:
+    def from_transport(
+        cls, transport: RPCTransport, *, sampling_handler: Any | None = None
+    ) -> MCPClient:
         """Build a client over a custom async transport (HTTP/SSE, in-process)."""
-        return cls(transport)
+        return cls(transport, sampling_handler=sampling_handler)
+
+    @staticmethod
+    def sampler_from_model(model: Any) -> Callable[[dict], Awaitable[dict]]:
+        """Build an MCP sampling handler that runs ``model`` on the request.
+
+        Returns an ``async (params) -> result`` callback in MCP
+        ``sampling/createMessage`` shape, suitable for ``MCPServer(
+        request_sampling=…)`` or ``MCPClient(sampling_handler=…)``.
+        """
+        from ..types import Message, Role
+
+        async def _sample(params: dict) -> dict:
+            mcp_messages = params.get("messages", [])
+            messages = []
+            sys = params.get("systemPrompt")
+            if sys:
+                messages.append(Message(role=Role.SYSTEM, content=str(sys)))
+            for m in mcp_messages:
+                content = m.get("content", {})
+                text = content.get("text", "") if isinstance(content, dict) else str(content)
+                role = Role.ASSISTANT if m.get("role") == "assistant" else Role.USER
+                messages.append(Message(role=role, content=text))
+            resp = await model.complete(messages)
+            return {
+                "role": "assistant",
+                "content": {"type": "text", "text": resp.content},
+                "model": getattr(model, "name", "yaab"),
+            }
+
+        return _sample
+
+    async def handle(self, request: dict) -> dict:
+        """Handle a server-initiated JSON-RPC request (e.g. sampling/createMessage).
+
+        For bidirectional transports where the server calls back into the client.
+        """
+        method = request.get("method")
+        rid = request.get("id")
+        if method == "sampling/createMessage" and self.sampling_handler is not None:
+            result = self.sampling_handler(request.get("params") or {})
+            if asyncio.iscoroutine(result):
+                result = await result
+            return {"jsonrpc": "2.0", "id": rid, "result": result}
+        return {
+            "jsonrpc": "2.0",
+            "id": rid,
+            "error": {"code": -32601, "message": f"method not found: {method}"},
+        }
 
     @classmethod
     def stdio(cls, command: list[str]) -> MCPClient:
