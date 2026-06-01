@@ -20,6 +20,7 @@ Cargo.lock
 
 # Local
 live_e2e_report.json
+*.log
 *.db
 *.sqlite
 *.sqlite3
