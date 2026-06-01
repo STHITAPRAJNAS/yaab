@@ -31,8 +31,8 @@ class PresidioPIIScanner:
         entities: list[str] | None = None,
         action: Action = Action.REDACT,
     ) -> None:
-        self._analyzer = analyzer
-        self._anonymizer = anonymizer
+        self._analyzer: Any = analyzer
+        self._anonymizer: Any = anonymizer
         self.language = language
         self.entities = entities
         self.action = action

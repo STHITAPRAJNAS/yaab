@@ -133,7 +133,7 @@ async def stream_structured(
         )
     ctx_messages.append(Message(role=Role.SYSTEM, content=f"Output JSON only.{schema_hint}"))
 
-    adapter = TypeAdapter(output_type)
+    adapter: TypeAdapter = TypeAdapter(output_type)
     buffer = ""
     last_emitted: Any = None
     async for chunk in agent.model.stream(ctx_messages):

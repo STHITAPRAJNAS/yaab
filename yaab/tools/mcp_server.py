@@ -195,7 +195,7 @@ class MCPServer:
         raise _RpcError(-32601, f"method not found: {method}")
 
     async def _read_resource(self, params: dict[str, Any]) -> dict[str, Any]:
-        uri = params.get("uri")
+        uri = str(params.get("uri") or "")
         resource = self.resources.get(uri)
         if resource is None:
             raise _RpcError(-32602, f"unknown resource: {uri}")
@@ -207,7 +207,7 @@ class MCPServer:
         }
 
     def _get_prompt(self, params: dict[str, Any]) -> dict[str, Any]:
-        name = params.get("name")
+        name = str(params.get("name") or "")
         prompt = self.prompts.get(name)
         if prompt is None:
             raise _RpcError(-32602, f"unknown prompt: {name}")

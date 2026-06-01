@@ -555,7 +555,9 @@ class Runner:
         """
         import inspect
 
+        assert self.memory_service is not None  # only called when set (guarded by caller)
         search = self.memory_service.search
+        params: Any = {}
         try:
             params = inspect.signature(search).parameters
         except (TypeError, ValueError):  # builtins / C funcs without a signature
@@ -669,7 +671,12 @@ def _user_message(text: str, original: Any = None) -> Message:
     from .content import Content
 
     if isinstance(original, Content) and original.is_multimodal():
-        return Message(role=Role.USER, content=text, content_parts=original.to_provider_content())
+        parts = original.to_provider_content()
+        return Message(
+            role=Role.USER,
+            content=text,
+            content_parts=parts if isinstance(parts, list) else None,
+        )
     return Message(role=Role.USER, content=text)
 
 
@@ -707,7 +714,7 @@ def _output_spec(output_type: type) -> tuple[TypeAdapter | None, dict[str, Any] 
     """Build a validator + JSON schema for non-string output types."""
     if output_type is str or output_type is type(None):
         return None, None
-    adapter = TypeAdapter(output_type)
+    adapter: TypeAdapter = TypeAdapter(output_type)
     try:
         schema = adapter.json_schema()
     except Exception:  # noqa: BLE001

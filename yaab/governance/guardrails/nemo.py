@@ -41,7 +41,7 @@ class NeMoGuardrailsScanner:
         if check is None and rails is None:
             raise ValueError("NeMoGuardrailsScanner requires either `check` or `rails`")
         self._check = check
-        self._rails = rails
+        self._rails: Any = rails
 
     def _resolve_check(self) -> Check:
         if self._check is not None:

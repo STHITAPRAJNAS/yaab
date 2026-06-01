@@ -167,7 +167,8 @@ class PgVectorStore:
         return cur.rowcount
 
     def count(self) -> int:
-        return self._conn.execute(f"SELECT COUNT(*) FROM {self._table}").fetchone()[0]
+        row = self._conn.execute(f"SELECT COUNT(*) FROM {self._table}").fetchone()
+        return row[0] if row else 0
 
 
 register("vectorstore", "memory", lambda **kw: InMemoryVectorStore())
