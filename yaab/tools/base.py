@@ -3,8 +3,8 @@
 A :class:`Tool` exposes a JSON schema (for the model) and an async ``execute``
 (for the runtime). :func:`tool` turns a plain typed Python function into a
 tool: the parameter schema is generated from type hints, argument validation
-is handled by Pydantic, and the description comes from the docstring — the same
-ergonomics as Pydantic AI's ``@agent.tool``.
+is handled by Pydantic, and the description comes from the docstring — so a
+decorated function is all you need to expose a tool.
 """
 
 from __future__ import annotations

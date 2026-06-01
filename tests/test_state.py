@@ -1,4 +1,4 @@
-"""Tests for prefix-scoped State (ADK temp:/user:/app:)."""
+"""Tests for prefix-scoped State (temp:/user:/app: prefixes)."""
 
 from __future__ import annotations
 

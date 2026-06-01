@@ -319,7 +319,7 @@ class Runner:
                                 )
                             )
 
-                    # ADK transfer_to_agent: a sub-agent handoff was requested.
+                    # transfer_to_agent: a sub-agent handoff was requested.
                     # Delegate the ORIGINAL prompt to it and adopt its answer as
                     # this run's final output (skip the parent's own coercion).
                     sub, transfer_err = self._pop_transfer(
@@ -523,8 +523,8 @@ class Runner:
         only emits whole responses), this drives each turn with ``model.stream``:
         text arrives as :attr:`EventType.TEXT_DELTA` events *as it generates*,
         tools execute mid-run (``TOOL_CALL``/``TOOL_RESULT``), and the loop
-        continues until a final answer — the LangGraph/ADK "stream through the
-        tool loop" behavior. Terminates with ``FINAL_OUTPUT`` then ``RUN_END``.
+        continues until a final answer — the stream-through-the-tool-loop
+        behavior. Terminates with ``FINAL_OUTPUT`` then ``RUN_END``.
 
         ``_transfer_depth``/``_transfer_cap`` are internal handoff-loop guards
         (see :meth:`run_stream`).
@@ -623,7 +623,7 @@ class Runner:
                             )
                         )
 
-                    # ADK transfer_to_agent: delegate the ORIGINAL prompt to the
+                    # transfer_to_agent: delegate the ORIGINAL prompt to the
                     # requested sub-agent and adopt its answer (see run_stream).
                     sub, transfer_err = self._pop_transfer(
                         agent, ctx, _transfer_depth, _transfer_cap

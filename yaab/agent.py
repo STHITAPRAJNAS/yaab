@@ -1,7 +1,7 @@
 """The typed :class:`Agent` — YAAB's primary developer-facing abstraction.
 
 ``Agent[Deps, Output]`` is generic over a dependency-injection type and an
-output type, fusing Pydantic AI's type-safety with ADK's agent/runner split.
+output type, fusing type-safety with a clean agent/runner split.
 The three-line "hello agent" works with zero ceremony; every layer underneath
 (runner, sessions, governance, graph) is openable when you need it.
 
@@ -94,7 +94,7 @@ class Agent(Generic[Deps, Output]):
 
         # Derive the routing description BEFORE skill fragments are folded in, so
         # it reflects the developer's own one-liner — not appended skill prose.
-        # Falls back to the first line of string instructions (ADK convention).
+        # Falls back to the first line of string instructions.
         if description:
             self.description = description
         elif isinstance(instructions, str) and instructions:
@@ -110,7 +110,7 @@ class Agent(Generic[Deps, Output]):
 
         #: Named sub-agents this agent may hand the conversation off to. When
         #: non-empty, a framework-managed ``transfer_to_agent`` tool is injected
-        #: below so the model can route by name (ADK's multi-agent pattern).
+        #: below so the model can route by name (the multi-agent pattern).
         self.sub_agents: list[Agent[Any, Any]] = list(sub_agents or [])
         #: Max chained transfers from this run, to prevent delegation loops.
         self.transfer_depth = transfer_depth
@@ -121,7 +121,7 @@ class Agent(Generic[Deps, Output]):
         self._runner = runner
 
     def _build_transfer_tool(self) -> Tool:
-        """Build the ADK-style ``transfer_to_agent`` tool from ``sub_agents``.
+        """Build the built-in ``transfer_to_agent`` tool from ``sub_agents``.
 
         The tool itself only *records* the requested handoff into
         ``ctx.state['__transfer_to__']``; the Runner inspects that flag after the

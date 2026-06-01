@@ -1,9 +1,9 @@
-"""Dynamic model routing — ADK model-routing parity.
+"""Dynamic model routing — pick a model per request.
 
 A :class:`ModelRouter` is itself a :class:`ModelProvider`: it picks one of
 several downstream models *per request* via a classifier, then delegates. This
-is the cost/quality lever ADK exposes as model routing — cheap models for
-simple turns, capable models when the prompt is large or carries tools — but
+is a cost/quality lever — cheap models for simple turns, capable models when
+the prompt is large or carries tools — but
 expressed as a plain provider so it drops into ``Agent(model=...)`` anywhere a
 model is accepted, including inside fallback chains.
 

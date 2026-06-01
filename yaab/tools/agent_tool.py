@@ -1,6 +1,6 @@
 """Agent-as-Tool: expose one agent as a callable tool of another.
 
-This is the building block for hierarchical delegation and the Strands-style
+This is the building block for hierarchical delegation and the
 "agent as tool" multi-agent pattern. The sub-agent runs with its own loop and
 returns its final output as the tool result.
 """

@@ -1,8 +1,7 @@
 # RAG (retrieval-augmented generation)
 
-YAAB ships RAG **built-in and provider-neutral** — not delegated to a managed
-cloud service (as ADK→Vertex, OpenAI→hosted vector stores, and Strands→Bedrock
-do) and not left entirely to you to assemble (as Pydantic AI does). The pipeline
+YAAB ships RAG **built-in and provider-neutral** — neither delegated to a managed
+cloud service nor left entirely to you to assemble. The pipeline
 mirrors the de-facto standard — `Document → Chunk → Embedder → VectorStore →
 Retriever → Reranker` — wrapped in one `KnowledgeBase` object, and adds the
 governance pieces the ecosystem still lacks: **per-user/document access control

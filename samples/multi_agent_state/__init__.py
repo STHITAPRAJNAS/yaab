@@ -1,7 +1,7 @@
 """Multi-agent state — passing data from one agent to the next via shared ``deps``.
 
 In a pipeline, a later agent usually needs what an earlier agent produced. YAAB
-does this the type-safe, dependency-injection way (à la Pydantic AI): you hand
+does this the type-safe, dependency-injection way: you hand
 every agent the *same* ``deps`` object, and tools read/write it through
 ``ctx.deps``. No globals, no hidden blackboard — the shared state is an explicit,
 typed object you own.

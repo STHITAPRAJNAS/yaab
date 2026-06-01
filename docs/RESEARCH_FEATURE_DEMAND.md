@@ -60,7 +60,7 @@ achievable:
 5. **Provider-native built-in tools (#12)** — surface Anthropic/OpenAI server-side
    tools (web search, code execution) through the tool layer.
 6. **Firestore/Valkey session backends (#10)** and **Python 3.14 (#19)** — small,
-   parity-closing additions.
+   frequently requested additions.
 
 ## What's conspicuously missing across the *whole* ecosystem (YAAB's opening)
 

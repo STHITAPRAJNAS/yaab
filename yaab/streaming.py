@@ -1,7 +1,7 @@
 """Streaming structured output — partial typed objects as they generate.
 
-Pydantic AI #1452 and others ask for partial structured results during
-generation (e.g. render a form as fields arrive). :func:`stream_structured`
+Partial structured results during generation (e.g. render a form as fields
+arrive). :func:`stream_structured`
 streams tokens from the model, repeatedly attempts a *tolerant* parse of the
 JSON-so-far, and yields the latest partial object whenever it changes —
 validated leniently against the output type so partial states are allowed.

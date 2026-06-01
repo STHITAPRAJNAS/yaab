@@ -63,7 +63,7 @@ for defense in depth.
 
 ## Structured-output streaming
 
-Render partial typed objects as the model generates them (Pydantic AI #1452):
+Render partial typed objects as the model generates them:
 
 ```python
 from pydantic import BaseModel

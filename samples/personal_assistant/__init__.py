@@ -11,8 +11,8 @@ need in production:
   sessions, folded into the system prompt automatically by the Runner.
 * **Callbacks (Plugin hooks)** — a `MemoryWritebackPlugin` observes each run and
   writes salient user statements into long-term memory after the turn, and a
-  `UsageLogPlugin` records token usage. This is how ADK-style
-  before/after callbacks map onto YAAB.
+  `UsageLogPlugin` records token usage. This is how before/after
+  callbacks work in YAAB.
 
 Run it offline (deterministic) or against a real model:
 

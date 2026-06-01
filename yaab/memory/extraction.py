@@ -1,11 +1,10 @@
 """LLM-based memory extraction — distill durable memories from a conversation.
 
 Raw transcripts make poor long-term memory: they are verbose, redundant, and
-recall the *question* rather than the *fact*. This is the gap ADK closes with
-``VertexAiMemoryBankService``, which uses an LLM to extract consolidated
-memories. :class:`MemoryExtractor` brings that to YAAB, backend-agnostically:
-one model call turns a session's messages into a short JSON array of durable
-statements (facts, preferences, decisions) that recall cleanly later.
+recall the *question* rather than the *fact*. :class:`MemoryExtractor` uses an
+LLM to extract consolidated memories, backend-agnostically: one model call turns
+a session's messages into a short JSON array of durable statements (facts,
+preferences, decisions) that recall cleanly later.
 
 The extractor only *produces* candidate memories; consolidation/dedup against
 the existing store lives in :class:`yaab.memory.manager.MemoryManager`, which

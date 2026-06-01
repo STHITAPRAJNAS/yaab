@@ -1,4 +1,4 @@
-"""Plugin system — cross-cutting extension, ADK-style.
+"""Plugin system — cross-cutting extension.
 
 Plugins register on the :class:`~yaab.runner.Runner` and fire on lifecycle
 callbacks that apply globally across every agent the runner drives. A hook can:
@@ -53,7 +53,7 @@ class Plugin:
 
         Return a replacement args dict to use instead, or ``None`` to leave the
         args unchanged. Runs before :meth:`before_tool` and tool execution — the
-        seam for coercing malformed model output (Pydantic AI #3008).
+        seam for coercing malformed model output.
         """
         return None
 

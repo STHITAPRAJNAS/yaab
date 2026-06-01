@@ -79,7 +79,7 @@ optimization improves.
 - **Runner** — executes an agent: runs the tool loop, emits the event stream,
   wires in sessions/plugins/governance. The engine.
 - **RunContext** — per-run context passed to tools/hooks (deps, identity, usage,
-  scratch `state`). Like ADK's `ToolContext`.
+  scratch `state`).
 - **Tool** — a capability the model can call (typed function, MCP tool,
   agent-as-tool, remote A2A agent).
 - **Model (`ModelProvider`)** — the LLM backend; `LiteLLMModel` covers 100+
@@ -103,7 +103,7 @@ optimization improves.
   flow.
 - **Multi-agent** — `SequentialAgent`, `ParallelAgent`, `MapAgent`, `LoopAgent`,
   `Swarm`; each is itself an agent.
-- **Optimize** — DSPy-style `Signature`/`Module`/`Optimizer` to compile prompts.
+- **Optimize** — `Signature`/`Module`/`Optimizer` to compile prompts.
 
 ### Governance
 - **AgentRegistry** — system-of-record (Agent Cards, risk tier, approval, model

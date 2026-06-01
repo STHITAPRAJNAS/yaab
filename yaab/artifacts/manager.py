@@ -1,9 +1,9 @@
-"""Artifact manager — named, versioned binary storage (ADK-style).
+"""Artifact manager — named, versioned binary storage.
 
 Adds ``(app_name, user_id, session_id)`` scoping and automatic versioning on
 top of an :class:`ArtifactService`: saving the same name twice creates v2, v3,
-…, and you can load any version or list them — mirroring ADK's artifact
-service semantics while staying backend-agnostic.
+…, and you can load any version or list them — all while staying
+backend-agnostic.
 """
 
 from __future__ import annotations

@@ -53,8 +53,7 @@ class KnowledgeBase:
 
         With ``dedup`` (default), chunks whose content was already indexed are
         skipped — re-ingesting an unchanged corpus is a cheap no-op and repeated
-        runs don't duplicate context (LangChain RecordManager-style incremental
-        indexing).
+        runs don't duplicate context (incremental indexing).
         """
         import hashlib
 

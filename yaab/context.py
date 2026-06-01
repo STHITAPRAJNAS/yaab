@@ -9,7 +9,7 @@ call. Three strategies ship:
   messages (cheap, deterministic, no extra model calls);
 * :class:`SummarizeHistory` — when the conversation exceeds a token budget,
   fold the oldest messages into a running summary via a model, preserving the
-  system prompt and the most recent turns (ADK-style compaction).
+  system prompt and the most recent turns.
 
 Token counting is approximate by default (chars/4) and pluggable.
 """

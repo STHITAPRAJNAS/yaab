@@ -1,8 +1,7 @@
 """Resilience wrappers for model providers: rate limiting + circuit breaker.
 
-Retries and fallbacks live in :class:`LiteLLMModel`; this adds the two controls
-the ecosystem asks for to protect a *failing or rate-limited* provider
-(OpenAI Agents #782):
+Retries and fallbacks live in :class:`LiteLLMModel`; this adds two controls to
+protect a *failing or rate-limited* provider:
 
 * :class:`RateLimiter` — an async token-bucket limiting requests per minute;
 * :class:`CircuitBreaker` — opens after consecutive failures, fails fast for a

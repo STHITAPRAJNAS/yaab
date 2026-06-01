@@ -1,4 +1,4 @@
-"""Test compiled-prompt inspection (Tier 1, DSPy #7830)."""
+"""Test compiled-prompt inspection (Tier 1)."""
 
 from __future__ import annotations
 

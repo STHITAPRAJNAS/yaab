@@ -1,4 +1,4 @@
-"""Tests for the ``yaab eval`` CLI command (ADK ``adk eval`` parity).
+"""Tests for the ``yaab eval`` CLI command.
 
 These call ``yaab.cli.main([...])`` directly (no subprocess) for the core
 assertions — that keeps the run deterministic and lets us capture stdout and

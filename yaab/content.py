@@ -1,8 +1,8 @@
 """YAAB's first-class content type: ``Content`` made of typed ``Part``s.
 
-Where Google ADK exposes ``google.genai.Content``/``Part``, YAAB ships its own
-provider-neutral, multimodal content model so an agent message is never just a
-string. A :class:`Content` is a role plus an ordered list of :class:`Part`s, and
+YAAB ships its own provider-neutral ``Content``/``Part`` model so an agent
+message is never just a string. The content model is multimodal: a
+:class:`Content` is a role plus an ordered list of :class:`Part`s, and
 each part is one of: text, inline binary data (a "blob"), a file reference, a
 thought/reasoning trace, a tool call, or a tool result.
 

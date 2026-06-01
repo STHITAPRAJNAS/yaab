@@ -96,8 +96,8 @@ class RunContext(Generic[Deps]):
     """Typed, dependency-injected context handed to tools and instructions.
 
     Holds the caller-supplied ``deps`` (the DI payload), identity, the live
-    usage counter, and a scratch ``state`` dict. Modeled on Pydantic AI's
-    ``RunContext`` — it keeps tools testable and free of global state.
+    usage counter, and a scratch ``state`` dict. Passing context explicitly
+    keeps tools testable and free of global state.
     """
 
     __slots__ = ("deps", "session_id", "identity", "usage", "state", "run_id")
@@ -129,7 +129,7 @@ class EventType(str, Enum):
     MODEL_RESPONSE = "model_response"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
-    #: A framework-managed handoff to a sub-agent (ADK transfer_to_agent). The
+    #: A framework-managed handoff to a sub-agent (transfer_to_agent). The
     #: payload carries ``to`` (the sub-agent name); the sub-agent's answer then
     #: becomes the parent run's output.
     AGENT_TRANSFER = "agent_transfer"
