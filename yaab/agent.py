@@ -133,6 +133,18 @@ class Agent(Generic[Deps, Output]):
             self._runner = Runner()
         return self._runner
 
+    def reset(self) -> Agent[Deps, Output]:
+        """Reset per-agent run state so the instance is clean for reuse.
+
+        Clears the cached (lazily-resolved, tracing-wrapped) model provider so the
+        next run re-resolves it. Conversation history is **not** held on the Agent
+        — it lives in the session service — so to clear a conversation, start a new
+        ``session_id`` or clear it via your :class:`SessionManager`. Returns
+        ``self`` for chaining.
+        """
+        self._model = None
+        return self
+
     async def run(
         self,
         prompt: str,

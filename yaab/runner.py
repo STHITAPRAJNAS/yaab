@@ -132,12 +132,14 @@ class Runner:
             elif cancellation.deadline is None:
                 cancellation.deadline = time.monotonic() + timeout
         tool_counts: dict[str, int] = {}
+        run_started = time.monotonic()
 
         def check_controls() -> None:
             if cancellation is not None:
                 cancellation.raise_if_cancelled()
             if usage_limits is not None:
                 usage_limits.check_usage(ctx.usage)
+                usage_limits.check_wall_clock(run_started)
 
         def emit(etype: EventType, **payload: Any) -> Event:
             return Event(type=etype, agent=agent.name, run_id=ctx.run_id, payload=payload)
@@ -359,6 +361,7 @@ class Runner:
             elif cancellation.deadline is None:
                 cancellation.deadline = time.monotonic() + timeout
         tool_counts: dict[str, int] = {}
+        run_started = time.monotonic()
 
         def emit(etype: EventType, **payload: Any) -> Event:
             return Event(type=etype, agent=agent.name, run_id=ctx.run_id, payload=payload)
@@ -397,6 +400,7 @@ class Runner:
                     cancellation.raise_if_cancelled()
                 if usage_limits is not None:
                     usage_limits.check_usage(ctx.usage)
+                    usage_limits.check_wall_clock(run_started)
                 if context_strategy is not None:
                     messages = await context_strategy.apply(messages, model=agent.model)
 
