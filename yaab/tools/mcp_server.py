@@ -12,6 +12,7 @@ else; an in-process handler is exactly what tests (and the YAAB MCPClient) drive
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from ..types import RunContext
@@ -19,13 +20,107 @@ from ..types import RunContext
 PROTOCOL_VERSION = "2024-11-05"
 
 
-class MCPServer:
-    """Serve a list of YAAB tools over the MCP JSON-RPC protocol."""
+class MCPResource:
+    """A resource an :class:`MCPServer` exposes (MCP ``resources/*``).
 
-    def __init__(self, tools: list[Any], *, name: str = "yaab", version: str = "0.1.0") -> None:
+    Provide static ``text`` or a ``loader`` callable computed on read (sync or
+    async). ``mime_type`` defaults to plain text.
+    """
+
+    def __init__(
+        self,
+        *,
+        uri: str,
+        name: str,
+        text: str | None = None,
+        loader: Callable[[], Any] | None = None,
+        description: str = "",
+        mime_type: str = "text/plain",
+    ) -> None:
+        if text is None and loader is None:
+            raise ValueError("MCPResource needs either text or a loader")
+        self.uri = uri
+        self.name = name
+        self.text = text
+        self.loader = loader
+        self.description = description
+        self.mime_type = mime_type
+
+    def descriptor(self) -> dict[str, Any]:
+        return {
+            "uri": self.uri,
+            "name": self.name,
+            "description": self.description,
+            "mimeType": self.mime_type,
+        }
+
+    async def read(self) -> str:
+        import inspect
+
+        if self.loader is not None:
+            value = self.loader()
+            if inspect.isawaitable(value):
+                value = await value
+            return _as_text(value)
+        return self.text or ""
+
+
+class MCPPrompt:
+    """A prompt template an :class:`MCPServer` exposes (MCP ``prompts/*``).
+
+    ``template`` is ``str.format``-rendered with the call arguments.
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        template: str,
+        description: str = "",
+        arguments: list[dict[str, Any]] | None = None,
+    ) -> None:
+        self.name = name
+        self.template = template
+        self.description = description
+        self.arguments = arguments or []
+
+    def descriptor(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "arguments": self.arguments,
+        }
+
+    def render(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        try:
+            text = self.template.format(**(arguments or {}))
+        except KeyError as exc:
+            raise _RpcError(-32602, f"missing prompt argument: {exc}") from exc
+        return {
+            "description": self.description,
+            "messages": [
+                {"role": "user", "content": {"type": "text", "text": text}},
+            ],
+        }
+
+
+class MCPServer:
+    """Serve YAAB tools (and optionally resources/prompts) over MCP JSON-RPC."""
+
+    def __init__(
+        self,
+        tools: list[Any],
+        *,
+        name: str = "yaab",
+        version: str = "0.1.0",
+        resources: list[MCPResource] | None = None,
+        prompts: list[MCPPrompt] | None = None,
+    ) -> None:
         self.tools = {t.name: t for t in tools}
         self.name = name
         self.version = version
+        self.resources = {r.uri: r for r in (resources or [])}
+        self.prompts = {p.name: p for p in (prompts or [])}
 
     @classmethod
     def from_agent(cls, agent: Any, **kwargs: Any) -> MCPServer:
@@ -48,16 +143,48 @@ class MCPServer:
 
     async def _dispatch(self, method: str | None, params: dict[str, Any]) -> Any:
         if method == "initialize":
+            caps: dict[str, Any] = {"tools": {}}
+            if self.resources:
+                caps["resources"] = {}
+            if self.prompts:
+                caps["prompts"] = {}
             return {
                 "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {"tools": {}},
+                "capabilities": caps,
                 "serverInfo": {"name": self.name, "version": self.version},
             }
         if method == "tools/list":
             return {"tools": [self._descriptor(t) for t in self.tools.values()]}
         if method == "tools/call":
             return await self._call_tool(params)
+        if method == "resources/list":
+            return {"resources": [r.descriptor() for r in self.resources.values()]}
+        if method == "resources/read":
+            return await self._read_resource(params)
+        if method == "prompts/list":
+            return {"prompts": [p.descriptor() for p in self.prompts.values()]}
+        if method == "prompts/get":
+            return self._get_prompt(params)
         raise _RpcError(-32601, f"method not found: {method}")
+
+    async def _read_resource(self, params: dict[str, Any]) -> dict[str, Any]:
+        uri = params.get("uri")
+        resource = self.resources.get(uri)
+        if resource is None:
+            raise _RpcError(-32602, f"unknown resource: {uri}")
+        text = await resource.read()
+        return {
+            "contents": [
+                {"uri": uri, "mimeType": resource.mime_type, "text": text},
+            ]
+        }
+
+    def _get_prompt(self, params: dict[str, Any]) -> dict[str, Any]:
+        name = params.get("name")
+        prompt = self.prompts.get(name)
+        if prompt is None:
+            raise _RpcError(-32602, f"unknown prompt: {name}")
+        return prompt.render(params.get("arguments") or {})
 
     @staticmethod
     def _descriptor(tool: Any) -> dict[str, Any]:
@@ -96,4 +223,4 @@ def _as_text(value: Any) -> str:
         return str(value)
 
 
-__all__ = ["MCPServer"]
+__all__ = ["MCPServer", "MCPResource", "MCPPrompt"]

@@ -93,6 +93,41 @@ class RemoteAgent:
         """Poll a long-running task by id (returns the A2A task object)."""
         return await self._request("GET", f"/a2a/tasks/{task_id}", None)
 
+    #: A2A task states considered terminal (stop polling).
+    TERMINAL_STATES = frozenset({"completed", "failed", "canceled", "cancelled", "rejected"})
+
+    async def poll_task(
+        self,
+        task_id: str,
+        *,
+        interval: float = 1.0,
+        timeout: float | None = 60.0,
+        terminal_states: set[str] | frozenset[str] | None = None,
+    ) -> dict[str, Any]:
+        """Poll a long-running remote task until it reaches a terminal state.
+
+        Returns the final task object. Raises :class:`TimeoutError` if the task
+        has not finished within ``timeout`` seconds (``None`` = no timeout).
+        ``interval`` is the delay between polls.
+        """
+        import asyncio
+        import time
+
+        terminal = terminal_states or self.TERMINAL_STATES
+        started = time.monotonic()
+        while True:
+            task = await self.get_task(task_id)
+            state = (task.get("status") or {}).get("state")
+            if state in terminal:
+                return task
+            if timeout is not None and time.monotonic() - started > timeout:
+                raise TimeoutError(
+                    f"A2A task {task_id!r} did not reach a terminal state within {timeout}s "
+                    f"(last state: {state!r})"
+                )
+            if interval:
+                await asyncio.sleep(interval)
+
     # --- Tool protocol -------------------------------------------------
     @property
     def description(self) -> str:
