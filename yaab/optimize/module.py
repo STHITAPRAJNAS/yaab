@@ -1,4 +1,4 @@
-"""Modules — composable, parameterized strategies over a signature (DSPy-style).
+"""Modules — composable, parameterized strategies over a signature.
 
 ``Predict`` does a single signature-driven completion; ``ChainOfThought`` adds a
 reasoning field; ``ReAct`` interleaves reasoning with tool calls. Modules carry
@@ -58,8 +58,8 @@ class Module:
         """Return the exact prompt this module would send for ``inputs``.
 
         Renders the current instructions + few-shot demos + inputs *without*
-        calling the model — the visibility DSPy users ask for (#7830) when
-        debugging or auditing an optimized program.
+        calling the model — the visibility you want when debugging or auditing
+        an optimized program.
         """
         return self.signature.render_prompt(
             {k: str(v) for k, v in inputs.items()}, demos=self.demos

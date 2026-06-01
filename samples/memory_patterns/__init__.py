@@ -2,7 +2,7 @@
 
 Agents have two distinct kinds of memory, and YAAB models them with two distinct
 services. This sample shows both, end to end, and how you move information from
-one to the other (the ADK "add session to memory" consolidation step):
+one to the other (the session-to-memory consolidation step):
 
 * **Episodic memory** — the turns of *the current conversation*. Held by the
   ``SessionService`` (here SQLite-backed, so it survives a restart) and keyed by

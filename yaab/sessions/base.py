@@ -1,6 +1,6 @@
 """Session abstraction: conversation history + structured KV state.
 
-Following ADK, a :class:`Session` keeps conversation history *and* a structured
+A :class:`Session` keeps conversation history *and* a structured
 key-value ``state`` store as distinct concerns. A :class:`SessionService` is
 the pluggable backend (in-memory, SQLite, Postgres, Redis, ...).
 """

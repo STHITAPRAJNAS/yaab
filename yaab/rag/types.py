@@ -1,9 +1,8 @@
 """Core RAG types: Document, Chunk, and retrieval results.
 
-Names mirror the de-facto standard (LlamaIndex `Document`/`Node`, LangChain
-`Document`) so the mental model transfers, while staying provider-neutral and
-Pydantic-typed for clean (de)serialization into sessions, checkpoints, and the
-audit log.
+Names follow the familiar `Document`/`Chunk` vocabulary so the mental model
+transfers, while staying provider-neutral and Pydantic-typed for clean
+(de)serialization into sessions, checkpoints, and the audit log.
 """
 
 from __future__ import annotations

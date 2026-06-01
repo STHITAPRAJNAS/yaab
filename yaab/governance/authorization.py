@@ -1,10 +1,10 @@
-"""Pre-tool-call authorization & idempotency — the most-requested governance seam.
+"""Pre-tool-call authorization & idempotency — a core governance seam.
 
-Across frameworks the single loudest ask is *"authorize a tool call before it
-runs"* (CrewAI #4877/#5888) and *"don't double-execute side-effecting tools on
-retry"* (CrewAI #5802). YAAB answers both as Runner plugins that slot into the
-existing `before_tool` / `after_tool` hooks, so they compose with guardrails and
-audit and require no changes to agents or tools.
+Two common needs go together here: *authorize a tool call before it runs* and
+*don't double-execute side-effecting tools on retry*. YAAB answers both as
+Runner plugins that slot into the existing `before_tool` / `after_tool` hooks,
+so they compose with guardrails and audit and require no changes to agents or
+tools.
 
 * :class:`ToolAuthorizer` — a protocol returning an allow/deny :class:`Decision`
   for a `(tool, args, ctx)` triple. Ship `RBACAuthorizer` (allow/deny lists +

@@ -2,8 +2,7 @@
 
 ``TestModel`` returns canned text or a scripted sequence of responses, and can
 auto-call tools so the agent loop can be exercised end to end. ``FunctionModel``
-lets a test author compute the response from the conversation. Both mirror the
-behavior of Pydantic AI's ``TestModel``/``FunctionModel``.
+lets a test author compute the response from the conversation.
 """
 
 from __future__ import annotations

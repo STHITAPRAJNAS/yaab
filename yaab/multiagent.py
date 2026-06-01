@@ -51,7 +51,7 @@ class SequentialAgent(_WorkflowBase):
     """Run sub-agents in sequence, feeding each output into the next prompt.
 
     ``stop_when`` (optional) receives each step's output and returns ``True`` to
-    stop the pipeline early — the conditional early-stop ADK #3405 asks for.
+    stop the pipeline early — conditional early-stop.
     """
 
     def __init__(
@@ -111,7 +111,7 @@ class ParallelAgent(_WorkflowBase):
 
 
 class MapAgent(_WorkflowBase):
-    """Fan one sub-agent out across many inputs concurrently (ADK #1828).
+    """Fan one sub-agent out across many inputs concurrently.
 
     Given a list of prompts (or a function that derives them from the incoming
     prompt), run the same agent on each in parallel and return the list of
@@ -207,7 +207,7 @@ class SwarmState(BaseModel):
 
 
 class Swarm(_WorkflowBase):
-    """Autonomous hand-off between peer agents (Strands-style swarm).
+    """Autonomous hand-off between peer agents (swarm).
 
     Each member is augmented with ``handoff_to_<peer>`` tools. When an agent
     decides another is better suited, it calls the handoff tool; the swarm then

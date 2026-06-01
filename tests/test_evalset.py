@@ -1,6 +1,6 @@
 """Tests for the portable EvalSet file format and the tool-trajectory metric.
 
-Covers ADK-parity eval depth:
+Covers eval depth:
 - :class:`EvalSet` / :class:`EvalCase` JSON round-trip (the ``.evalset.json`` format)
 - :meth:`EvalSet.from_cases` and :meth:`EvalSet.to_dataset` interop with the
   existing :class:`Experiment` machinery

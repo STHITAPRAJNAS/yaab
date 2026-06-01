@@ -29,3 +29,9 @@ live_e2e_report.json
 yaab_audit.db
 yaab_registry.db
 gap_analysis_parsed.json
+
+# Local tooling / scratch (never commit)
+.claude/
+CLAUDE.md
+graphify-out/
+dist-rust/

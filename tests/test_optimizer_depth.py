@@ -1,5 +1,5 @@
 """Optimizer depth (Phase E): a real BootstrapFewShotWithRandomSearch +
-minibatched MIPROv2 candidate evaluation, closer to DSPy's search loops.
+minibatched MIPROv2 candidate evaluation with iterative search loops.
 """
 
 from __future__ import annotations

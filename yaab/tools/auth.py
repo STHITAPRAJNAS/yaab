@@ -1,6 +1,5 @@
 """Tool-level authentication: credentials and an OAuth2 consent surface.
 
-This is the YAAB equivalent of ADK's tool ``auth_scheme`` + ``auth_credential``.
 A tool can declare *what* auth it needs (a :class:`ToolAuth`) and *how* to get a
 credential — a static one, or a ``credential_provider`` that the framework calls
 at execution time with the live :class:`RunContext`, so per-user OAuth tokens can
@@ -121,7 +120,7 @@ class ToolAuthRequired(YaabError):
 class ToolAuth(BaseModel):
     """Auth requirements for a tool, plus the logic to resolve a credential.
 
-    Mirrors ADK's ``auth_scheme`` + ``auth_credential`` pairing: declare the
+    Pairs an ``auth_scheme`` with an ``auth_credential``: declare the
     scheme and either a static ``credential`` or a ``credential_provider`` that
     yields one per call. For OAuth2, set ``consent_url`` + ``scopes`` so an
     unresolved credential produces an actionable consent prompt.

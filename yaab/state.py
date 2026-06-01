@@ -1,13 +1,12 @@
-"""Prefix-scoped state — ADK-style ``temp:`` / ``user:`` / ``app:`` scoping.
+"""Prefix-scoped state — ``temp:`` / ``user:`` / ``app:`` scoping.
 
 A plain session ``state`` dict is session-scoped. Real apps also need values that
 outlive a single session (a user's preferences) or span the whole app (a shared
 config), plus scratch values that must *never* be persisted (a one-turn flag).
-ADK expresses this with key prefixes; :class:`State` implements the same
-convention over pluggable stores so the scope of every value is explicit and
-auditable.
+:class:`State` expresses this with key prefixes over pluggable stores so the
+scope of every value is explicit and auditable.
 
-Prefixes (mirrors ADK):
+Prefixes:
 
 * ``app:<key>``  — shared across all users and sessions of the app;
 * ``user:<key>`` — shared across one user's sessions;

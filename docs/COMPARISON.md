@@ -77,9 +77,9 @@ YAAB is categorically ahead: **no incumbent ships any of it.**
 
 Several gaps from the first cut are now **closed** (Sequential/Parallel/Loop/Swarm
 multi-agent, an MCP client, an outbound A2A client, token-level streaming + SSE,
-real LiteLLM embeddings, ADK-style managers, and a component registry). The
-remaining items are scoped simplifications or not-yet-built pieces, each tracked
-toward parity-or-better.
+real LiteLLM embeddings, scoped session/memory/artifact managers, and a component
+registry). The remaining items are scoped simplifications or not-yet-built pieces,
+each tracked on the roadmap.
 
 1. **Optimizers are still simplified.** `MIPROv2` now searches instructions ×
    bootstrapped demo sets and `GEPA` reflectively evolves instructions, but

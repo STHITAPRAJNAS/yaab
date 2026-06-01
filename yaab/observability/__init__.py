@@ -4,9 +4,8 @@ OTel is optional. When ``opentelemetry`` is not installed, :func:`genai_span`
 yields ``None`` and instrumentation becomes a no-op, so nothing in the runtime
 depends on a tracing backend being present.
 
-Tracing is also globally controllable at runtime — the ecosystem repeatedly asks
-to **disable instrumentation** (ADK #2792, Strands #1059) and to **redact PII in
-traces** (Strands #1292, OpenAI #2393):
+Tracing is also globally controllable at runtime — you can **disable
+instrumentation** and **redact PII in traces**:
 
 * :func:`set_tracing_enabled` / :func:`tracing_enabled` — a global on/off switch
   (also honored via the ``YAAB_DISABLE_TRACING=1`` env var);

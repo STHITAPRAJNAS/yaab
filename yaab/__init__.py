@@ -1,8 +1,8 @@
 """YAAB — Yet Another Agent Builder.
 
-A type-safe, governance-first agent SDK with a Rust performance core. Type-safe
-like Pydantic AI, optimizable like DSPy, durable like LangGraph, clean like
-Google ADK, simple like Strands — on a universal LiteLLM model layer.
+A type-safe, governance-first agent SDK with a Rust performance core. Type-safe,
+optimizable, durable, and simple — the best ideas from across the agent
+ecosystem on one runtime, on a universal LiteLLM model layer.
 
 Quickstart::
 
@@ -84,7 +84,7 @@ __all__ = [
     "MapAgent",
     "LoopAgent",
     "Swarm",
-    # managers (ADK-style)
+    # managers
     "SessionManager",
     "MemoryManager",
     "ArtifactManager",
@@ -103,7 +103,7 @@ __all__ = [
     # RAG
     "KnowledgeBase",
     "Document",
-    # memory intelligence (ADK MemoryBank parity)
+    # memory intelligence
     "MemoryExtractor",
     "KnowledgeBaseMemory",
     # model intelligence

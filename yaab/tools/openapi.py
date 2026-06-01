@@ -2,9 +2,8 @@
 
 Turns an OpenAPI 3.x document into a list of :class:`Tool` objects — one per
 operation (``path`` x ``method``) — so a model can call a REST API the same way
-it calls a native function. This mirrors ADK's ``OpenAPIToolset``: rather than
-hand-writing wrappers for every endpoint, point YAAB at the spec and get typed,
-schema-bearing tools for free.
+it calls a native function. Rather than hand-writing wrappers for every
+endpoint, point YAAB at the spec and get typed, schema-bearing tools for free.
 
 The design keeps the heavy bits optional and injectable:
 

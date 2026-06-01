@@ -3,7 +3,7 @@
 Uses ``psycopg`` (v3), imported lazily so it is only required when this backend
 is actually constructed. Sessions are stored as JSONB keyed by id; the same
 ``SessionService`` protocol as the in-memory/SQLite backends, so swapping it in
-is a one-line change (ADK #2524/#935, OpenAI #3017).
+is a one-line change.
 """
 
 from __future__ import annotations

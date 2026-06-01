@@ -1,8 +1,8 @@
 # Get started
 
-This is the guided path from zero to a governed, deployed agent — the same arc
-Google ADK users will recognize (install → first agent → tools → memory/RAG →
-multi-agent → serve → govern → deploy), but Python-first and provider-neutral.
+This is the guided path from zero to a governed, deployed agent — a familiar
+progression (install → first agent → tools → memory/RAG → multi-agent → serve →
+govern → deploy), Python-first and provider-neutral.
 
 ## 1. Install
 
@@ -151,4 +151,4 @@ Containerize and deploy to Cloud Run / Fargate / Lambda / K8s — see
 - [Agents](agents.md) — the full `Agent` surface.
 - [Storage & backends](storage-backends.md) — sessions, memory, vector stores.
 - [Extending YAAB](extending.md) — add models, tools, stores, metrics, mappers.
-- [Comparison & gaps](COMPARISON.md) — how YAAB relates to ADK/LangGraph/etc.
+- [Comparison & gaps](COMPARISON.md) — feature comparison with other agent frameworks.

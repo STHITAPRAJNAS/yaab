@@ -2,8 +2,7 @@
 
 The complement to :class:`~yaab.tools.mcp_client.MCPClient`: wrap a set of YAAB
 tools (or an agent's tools) and answer MCP JSON-RPC requests, so other agents
-and IDEs can discover and call them over the open standard (Strands #151 asks
-for this on the other side).
+and IDEs can discover and call them over the open standard.
 
 The server is transport-agnostic: :meth:`MCPServer.handle` takes one JSON-RPC
 request dict and returns the response dict. Wire it to stdio, HTTP, or anything

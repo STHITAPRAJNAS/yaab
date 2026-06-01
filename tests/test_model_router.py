@@ -1,4 +1,4 @@
-"""Dynamic model routing (ADK model-routing parity).
+"""Dynamic model routing.
 
 A :class:`ModelRouter` is a ``ModelProvider`` that picks a downstream model per
 request via a classifier (built-in ``'length'`` or any sync/async callable),

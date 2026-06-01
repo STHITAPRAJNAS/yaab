@@ -1,7 +1,7 @@
 # State: sessions, memory & artifacts
 
 YAAB separates three kinds of state, each with a low-level **service** (the
-storage protocol) and a high-level **manager** (scoped, ADK-style operations):
+storage protocol) and a high-level **manager** (scoped operations):
 
 | Concern | What it holds | Service | Manager |
 |---|---|---|---|
