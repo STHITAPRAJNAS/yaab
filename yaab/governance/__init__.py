@@ -26,6 +26,15 @@ from .eval import (
     NumericTolerance,
     Regex,
 )
+
+# Side-effect import: registers the built-in scanners + industry adapters
+# (Presidio / LLM-Guard / NeMo) in the component registry under "guardrail".
+# Cheap — the heavy third-party deps are imported lazily inside each adapter.
+from .guardrails import (  # noqa: E402
+    LLMGuardScanner,
+    NeMoGuardrailsScanner,
+    PresidioPIIScanner,
+)
 from .lifecycle import EvidenceArtifact, LifecycleManager, LifecycleState
 from .monitor import DriftMonitor, DriftReport, TrustReport, TrustScorer
 from .policy import (
@@ -80,6 +89,10 @@ __all__ = [
     "SecretScanner",
     "TopicScanner",
     "SystemPromptLeakScanner",
+    # guardrail adapters (industry standards)
+    "PresidioPIIScanner",
+    "LLMGuardScanner",
+    "NeMoGuardrailsScanner",
     # authorization & idempotency
     "ToolAuthorizationPlugin",
     "ToolAuthorizer",

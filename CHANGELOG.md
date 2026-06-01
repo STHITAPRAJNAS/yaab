@@ -21,6 +21,20 @@ All notable changes to YAAB are documented here. The format follows
   `user_id` (and `memory_app_name` → `app_name`) into namespace-aware memory
   backends, so scoped long-term memory is reachable from the Agent path and
   isolated per user.
+- **Parallel tool execution** — a turn's multiple tool calls now run concurrently
+  (`asyncio.gather`) with deterministic event order; opt out with
+  `Agent(parallel_tools=False)`, bound with `Agent(max_parallel_tools=N)`.
+- **Per-tool timeouts** — `tool(timeout=…)` / `FunctionTool(timeout=…)` and
+  `Runner(default_tool_timeout=…)`; a timeout becomes an `error:` tool result.
+- **Embedder auto-upgrade** — the default embedder upgrades to a real
+  `LiteLLMEmbedder` when litellm + an embedding-provider key are present
+  (OpenAI/Gemini/Cohere/Mistral/Voyage), else falls back to the hashing stub with
+  a one-time warning; `embedder="provider/model"` string shorthand on
+  `KnowledgeBase`/`MemoryManager`/`InMemoryVectorMemory`.
+- **Industry guardrail adapters** — `PresidioPIIScanner`, `LLMGuardScanner`, and
+  `NeMoGuardrailsScanner` in `yaab.governance.guardrails`, behind the existing
+  `GuardrailScanner` protocol and registered in the component registry (optional
+  extras `yaab[presidio]` / `yaab[llm-guard]` / `yaab[nemo]`, imported lazily).
 
 ### Fixed
 - `tool_choice="required"` (or a pinned tool name) no longer loops until
