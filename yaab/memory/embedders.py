@@ -28,7 +28,7 @@ class LiteLLMEmbedder:
             import litellm
         except ImportError as exc:  # pragma: no cover - optional extra
             raise ModelError(
-                "litellm is required for LiteLLMEmbedder. `pip install 'yaab[litellm]'`."
+                "litellm is required for LiteLLMEmbedder. `pip install 'yaab-sdk[litellm]'`."
             ) from exc
         resp = litellm.embedding(model=self.model, input=[text], **self.params)
         return list(resp["data"][0]["embedding"])

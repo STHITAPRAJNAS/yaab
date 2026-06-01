@@ -6,7 +6,7 @@ YAAB runs the same way everywhere: an agent is an ASGI app
 ## Local
 
 ```bash
-pip install 'yaab[litellm]' fastapi uvicorn
+pip install 'yaab-sdk[litellm]' fastapi uvicorn
 yaab serve examples.serve_app:agent          # http://127.0.0.1:8000
 ```
 
@@ -72,7 +72,7 @@ For Postgres, install the extra and swap one line — same `SessionService`
 protocol, so agent code is untouched:
 
 ```bash
-pip install 'yaab[postgres]'
+pip install 'yaab-sdk[postgres]'
 ```
 
 ```python
@@ -93,7 +93,7 @@ OpenTelemetry **GenAI semantic conventions** (`gen_ai.*`) for every model call,
 plus token/cost attributes.
 
 ```bash
-pip install 'yaab[otel]'
+pip install 'yaab-sdk[otel]'
 ```
 
 Control tracing at runtime — disable it entirely, or scrub PII from span

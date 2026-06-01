@@ -200,7 +200,7 @@ class RemoteRegistryBackend:
     A pre-built ``httpx.Client`` may be injected (handy for tests via
     ``httpx.MockTransport``); otherwise one is created from ``base_url`` +
     ``headers`` + ``timeout``. Requires the ``http`` extra (``pip install
-    'yaab[http]'``).
+    'yaab-sdk[http]'``).
     """
 
     def __init__(

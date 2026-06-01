@@ -59,20 +59,20 @@ All stores satisfy one `VectorStore` protocol and honor metadata `where` filters
 see the full matrix in [Storage & backends](storage-backends.md).
 
 ```python
-from yaab.rag import KnowledgeBase, PgVectorStore           # yaab[postgres]
+from yaab.rag import KnowledgeBase, PgVectorStore           # yaab-sdk[postgres]
 
 # Postgres / Amazon Aurora PostgreSQL with pgvector:
 kb = KnowledgeBase(store=PgVectorStore("postgresql://…@aurora-endpoint/db", dim=1536))
 
-# Amazon OpenSearch Service / Serverless:           yaab[opensearch]
+# Amazon OpenSearch Service / Serverless:           yaab-sdk[opensearch]
 from yaab.rag import OpenSearchVectorStore
 kb = KnowledgeBase(store=OpenSearchVectorStore(index="kb", hosts=[{"host": "...", "port": 443}]))
 
-# Oracle Database 23ai AI Vector Search:            yaab[oracle]
+# Oracle Database 23ai AI Vector Search:            yaab-sdk[oracle]
 from yaab.rag import OracleVectorStore
 kb = KnowledgeBase(store=OracleVectorStore(dsn="...", user="...", password="..."))
 
-# Chroma (yaab[chroma]) and Qdrant (yaab[qdrant]) likewise.
+# Chroma (yaab-sdk[chroma]) and Qdrant (yaab-sdk[qdrant]) likewise.
 ```
 
 ## Governance features

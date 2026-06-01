@@ -91,7 +91,7 @@ class PgVectorStore:
             import psycopg
         except ImportError as exc:  # pragma: no cover - optional extra
             raise RuntimeError(
-                "psycopg is required for PgVectorStore. `pip install 'yaab[postgres]'` "
+                "psycopg is required for PgVectorStore. `pip install 'yaab-sdk[postgres]'` "
                 "and enable the pgvector extension in your database."
             ) from exc
         self._conn = psycopg.connect(dsn, autocommit=True)

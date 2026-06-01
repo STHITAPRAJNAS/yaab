@@ -3,7 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "yaab"
+# PyPI distribution name. The import package and CLI remain `yaab`:
+#   pip install yaab-sdk   ->   import yaab   /   $ yaab
+name = "yaab-sdk"
 version = "0.1.0"
 description = "Yet Another Agent Builder — a type-safe, governance-first agent SDK with a Rust performance core."
 readme = "README.md"
@@ -81,9 +83,9 @@ docs = [
 # Everything that installs from PyPI today. The Rust core (`rust` extra) is
 # deliberately NOT bundled here: it ships as a separately-published `yaab-core`
 # wheel and YAAB falls back to its pure-Python core when absent, so folding it
-# into `all` would make `pip install 'yaab[all]'` fail wherever that wheel isn't
-# available. Install the accelerator explicitly with `pip install 'yaab[rust]'`.
-all = ["yaab[litellm,otel,postgres,http,serve,yaml,rag]"]
+# into `all` would make `pip install 'yaab-sdk[all]'` fail wherever that wheel isn't
+# available. Install the accelerator explicitly with `pip install 'yaab-sdk[rust]'`.
+all = ["yaab-sdk[litellm,otel,postgres,http,serve,yaml,rag]"]
 
 [project.scripts]
 yaab = "yaab.cli:main"

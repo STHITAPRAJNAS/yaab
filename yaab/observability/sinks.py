@@ -89,7 +89,7 @@ class OTelSpanSink:
         from ..observability import has_otel
 
         if not has_otel():
-            raise RuntimeError("opentelemetry is required. `pip install 'yaab[otel]'`.")
+            raise RuntimeError("opentelemetry is required. `pip install 'yaab-sdk[otel]'`.")
         from opentelemetry import trace  # type: ignore
 
         self._tracer = trace.get_tracer(tracer_name)

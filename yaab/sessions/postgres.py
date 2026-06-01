@@ -18,7 +18,7 @@ def _require_psycopg():
     except ImportError as exc:  # pragma: no cover - optional extra
         raise RuntimeError(
             "psycopg is required for the Postgres backends. "
-            "Install with `pip install 'yaab[postgres]'`."
+            "Install with `pip install 'yaab-sdk[postgres]'`."
         ) from exc
     return psycopg
 

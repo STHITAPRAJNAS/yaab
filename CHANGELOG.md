@@ -6,6 +6,15 @@ All notable changes to YAAB are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — PyPI distribution name
+- The package publishes to PyPI as **`yaab-sdk`** (the bare name `yaab` is held by
+  an unrelated, abandoned project). The import package and CLI are unchanged:
+  `pip install yaab-sdk` → `import yaab` / `$ yaab`. All install instructions and
+  generated deploy artifacts now reference `yaab-sdk[…]` extras.
+- `release.yml` publishes both `yaab-sdk` and the `yaab-core` accelerator wheels to
+  PyPI via Trusted Publishing (OIDC) on version tags, with a tag↔version gate and a
+  built-wheel smoke test.
+
 ### Added — Resumable runs, simulation evals, dev console, deploy CLI & voice
 - **Resumable fast-path runs** — `Runner(run_checkpointer=…)` plus a `resume_id`
   makes the model-driven loop fault-tolerant: progress is checkpointed after
@@ -139,7 +148,7 @@ All notable changes to YAAB are documented here. The format follows
 - **Industry guardrail adapters** — `PresidioPIIScanner`, `LLMGuardScanner`, and
   `NeMoGuardrailsScanner` in `yaab.governance.guardrails`, behind the existing
   `GuardrailScanner` protocol and registered in the component registry (optional
-  extras `yaab[presidio]` / `yaab[llm-guard]` / `yaab[nemo]`, imported lazily).
+  extras `yaab-sdk[presidio]` / `yaab-sdk[llm-guard]` / `yaab-sdk[nemo]`, imported lazily).
 
 ### Fixed
 - `tool_choice="required"` (or a pinned tool name) no longer loops until
@@ -151,9 +160,9 @@ All notable changes to YAAB are documented here. The format follows
 - `output_retries` is no longer permanently decremented on the shared `Agent`
   across runs; the per-run retry budget is local, so a reused agent keeps its
   configured budget.
-- `pip install 'yaab[all]'` no longer fails: the `all` extra no longer bundles
+- `pip install 'yaab-sdk[all]'` no longer fails: the `all` extra no longer bundles
   the `rust` extra (the `yaab-core` accelerator wheel is published separately
-  and has a pure-Python fallback). Install it explicitly with `yaab[rust]`.
+  and has a pure-Python fallback). Install it explicitly with `yaab-sdk[rust]`.
 
 ### Changed
 - Docs/README reworded to be descriptive rather than promotional (removed

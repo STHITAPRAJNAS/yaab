@@ -25,7 +25,7 @@ KnowledgeBase().add(docs)
 
 `load(path)` dispatches on extension; `load_directory(dir, glob=...)` walks a
 tree and skips unknown types; `load_bytes(data, source=..., fmt=...)` handles
-uploads. Install parsers as needed: `pip install 'yaab[rag]'` (pypdf +
+uploads. Install parsers as needed: `pip install 'yaab-sdk[rag]'` (pypdf +
 beautifulsoup4).
 
 ## More vector stores & a cross-encoder reranker

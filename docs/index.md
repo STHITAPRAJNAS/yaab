@@ -71,10 +71,10 @@ exposes an explicit `compile(engine="rust"|"python"|"auto")` switch. See
 ## Install
 
 ```bash
-pip install yaab                 # core; pure-Python performance core works everywhere
-pip install 'yaab[litellm]'      # universal model layer
-pip install 'yaab[otel]'         # OpenTelemetry tracing
-pip install 'yaab[all]'          # everything
+pip install yaab-sdk                 # core; pure-Python performance core works everywhere
+pip install 'yaab-sdk[litellm]'      # universal model layer
+pip install 'yaab-sdk[otel]'         # OpenTelemetry tracing
+pip install 'yaab-sdk[all]'          # everything
 
 # Build the Rust accelerator (optional; auto-falls back if absent):
 pip install maturin && maturin develop -m yaab-core/Cargo.toml --release

@@ -6,7 +6,7 @@ risk_score)``. This adapter runs a configured list of them behind YAAB's
 :class:`~yaab.governance.policy.GuardrailScanner` Protocol: an invalid result
 ``BLOCK``s, a changed (sanitized) text ``REDACT``s, otherwise ``ALLOW``.
 
-``llm-guard`` is an optional extra (``pip install 'yaab[llm-guard]'``). Pass your
+``llm-guard`` is an optional extra (``pip install 'yaab-sdk[llm-guard]'``). Pass your
 own scanner lists; if none are given, a small sensible default set is built
 lazily (and only then is the dependency imported).
 """
@@ -44,7 +44,7 @@ class LLMGuardScanner:
         except ImportError as exc:  # pragma: no cover - optional extra
             raise ImportError(
                 "LLMGuardScanner needs Protect AI LLM-Guard. "
-                "Install it with `pip install 'yaab[llm-guard]'`, or pass explicit "
+                "Install it with `pip install 'yaab-sdk[llm-guard]'`, or pass explicit "
                 "input_scanners/output_scanners."
             ) from exc
         self._input = [PromptInjection()]

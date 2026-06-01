@@ -9,7 +9,7 @@ uvicorn to a localhost port and drives it with httpx, with a live model serving
     GEMINI_API_KEY=...  YAAB_LIVE_MODEL=gemini/gemini-2.5-flash
     python scripts/live_serve_check.py
 
-Requires: pip install 'yaab[serve,litellm,http]'
+Requires: pip install 'yaab-sdk[serve,litellm,http]'
 """
 
 from __future__ import annotations

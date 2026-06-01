@@ -7,11 +7,11 @@ govern → deploy), Python-first and provider-neutral.
 ## 1. Install
 
 ```bash
-pip install yaab                 # SDK + high-performance async-first Python core
-pip install 'yaab[litellm]'      # talk to real models (OpenAI, Anthropic, Bedrock, …)
+pip install yaab-sdk                 # SDK + high-performance async-first Python core
+pip install 'yaab-sdk[litellm]'      # talk to real models (OpenAI, Anthropic, Bedrock, …)
 ```
 
-`pip install yaab` works everywhere with no build tooling. The optional Rust
+`pip install yaab-sdk` works everywhere with no build tooling. The optional Rust
 performance core is built from source (`pip install maturin && maturin develop
 -m yaab-core/Cargo.toml --release`); YAAB auto-selects it when present and falls
 back transparently. Check:
