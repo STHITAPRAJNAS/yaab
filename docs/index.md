@@ -39,8 +39,6 @@ a first-class governance/registry/compliance layer that none of them ship.
 | [Platform extensions](platform.md) | Doc loaders, Chroma/Qdrant, sandbox, structured streaming, batch, `yaab web`, sinks |
 | [Extending YAAB](extending.md) | The component registry, protocols, entry points |
 | [Deployment](DEPLOYMENT.md) | Local → Cloud Run / Fargate / Lambda / K8s, durable backends |
-| [Comparison & gaps](COMPARISON.md) | Feature matrix vs. ADK/DSPy/Pydantic AI/Strands/LangGraph |
-| [Roadmap](ROADMAP.md) | What the ecosystem is requesting, mapped to YAAB & prioritized |
 
 ## The mental model
 

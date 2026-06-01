@@ -58,8 +58,6 @@ governance.
 | **Rust performance core** | ✕ | ✕ | ✕ | ✕ | ✕ | **✓** |
 
 ✓ first-class · ◑ partial / via add-on · ✕ not provided.
-See [`docs/COMPARISON.md`](docs/COMPARISON.md) for the full analysis and the
-honest gap list.
 
 ---
 
@@ -356,8 +354,7 @@ Full guides live in [`docs/`](docs/index.md):
 [Serving & auth](docs/serving.md) ·
 [Platform extensions](docs/platform.md) ·
 [Extending](docs/extending.md) ·
-[Deployment](docs/DEPLOYMENT.md) ·
-[Comparison & gaps](docs/COMPARISON.md)
+[Deployment](docs/DEPLOYMENT.md)
 
 ## Install
 
@@ -424,7 +421,7 @@ tests/           test suite (runs offline)
 
 YAAB is **alpha**. The core runtime, governance layer, graph engine, and Rust
 core are implemented and tested offline; some borrowed capabilities are
-simplified relative to their source frameworks (noted in `docs/COMPARISON.md`).
+simplified relative to their source frameworks.
 Framework APIs evolve fast — pin versions and re-verify. Verify EU AI Act
 dates/fines against EUR-Lex and SR 11-7 language against the Federal Reserve's
 official letter.

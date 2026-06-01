@@ -59,8 +59,7 @@ Available optimizers:
 | `GEPA` | reflective instruction evolution using the worst case as feedback |
 
 > The `MIPROv2` and `GEPA` implementations capture the API and contract; they
-> are simplified relative to DSPy's full Bayesian / genetic-Pareto search. See
-> [COMPARISON.md](COMPARISON.md) for the gap and roadmap.
+> are simplified relative to DSPy's full Bayesian / genetic-Pareto search.
 
 ## Freeze & deploy
 

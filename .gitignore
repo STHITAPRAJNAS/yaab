@@ -29,3 +29,13 @@ live_e2e_report.json
 yaab_audit.db
 yaab_registry.db
 gap_analysis_parsed.json
+
+# Internal working notes (analysis, planning, agent-session artifacts) — not part
+# of the public repo
+.claude/
+graphify-out/
+docs/superpowers/
+docs/ADK_GAP_ANALYSIS.md
+docs/COMPARISON.md
+docs/ROADMAP.md
+docs/RESEARCH_FEATURE_DEMAND.md
