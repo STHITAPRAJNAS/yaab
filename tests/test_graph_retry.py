@@ -1,6 +1,6 @@
 """Tests for per-node retry policies in the durable graph engine.
 
-These exercise the ADK 2.0 Workflow Runtime parity feature: a node may declare
+These exercise the workflow-runtime feature where a node may declare
 a :class:`RetryPolicy` so transient failures retry with backoff instead of
 aborting the whole graph. Control-flow ``Interrupt`` must be exempt — it is not
 an error, so it must never be retried or swallowed.

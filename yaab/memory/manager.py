@@ -1,9 +1,9 @@
-"""Memory manager — scoped long-term memory with session ingestion (ADK-style).
+"""Memory manager — scoped long-term memory with session ingestion.
 
 Adds ``(app_name, user_id)`` namespacing on top of a :class:`MemoryService`,
 plus :meth:`add_session_to_memory` which ingests a finished conversation into
-long-term memory so future runs can recall it — the ADK ``MemoryService``
-workflow, made backend-agnostic.
+long-term memory so future runs can recall it — the session-to-memory
+consolidation step, made backend-agnostic.
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ DEFAULT_APP = "default"
 DEFAULT_USER = "default"
 
 #: Cosine-similarity threshold above which an extracted memory is treated as a
-#: near-duplicate of an existing one and skipped (ADK MemoryBank-style
-#: consolidation/dedup). High by default so only genuine restatements collapse.
+#: near-duplicate of an existing one and skipped (consolidation/dedup). High by
+#: default so only genuine restatements collapse.
 DEFAULT_DEDUP_THRESHOLD = 0.92
 
 
@@ -94,7 +94,7 @@ class MemoryManager:
 
         When ``extract=True`` (or an ``extractor`` is supplied), the messages are
         instead distilled by a :class:`~yaab.memory.extraction.MemoryExtractor`
-        into a handful of durable memory statements (the ADK ``MemoryBank``
+        into a handful of durable memory statements (the extraction
         workflow). Each candidate is then *consolidated*: if an existing memory in
         the same ``(app_name, user_id)`` namespace is within ``dedup_threshold``
         cosine similarity, it is skipped — so re-ingesting restated facts does not

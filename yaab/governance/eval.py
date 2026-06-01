@@ -170,10 +170,9 @@ class FunctionEvaluator:
 class ToolTrajectoryMatch:
     """Score how well an agent's tool-call sequence matches an expected one.
 
-    This is YAAB's analogue of ADK's ``tool_trajectory_avg_score``. Unlike the
-    output-string metrics above, it scores the *process* — which tools were
-    called, in what order, with which arguments — which is what you actually
-    want to regression-test for tool-using agents.
+    Unlike the output-string metrics above, it scores the *process* — which
+    tools were called, in what order, with which arguments — which is what you
+    actually want to regression-test for tool-using agents.
 
     The expected trajectory is a list of ``{"name": str, "arguments"?: dict}``
     steps, read from ``case.metadata["expected_tool_trajectory"]`` (or, as a

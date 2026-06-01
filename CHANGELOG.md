@@ -6,7 +6,27 @@ All notable changes to YAAB are documented here. The format follows
 
 ## [Unreleased]
 
-### Added — ADK-parity Wave 1
+### Added — Multi-agent delegation, eval CLI, declarative specs & run management
+- **Sub-agent delegation** — `Agent(sub_agents=[...], transfer_depth=3)` auto-injects
+  a built-in `transfer_to_agent` tool; the LLM routes by each sub-agent's
+  `description`, the Runner hands the original prompt to the chosen sub-agent
+  (emitting `EventType.AGENT_TRANSFER`), and its answer becomes the run's output.
+- **`yaab eval` CLI** — score an agent against a portable `.evalset.json`
+  (auto-selected or explicit `--metric`s, JSON report via `--output`, CI gate via
+  `--fail-under`).
+- **Full YAML agent specs** — every Agent kwarg passes through; `{openapi: …}` and
+  deferred `{mcp: …}` tool entries; registry guardrails; `kind: sequential|
+  parallel|loop|swarm` workflow composition; nested `sub_agents`; and
+  `runner_from_dict` for governance/plugins/services.
+- **Run-management API** — `POST /run {"background": true}` (202 + run_id),
+  `GET /runs/{id}` status, `POST /runs/{id}/cancel` (remote cancellation via
+  CancellationToken), `GET /runs` listing; sync runs are also registered/cancellable.
+- **Tool-level auth** — `ToolAuth`/`ToolCredential` on any tool (`@tool(auth=…)`):
+  api-key/bearer/OAuth2/basic credentials resolved per-call (static or per-identity
+  provider), injected as `auth_headers`/`credential` params hidden from the model
+  schema; missing credentials surface a consent-URL error the agent can relay.
+
+### Added — Memory & model intelligence, graph retries, eval depth & OpenAPI tools
 - **Memory intelligence** — `MemoryManager.add_session_to_memory(extract=True, model=…)`
   distills durable memories (facts/preferences/decisions) from a session via one
   LLM call instead of copying raw lines, with cosine-similarity consolidation so

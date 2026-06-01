@@ -30,10 +30,11 @@ yaab_audit.db
 yaab_registry.db
 gap_analysis_parsed.json
 
-# Internal working notes (analysis, planning, agent-session artifacts) — not part
-# of the public repo
+# Local tooling, scratch, and internal working notes (never commit)
 .claude/
+CLAUDE.md
 graphify-out/
+dist-rust/
 docs/superpowers/
 docs/ADK_GAP_ANALYSIS.md
 docs/COMPARISON.md

@@ -3,7 +3,10 @@
 ``fastapi_server_app(agent)`` returns a ready-to-mount ASGI app exposing:
 
 * ``GET  /.well-known/agent.json`` — the A2A Agent Card (discovery);
-* ``POST /run``                    — run the agent (YAAB-native);
+* ``POST /run``                    — run the agent (YAAB-native; ``background``
+  submits it as a task and returns ``202`` immediately);
+* ``GET  /runs`` / ``GET /runs/{id}`` / ``POST /runs/{id}/cancel`` — the run
+  lifecycle API (poll status, list, remotely cancel an in-flight run);
 * ``POST /a2a/tasks``              — A2A task submission (agent-to-agent);
 * ``GET  /health``                 — liveness.
 
@@ -12,14 +15,95 @@ into the run context and the audit log. FastAPI is an optional dependency,
 imported lazily so importing YAAB never requires a web stack.
 """
 
+import time
 import uuid
 from typing import Any
 
 from .auth import AuthError, AuthScheme, NoAuth
+from .exceptions import RunCancelled
+from .limits import CancellationToken
 
 # In-process store of submitted A2A tasks, so clients can poll by id. A durable
 # deployment would back this with the session/artifact services.
 _A2A_TASKS: dict[str, dict] = {}
+
+# In-process registry of agent runs (sync and background) so clients can poll
+# status, list, and remotely cancel. Each entry is a mutable dict; see
+# ``_register_run``. A durable deployment would persist this. ``insertion order``
+# is preserved by dict so listing newest-first is just a reversed view.
+_RUN_REGISTRY: dict[str, dict[str, Any]] = {}
+
+#: Cap on retained *finished* runs. Active runs are never evicted; once we
+#: exceed the cap we drop the oldest finished entries (FIFO) so a long-lived
+#: server doesn't grow without bound.
+_MAX_FINISHED_RUNS = 1000
+
+_TERMINAL_STATES = frozenset({"completed", "failed", "cancelled"})
+
+
+def _register_run(token: CancellationToken) -> tuple[str, dict[str, Any]]:
+    """Create and store a fresh 'running' registry entry, returning (id, entry)."""
+    run_id = f"run_{uuid.uuid4().hex[:12]}"
+    entry: dict[str, Any] = {
+        "id": run_id,
+        "status": "running",
+        "token": token,
+        "result": None,
+        "error": None,
+        "started_at": time.time(),
+        "finished_at": None,
+    }
+    _RUN_REGISTRY[run_id] = entry
+    return run_id, entry
+
+
+def _finish_run(
+    entry: dict[str, Any], *, status: str, result: Any = None, error: Any = None
+) -> None:
+    """Transition a registry entry to a terminal state and evict stale runs.
+
+    A run already cancelled (via the API) stays 'cancelled' even if the
+    underlying coroutine then surfaces a different error — the user-visible
+    intent wins. We still record the error text for observability.
+    """
+    if entry.get("_api_cancelled") and status == "failed":
+        status = "cancelled"
+    entry["status"] = status
+    entry["result"] = result
+    entry["error"] = error
+    entry["finished_at"] = time.time()
+    _evict_finished()
+
+
+def _evict_finished() -> None:
+    """Drop the oldest finished runs once the retained-finished cap is exceeded."""
+    finished = [rid for rid, e in _RUN_REGISTRY.items() if e["status"] in _TERMINAL_STATES]
+    overflow = len(finished) - _MAX_FINISHED_RUNS
+    for rid in finished[:overflow] if overflow > 0 else ():
+        _RUN_REGISTRY.pop(rid, None)
+
+
+def _run_view(entry: dict[str, Any]) -> dict[str, Any]:
+    """Serialize a registry entry into a JSON-safe status document.
+
+    Includes ``output``/``usage`` when the run completed, or ``error`` when it
+    failed/was cancelled. The live :class:`CancellationToken` is never exposed.
+    """
+    view: dict[str, Any] = {
+        "run_id": entry["id"],
+        "status": entry["status"],
+        "started_at": entry["started_at"],
+        "finished_at": entry["finished_at"],
+    }
+    result = entry.get("result")
+    if result is not None:
+        from .runner import _safe
+
+        view["output"] = _safe(result.output)
+        view["usage"] = result.usage.model_dump()
+    if entry.get("error") is not None:
+        view["error"] = str(entry["error"])
+    return view
 
 
 def fastapi_server_app(
@@ -65,21 +149,91 @@ def fastapi_server_app(
     async def agent_card() -> dict:
         return _card()
 
+    async def _invoke(
+        prompt: str, session_id: str | None, identity: str, token: CancellationToken
+    ) -> Any:
+        """Run the agent under a cancellation token (shared by sync + background)."""
+        return await agent.run(
+            prompt,
+            session_id=session_id,
+            identity=identity,
+            cancellation=token,
+        )
+
     @app.post("/run")
     async def run(request: Request) -> Any:
         identity = _identify(request)
         body = await request.json()
         prompt = body.get("prompt") or body.get("input") or ""
-        result = await agent.run(prompt, session_id=body.get("session_id"), identity=identity)
+        session_id = body.get("session_id")
+        token = CancellationToken()
+        api_run_id, entry = _register_run(token)
+
+        # Background: fire-and-poll. Submit as a task, register, return 202 now.
+        if body.get("background"):
+            import asyncio
+
+            async def _background() -> None:
+                try:
+                    result = await _invoke(prompt, session_id, identity, token)
+                    _finish_run(entry, status="completed", result=result)
+                except Exception as exc:  # noqa: BLE001 - record, don't crash the loop
+                    status = "cancelled" if isinstance(exc, RunCancelled) else "failed"
+                    _finish_run(entry, status=status, error=exc)
+
+            entry["_task"] = asyncio.create_task(_background())
+            return JSONResponse({"run_id": api_run_id, "status": "running"}, status_code=202)
+
+        # Synchronous: keep the exact prior response shape, but still register so
+        # this run is visible to /runs and cancellable mid-flight from elsewhere.
         from .runner import _safe
 
+        try:
+            result = await _invoke(prompt, session_id, identity, token)
+        except Exception as exc:  # noqa: BLE001
+            status = "cancelled" if isinstance(exc, RunCancelled) else "failed"
+            _finish_run(entry, status=status, error=exc)
+            raise
+        _finish_run(entry, status="completed", result=result)
         return JSONResponse(
             {
                 "output": _safe(result.output),
-                "run_id": result.run_id,
+                "run_id": api_run_id,
                 "usage": result.usage.model_dump(),
             }
         )
+
+    @app.get("/runs")
+    async def list_runs(request: Request) -> Any:
+        """List known runs (id, status, started_at), most recent first."""
+        _identify(request)
+        items = [
+            {"id": e["id"], "status": e["status"], "started_at": e["started_at"]}
+            for e in _RUN_REGISTRY.values()
+        ]
+        items.reverse()  # dict preserves insertion order; reverse = newest first
+        return JSONResponse(items)
+
+    @app.get("/runs/{run_id}")
+    async def get_run(run_id: str, request: Request) -> Any:
+        """Status of a single run (+ output/usage or error once finished)."""
+        _identify(request)
+        entry = _RUN_REGISTRY.get(run_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"unknown run {run_id}")
+        return JSONResponse(_run_view(entry))
+
+    @app.post("/runs/{run_id}/cancel")
+    async def cancel_run(run_id: str, request: Request) -> Any:
+        """Remotely cancel an in-flight run. No-op for an already-finished run."""
+        _identify(request)
+        entry = _RUN_REGISTRY.get(run_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"unknown run {run_id}")
+        if entry["status"] == "running":
+            entry["_api_cancelled"] = True
+            entry["token"].cancel("api_cancel")
+        return JSONResponse({"run_id": run_id, "status": entry["status"]})
 
     @app.post("/run/stream")
     async def run_stream(request: Request) -> Any:

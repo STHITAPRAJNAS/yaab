@@ -1,10 +1,10 @@
 # State scoping & the AG-UI layer
 
-## Prefix-scoped state (ADK-compatible)
+## Prefix-scoped state
 
 A session's `state` is session-scoped by default. Real apps also need values that
 outlive one session, span the whole app, or must never be persisted. YAAB uses
-the same key-prefix convention as Google ADK, via the `State` object:
+a key-prefix convention (`app:`, `user:`, `temp:`), via the `State` object:
 
 | Prefix | Scope | Persisted? |
 |---|---|---|

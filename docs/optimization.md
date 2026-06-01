@@ -1,4 +1,4 @@
-# Optimization (DSPy-style)
+# Optimization
 
 The optional optimizable layer lets you *program* an agent declaratively and
 *compile* it against a metric — tuning instructions and few-shot demonstrations
@@ -59,7 +59,7 @@ Available optimizers:
 | `GEPA` | reflective instruction evolution using the worst case as feedback |
 
 > The `MIPROv2` and `GEPA` implementations capture the API and contract; they
-> are simplified relative to DSPy's full Bayesian / genetic-Pareto search.
+> are a simplified take on full Bayesian / genetic-Pareto search.
 
 ## Freeze & deploy
 

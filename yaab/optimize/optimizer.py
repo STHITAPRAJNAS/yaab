@@ -1,4 +1,4 @@
-"""Optimizers — compile a module against a metric (DSPy-style teleprompters).
+"""Optimizers — compile a module against a metric.
 
 ``BootstrapFewShot`` selects demonstrations from a trainset that the module
 answers correctly (per a metric) and bakes them in. ``MIPROv2`` and a
@@ -61,7 +61,7 @@ class BootstrapFewShot:
 
 
 class BootstrapFewShotWithRandomSearch:
-    """DSPy's workhorse optimizer: bootstrap a demo pool, then random-search demo
+    """Workhorse optimizer: bootstrap a demo pool, then random-search demo
     subsets and keep the best on a validation set.
 
     1. Run the module over ``trainset`` and collect every example it answers
@@ -142,7 +142,7 @@ class MIPROv2:
 
     Proposes candidate instruction phrasings and demo sets (zero-shot +
     bootstrapped), scores each candidate on a random ``minibatch_size`` slice of
-    the trainset (DSPy minibatches to keep search cheap), then re-scores the top
+    the trainset (minibatching keeps search cheap), then re-scores the top
     candidates on the full set to pick a winner. A fuller implementation would run
     a Bayesian search; this captures the minibatch-then-confirm contract.
     """

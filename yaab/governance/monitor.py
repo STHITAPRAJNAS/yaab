@@ -1,4 +1,4 @@
-"""Behavioral drift detection & trust scoring (CrewAI #5155/#5789).
+"""Behavioral drift detection & trust scoring.
 
 Production agents degrade quietly: an eval score that was 0.9 in validation
 drifts to 0.6, guardrails start firing more often, error rates climb. This

@@ -1,4 +1,4 @@
-"""Signatures — typed input→output specs for optimizable modules (DSPy-style).
+"""Signatures — typed input→output specs for optimizable modules.
 
 A signature declares what a module does, not how. It can be written inline
 (``"question -> answer"``) or with explicit field descriptions. The module

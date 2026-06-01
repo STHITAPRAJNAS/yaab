@@ -118,8 +118,16 @@ class Runner:
         usage_limits: UsageLimits | None = None,
         cancellation: CancellationToken | None = None,
         timeout: float | None = None,
+        _transfer_depth: int = 0,
+        _transfer_cap: int | None = None,
     ) -> AsyncIterator[Event]:
-        """Execute the loop, yielding a typed :class:`Event` per step."""
+        """Execute the loop, yielding a typed :class:`Event` per step.
+
+        ``_transfer_depth``/``_transfer_cap`` are internal: they track how many
+        sub-agent handoffs deep this run already is (and the root's cap) so a
+        chain of ``transfer_to_agent`` calls can't loop forever. External callers
+        leave them at their defaults.
+        """
         ctx: RunContext = RunContext(
             deps=deps, session_id=session_id, identity=identity, usage=Usage()
         )
@@ -261,6 +269,42 @@ class Runner:
                                     content=_to_text(result_value),
                                 )
                             )
+
+                    # transfer_to_agent: a sub-agent handoff was requested.
+                    # Delegate the ORIGINAL prompt to it and adopt its answer as
+                    # this run's final output (skip the parent's own coercion).
+                    sub, transfer_err = self._pop_transfer(
+                        agent, ctx, _transfer_depth, _transfer_cap
+                    )
+                    if transfer_err is not None:
+                        # Over the depth cap: surface as a tool error so the loop
+                        # continues and the agent answers itself instead of looping.
+                        messages.append(Message(role=Role.TOOL, content=transfer_err))
+                    elif sub is not None:
+                        yield emit(EventType.AGENT_TRANSFER, to=sub.name)
+                        sub_output: Any = None
+                        async for sub_ev in self.run_stream(
+                            sub,
+                            prompt,
+                            deps=deps,
+                            session_id=session_id,
+                            identity=identity,
+                            usage_limits=usage_limits,
+                            cancellation=cancellation,
+                            _transfer_depth=_transfer_depth + 1,
+                            _transfer_cap=_resolve_cap(agent, _transfer_cap),
+                        ):
+                            if sub_ev.type is EventType.RUN_END:
+                                sub_output = sub_ev.payload["result"].output
+                                ctx.usage.add(sub_ev.payload["result"].usage)
+                            elif sub_ev.type is EventType.ERROR:
+                                raise sub_ev.payload["error"]
+                            else:
+                                yield sub_ev
+                        final_output = sub_output
+                        produced = True
+                        break
+
                     # Forcing choice has done its job; let the next turn finalize.
                     if _is_forcing_tool_choice(effective_tool_choice):
                         effective_tool_choice = "auto"
@@ -341,6 +385,8 @@ class Runner:
         usage_limits: UsageLimits | None = None,
         cancellation: CancellationToken | None = None,
         timeout: float | None = None,
+        _transfer_depth: int = 0,
+        _transfer_cap: int | None = None,
     ) -> AsyncIterator[Event]:
         """Run the full multi-step loop while streaming token deltas.
 
@@ -348,8 +394,11 @@ class Runner:
         only emits whole responses), this drives each turn with ``model.stream``:
         text arrives as :attr:`EventType.TEXT_DELTA` events *as it generates*,
         tools execute mid-run (``TOOL_CALL``/``TOOL_RESULT``), and the loop
-        continues until a final answer — the LangGraph/ADK "stream through the
-        tool loop" behavior. Terminates with ``FINAL_OUTPUT`` then ``RUN_END``.
+        continues until a final answer — the stream-through-the-tool-loop
+        behavior. Terminates with ``FINAL_OUTPUT`` then ``RUN_END``.
+
+        ``_transfer_depth``/``_transfer_cap`` are internal handoff-loop guards
+        (see :meth:`run_stream`).
         """
         ctx: RunContext = RunContext(
             deps=deps, session_id=session_id, identity=identity, usage=Usage()
@@ -444,6 +493,39 @@ class Runner:
                                 content=_to_text(result_value),
                             )
                         )
+
+                    # transfer_to_agent: delegate the ORIGINAL prompt to the
+                    # requested sub-agent and adopt its answer (see run_stream).
+                    sub, transfer_err = self._pop_transfer(
+                        agent, ctx, _transfer_depth, _transfer_cap
+                    )
+                    if transfer_err is not None:
+                        messages.append(Message(role=Role.TOOL, content=transfer_err))
+                    elif sub is not None:
+                        yield emit(EventType.AGENT_TRANSFER, to=sub.name)
+                        sub_output: Any = None
+                        async for sub_ev in self.stream_run(
+                            sub,
+                            prompt,
+                            deps=deps,
+                            session_id=session_id,
+                            identity=identity,
+                            usage_limits=usage_limits,
+                            cancellation=cancellation,
+                            _transfer_depth=_transfer_depth + 1,
+                            _transfer_cap=_resolve_cap(agent, _transfer_cap),
+                        ):
+                            if sub_ev.type is EventType.RUN_END:
+                                sub_output = sub_ev.payload["result"].output
+                                ctx.usage.add(sub_ev.payload["result"].usage)
+                            elif sub_ev.type is EventType.ERROR:
+                                raise sub_ev.payload["error"]
+                            else:
+                                yield sub_ev
+                        final_output = sub_output
+                        produced = True
+                        break
+
                     if _is_forcing_tool_choice(effective_tool_choice):
                         effective_tool_choice = "auto"
                     continue
@@ -617,6 +699,32 @@ class Runner:
         own = getattr(tool, "timeout", None)
         return own if own is not None else self.default_tool_timeout
 
+    def _pop_transfer(
+        self, agent: Any, ctx: RunContext, depth: int, cap: int | None
+    ) -> tuple[Any | None, str | None]:
+        """Consume a pending ``transfer_to_agent`` request from ``ctx.state``.
+
+        Returns ``(sub_agent, None)`` when a valid, in-budget handoff is pending,
+        ``(None, error_message)`` when the transfer-depth cap would be exceeded
+        (so the loop can surface the error and continue), or ``(None, None)`` when
+        no transfer was requested. Always clears the flag so it never leaks into
+        the next turn or the sub-agent's run.
+        """
+        name = ctx.state.pop("__transfer_to__", None)
+        if name is None:
+            return None, None
+        sub = next((a for a in getattr(agent, "sub_agents", []) if a.name == name), None)
+        if sub is None:
+            # The tool already validated the name; defensively ignore unknowns.
+            return None, None
+        effective_cap = cap if cap is not None else getattr(agent, "transfer_depth", 3)
+        if depth + 1 > effective_cap:
+            return None, (
+                f"error: transfer to '{name}' refused — transfer depth cap "
+                f"({effective_cap}) exceeded"
+            )
+        return sub, None
+
     async def _run_tool(self, agent: Any, ctx: RunContext, tc: ToolCall) -> Any:
         import asyncio
 
@@ -662,6 +770,15 @@ class Runner:
         await self.session_service.append(
             ctx.session_id, Message(role=Role.ASSISTANT, content=_to_text(output))
         )
+
+
+def _resolve_cap(agent: Any, cap: int | None) -> int:
+    """The transfer-depth cap for delegating below ``agent``.
+
+    The root run carries ``cap is None``; we then anchor the cap to the root
+    agent's ``transfer_depth`` so the whole chain shares one budget.
+    """
+    return cap if cap is not None else getattr(agent, "transfer_depth", 3)
 
 
 def _user_message(text: str, original: Any = None) -> Message:

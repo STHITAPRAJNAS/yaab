@@ -1,4 +1,4 @@
-"""Explicit prompt/context caching write-side (ADK context-caching parity).
+"""Explicit prompt/context caching write-side.
 
 YAAB already READS cached-token counts; these tests pin the WRITE side: when
 ``cache_system_prompt`` / ``cache_tools`` are enabled, ``LiteLLMModel`` must

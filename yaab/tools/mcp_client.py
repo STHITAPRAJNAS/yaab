@@ -183,7 +183,7 @@ class MCPClient:
 
         return mcp_toolset(descriptors, caller)
 
-    # --- resources (MCP beyond tools; Strands #151) --------------------
+    # --- resources (MCP beyond tools) --------------------
     async def list_resources(self) -> list[dict[str, Any]]:
         """List the server's resources (uri + metadata descriptors)."""
         if not self._initialized:

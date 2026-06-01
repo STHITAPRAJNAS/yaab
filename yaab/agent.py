@@ -1,7 +1,7 @@
 """The typed :class:`Agent` — YAAB's primary developer-facing abstraction.
 
 ``Agent[Deps, Output]`` is generic over a dependency-injection type and an
-output type, fusing Pydantic AI's type-safety with ADK's agent/runner split.
+output type, fusing type-safety with a clean agent/runner split.
 The three-line "hello agent" works with zero ceremony; every layer underneath
 (runner, sessions, governance, graph) is openable when you need it.
 
@@ -32,9 +32,12 @@ class Agent(Generic[Deps, Output]):
         *,
         model: str | ModelProvider = "openai/gpt-4o",
         instructions: str | Callable[[RunContext[Deps]], str] = "",
+        description: str = "",
         tools: list[Any] | None = None,
         deps_type: type = _NoneType,
         output_type: type = str,
+        sub_agents: list[Agent[Any, Any]] | None = None,
+        transfer_depth: int = 3,
         guardrails: list[Any] | None = None,
         capabilities: list[Any] | None = None,
         skills: list[Any] | None = None,
@@ -89,14 +92,66 @@ class Agent(Generic[Deps, Output]):
             if getattr(skill, "instructions", ""):
                 instruction_fragments.append(skill.instructions)
 
+        # Derive the routing description BEFORE skill fragments are folded in, so
+        # it reflects the developer's own one-liner — not appended skill prose.
+        # Falls back to the first line of string instructions.
+        if description:
+            self.description = description
+        elif isinstance(instructions, str) and instructions:
+            self.description = instructions.splitlines()[0].strip()
+        else:
+            self.description = ""
+
         # Compose skill instruction fragments after the base instructions.
         if instruction_fragments and isinstance(instructions, str):
             base = [instructions] if instructions else []
             instructions = "\n\n".join(base + instruction_fragments)
         self.instructions = instructions
 
+        #: Named sub-agents this agent may hand the conversation off to. When
+        #: non-empty, a framework-managed ``transfer_to_agent`` tool is injected
+        #: below so the model can route by name (the multi-agent pattern).
+        self.sub_agents: list[Agent[Any, Any]] = list(sub_agents or [])
+        #: Max chained transfers from this run, to prevent delegation loops.
+        self.transfer_depth = transfer_depth
+        if self.sub_agents:
+            self.tools.append(self._build_transfer_tool())
+
         self._model: ModelProvider | None = None
         self._runner = runner
+
+    def _build_transfer_tool(self) -> Tool:
+        """Build the built-in ``transfer_to_agent`` tool from ``sub_agents``.
+
+        The tool itself only *records* the requested handoff into
+        ``ctx.state['__transfer_to__']``; the Runner inspects that flag after the
+        turn's tools run and performs the actual delegation. Keeping the tool a
+        pure state-setter means the model-facing contract (pick a name) is
+        decoupled from the orchestration (run the sub-agent), which is what lets
+        the Runner enforce validity and the transfer-depth cap centrally.
+        """
+        from .tools.base import FunctionTool
+
+        roster = "\n".join(f"- {a.name}: {a.description}" for a in self.sub_agents)
+        valid_names = [a.name for a in self.sub_agents]
+
+        async def transfer_to_agent(ctx: RunContext, agent_name: str) -> str:
+            # Validate here so the model sees a useful error and can recover
+            # (answer itself or pick a real name) without the Runner having to
+            # rewrite tool results. Only a *valid* name arms the delegation flag.
+            if agent_name not in valid_names:
+                return f"error: unknown agent {agent_name}; available: {', '.join(valid_names)}"
+            ctx.state["__transfer_to__"] = agent_name
+            return f"transferring to {agent_name}"
+
+        # The docstring is the model-facing description: it must enumerate the
+        # sub-agents (name: description) so the LLM can choose the right target.
+        transfer_to_agent.__doc__ = (
+            "Hand the conversation off to a specialized sub-agent by name. "
+            "Choose the single best-matching agent for the user's request from:\n"
+            f"{roster}"
+        )
+        return FunctionTool(transfer_to_agent)
 
     @property
     def model(self) -> ModelProvider:

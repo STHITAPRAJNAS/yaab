@@ -1,8 +1,8 @@
 # YAAB — Yet Another Agent Builder
 
 **YAAB is the agent SDK for teams that have to ship agents into production AND prove it to a regulator.**
-Type-safe like Pydantic AI, optimizable like DSPy, durable like LangGraph, clean
-like Google ADK, simple like Strands — on a universal LiteLLM model layer, with a
+Type-safe, optimizable, durable, and simple — the best ideas from across the
+agent ecosystem on one runtime, on a universal LiteLLM model layer, with a
 Rust core that accelerates the compute-bound hot paths (and an opt-in native
 graph engine). Governance, an agent registry, audit lineage, and policy
 guardrails are **first-class, not bolted on**.
@@ -249,7 +249,7 @@ card + task endpoint), so other agents can discover and delegate to it. See
 
 ---
 
-## Multi-agent & managers (ADK-style)
+## Multi-agent & managers
 
 Compose agents as Sequential / Parallel / Loop / Swarm workflows — each is itself
 an agent, so they nest and drop into tools, graphs, and servers:
@@ -264,7 +264,7 @@ support  = Swarm("support", [triage, billing, tech], entry="triage")
 await support.run("I was double charged", deps=SwarmState())
 ```
 
-Scoped session / memory / artifact **managers** mirror ADK's services:
+Scoped session / memory / artifact **managers** keep state organized per app/user:
 
 ```python
 from yaab import SessionManager, MemoryManager, ArtifactManager

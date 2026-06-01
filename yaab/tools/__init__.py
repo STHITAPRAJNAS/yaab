@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .agent_tool import AgentTool
+from .auth import ToolAuth, ToolAuthRequired, ToolCredential, as_headers
 from .base import FunctionTool, Tool, coerce_tools, tool
 from .mcp import MCPTool, mcp_toolset
 from .openapi import OpenAPITool, openapi_toolset
@@ -17,4 +18,8 @@ __all__ = [
     "mcp_toolset",
     "OpenAPITool",
     "openapi_toolset",
+    "ToolAuth",
+    "ToolAuthRequired",
+    "ToolCredential",
+    "as_headers",
 ]

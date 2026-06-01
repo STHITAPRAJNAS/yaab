@@ -3,8 +3,8 @@
 A :class:`Tool` exposes a JSON schema (for the model) and an async ``execute``
 (for the runtime). :func:`tool` turns a plain typed Python function into a
 tool: the parameter schema is generated from type hints, argument validation
-is handled by Pydantic, and the description comes from the docstring — the same
-ergonomics as Pydantic AI's ``@agent.tool``.
+is handled by Pydantic, and the description comes from the docstring — so a
+decorated function is all you need to expose a tool.
 """
 
 from __future__ import annotations
@@ -17,6 +17,13 @@ from pydantic import create_model
 
 from ..exceptions import ToolError
 from ..types import RunContext
+from .auth import ToolAuth, ToolAuthRequired, as_headers
+
+#: Parameter names FunctionTool fills with the resolved credential rather than
+#: model-supplied arguments. They're hidden from the model-facing schema so the
+#: model can't (and needn't) provide them.
+_AUTH_HEADERS_PARAM = "auth_headers"
+_CREDENTIAL_PARAM = "credential"
 
 
 @runtime_checkable
@@ -51,6 +58,7 @@ class FunctionTool:
         name: str | None = None,
         description: str | None = None,
         timeout: float | None = None,
+        auth: ToolAuth | None = None,
     ) -> None:
         self.fn = fn
         self.name = name or fn.__name__
@@ -58,7 +66,15 @@ class FunctionTool:
         #: Optional per-tool execution timeout (seconds); overrides the runner's
         #: ``default_tool_timeout``. ``None`` defers to the runner default.
         self.timeout = timeout
+        #: Optional tool-level auth. When set, ``execute`` resolves a credential
+        #: before calling ``fn`` and injects it (see :meth:`execute`).
+        self.auth = auth
         self._is_async = inspect.iscoroutinefunction(fn)
+        # Discover the auth-injection params up front so the schema can hide them
+        # and ``execute`` knows where to route the resolved credential.
+        params = inspect.signature(fn).parameters
+        self._wants_auth_headers = _AUTH_HEADERS_PARAM in params
+        self._wants_credential = _CREDENTIAL_PARAM in params
         self._takes_ctx, self._arg_model = self._build_model(fn)
 
     @staticmethod
@@ -73,6 +89,10 @@ class FunctionTool:
         for pname, param in sig.parameters.items():
             if pname == "ctx" or _is_run_context(hints.get(pname)):
                 takes_ctx = True
+                continue
+            # Auth-injection params are filled by the framework, never the model,
+            # so exclude them from the validated/model-facing schema.
+            if pname in (_AUTH_HEADERS_PARAM, _CREDENTIAL_PARAM):
                 continue
             if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
                 continue
@@ -102,6 +122,23 @@ class FunctionTool:
         call_kwargs = validated.model_dump()
         if self._takes_ctx:
             call_kwargs = {"ctx": ctx, **call_kwargs}
+        if self.auth is not None:
+            # Resolve the credential first. A missing/unresolvable one becomes a
+            # model-visible ``error:`` string (the agent loop turns tool results
+            # into model input) instead of raising — so the model can tell the
+            # user how to authorize and the run continues uninterrupted.
+            try:
+                cred = await self.auth.resolve(ctx, tool_name=self.name)
+            except ToolAuthRequired as exc:
+                return exc.as_model_error()
+            if self._wants_auth_headers:
+                call_kwargs[_AUTH_HEADERS_PARAM] = as_headers(cred)
+            elif self._wants_credential:
+                call_kwargs[_CREDENTIAL_PARAM] = cred
+            else:
+                # No injection param on the signature: stash it on ctx.state so a
+                # function that reads its own credential can pick it up.
+                ctx.state["__tool_credential__"] = cred
         result = self.fn(**call_kwargs)
         if inspect.isawaitable(result):
             result = await result
@@ -119,14 +156,17 @@ def tool(
     name: str | None = None,
     description: str | None = None,
     timeout: float | None = None,
+    auth: ToolAuth | None = None,
 ) -> Any:
     """Decorator turning a typed function into a :class:`FunctionTool`.
 
-    Usable bare (``@tool``) or parameterized (``@tool(name=..., timeout=...)``).
+    Usable bare (``@tool``) or parameterized (``@tool(name=..., timeout=...,
+    auth=...)``). When ``auth`` is given, the framework resolves and injects a
+    credential before each call — see :class:`FunctionTool` and :mod:`.auth`.
     """
 
     def wrap(func: Callable[..., Any]) -> FunctionTool:
-        return FunctionTool(func, name=name, description=description, timeout=timeout)
+        return FunctionTool(func, name=name, description=description, timeout=timeout, auth=auth)
 
     if fn is not None:
         return wrap(fn)

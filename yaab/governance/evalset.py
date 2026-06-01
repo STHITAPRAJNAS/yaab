@@ -1,6 +1,6 @@
 """Portable evaluation files — the ``.evalset.json`` format.
 
-ADK ships eval suites as ``*.evalset.json`` files so they are portable across
+Eval suites ship as ``*.evalset.json`` files so they are portable across
 machines, checked into version control, and runnable by a CLI/UI without any
 Python. YAAB's in-memory :class:`~yaab.governance.eval.Case`/``Dataset`` are
 great for code-first evals but are *not* a stable on-disk contract. This module
@@ -16,8 +16,8 @@ adds that contract:
   machinery runs it) and *from* existing :class:`~yaab.governance.eval.Case`
   objects (so code-first suites can be exported and shared).
 
-The file extension convention is ``.evalset.json`` to match ADK and make these
-files easy to discover.
+The file extension convention is ``.evalset.json`` to make these files easy to
+discover.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from .eval import Case, Dataset
 #: compatibility (pydantic already ignores extras on load).
 EVALSET_SCHEMA_VERSION = 1
 
-#: The conventional suffix for evalset files (matches ADK's ``.evalset.json``).
+#: The conventional suffix for evalset files (the portable ``.evalset.json``).
 EVALSET_SUFFIX = ".evalset.json"
 
 
