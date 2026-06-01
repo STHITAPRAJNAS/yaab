@@ -115,12 +115,37 @@ class MCPServer:
         version: str = "0.1.0",
         resources: list[MCPResource] | None = None,
         prompts: list[MCPPrompt] | None = None,
+        request_sampling: Callable[[dict[str, Any]], Any] | None = None,
     ) -> None:
         self.tools = {t.name: t for t in tools}
         self.name = name
         self.version = version
         self.resources = {r.uri: r for r in (resources or [])}
         self.prompts = {p.name: p for p in (prompts or [])}
+        #: Callback to ask the client to run a completion (MCP sampling); usually
+        #: wired to the client's model via ``MCPClient.sampler_from_model``.
+        self.request_sampling = request_sampling
+
+    async def sample(self, messages: list[dict[str, Any]], **options: Any) -> str:
+        """Request a completion from the client's model (MCP sampling).
+
+        Lets a server-side tool delegate reasoning to the client's LLM instead of
+        hard-coding its own. Raises if no sampler is wired.
+        """
+        if self.request_sampling is None:
+            raise RuntimeError(
+                "MCP sampling is not available: construct MCPServer(request_sampling=…) "
+                "(e.g. MCPClient.sampler_from_model(model))."
+            )
+        import inspect
+
+        result = self.request_sampling({"messages": messages, **options})
+        if inspect.isawaitable(result):
+            result = await result
+        if isinstance(result, dict):
+            content = result.get("content", {})
+            return content.get("text", "") if isinstance(content, dict) else str(content)
+        return str(result)
 
     @classmethod
     def from_agent(cls, agent: Any, **kwargs: Any) -> MCPServer:
@@ -148,6 +173,8 @@ class MCPServer:
                 caps["resources"] = {}
             if self.prompts:
                 caps["prompts"] = {}
+            if self.request_sampling is not None:
+                caps["sampling"] = {}
             return {
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": caps,
