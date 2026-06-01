@@ -78,6 +78,9 @@ class Usage(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
+    #: Prompt tokens served from the provider's prompt cache (subset of
+    #: input_tokens) — billed cheaper; surfaced for cost attribution.
+    cached_input_tokens: int = 0
     cost_usd: float = 0.0
 
     def add(self, other: Usage) -> None:
@@ -85,6 +88,7 @@ class Usage(BaseModel):
         self.input_tokens += other.input_tokens
         self.output_tokens += other.output_tokens
         self.total_tokens += other.total_tokens
+        self.cached_input_tokens += other.cached_input_tokens
         self.cost_usd += other.cost_usd
 
 
