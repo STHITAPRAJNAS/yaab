@@ -57,11 +57,7 @@ async def test_stream_run_interleaves_tools_then_streams_final():
     assert calls["n"] == 1
     # ...then the final turn streamed tokens.
     tool_idx = types.index(EventType.TOOL_RESULT)
-    later_deltas = [
-        e.payload["delta"]
-        for e in events[tool_idx:]
-        if e.type is EventType.TEXT_DELTA
-    ]
+    later_deltas = [e.payload["delta"] for e in events[tool_idx:] if e.type is EventType.TEXT_DELTA]
     assert "".join(later_deltas).strip() == "the answer is 42"
     assert events[-1].payload["result"].output == "the answer is 42"
 

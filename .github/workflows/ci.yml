@@ -28,7 +28,12 @@ jobs:
           pip install -e '.[litellm,otel]'
 
       - name: Build the Rust core (abi3)
-        run: maturin develop -m yaab-core/Cargo.toml --release
+        # `maturin develop` requires a virtualenv, which the CI runner doesn't
+        # have (deps install into the system interpreter). Build the wheel and
+        # pip-install it instead — same artifact, venv-independent.
+        run: |
+          maturin build -m yaab-core/Cargo.toml --release --out dist-rust
+          pip install dist-rust/*.whl
 
       - name: Lint (ruff)
         run: |

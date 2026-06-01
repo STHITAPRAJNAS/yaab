@@ -157,9 +157,7 @@ async def test_per_tool_timeout_becomes_error_result():
     result = await asyncio.wait_for(agent.run("go"), timeout=3)
     # The timeout surfaces as a tool error fed back to the model, not a crash.
     assert result.output == "recovered"
-    tool_results = [
-        m.content for m in result.messages if getattr(m, "name", None) == "slow"
-    ]
+    tool_results = [m.content for m in result.messages if getattr(m, "name", None) == "slow"]
     assert tool_results and "timed out" in tool_results[0].lower()
 
 
