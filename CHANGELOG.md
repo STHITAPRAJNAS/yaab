@@ -6,6 +6,28 @@ All notable changes to YAAB are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — ADK-parity Wave 1
+- **Memory intelligence** — `MemoryManager.add_session_to_memory(extract=True, model=…)`
+  distills durable memories (facts/preferences/decisions) from a session via one
+  LLM call instead of copying raw lines, with cosine-similarity consolidation so
+  restated facts don't bloat the store; `KnowledgeBaseMemory` makes long-term
+  memory durable on any of the 8 vector-store backends.
+- **Context caching (write-side)** — `LiteLLMModel(cache_system_prompt=True,
+  cache_tools=True)` injects Anthropic `cache_control` breakpoints (and passes
+  Gemini `cached_content` through) so large stable prefixes bill at cached rates.
+- **`ModelRouter`** — route each request to a cheap or capable model via a
+  built-in length/complexity classifier or any custom callable; registered as the
+  `('model', 'router')` component.
+- **Graph `RetryPolicy`** — per-node retries with exponential backoff
+  (`add_node(..., retry=RetryPolicy(max_attempts=3))`); HITL `Interrupt` is never
+  retried; consumed retries surface on `GraphResult.retries`.
+- **Portable evalsets** — `EvalSet`/`EvalCase` with `.evalset.json` save/load and
+  `to_dataset()`; **`ToolTrajectoryMatch`** metric scores the agent's actual
+  tool-call sequence against an expected trajectory.
+- **OpenAPI toolset** — `openapi_toolset(spec)` turns any OpenAPI 3.x spec (dict/
+  JSON/YAML) into agent tools: one tool per operation with path/query/body params
+  wired, injectable httpx client, and error-string (non-crashing) failures.
+
 ### Added
 - **Streaming through the tool loop** — `Agent.stream_events` / `Runner.stream_run`
   yield `TEXT_DELTA` token deltas live AND run tools mid-run across multiple steps

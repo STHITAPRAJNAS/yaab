@@ -167,6 +167,98 @@ class FunctionEvaluator:
         return self.fn(case, output)
 
 
+class ToolTrajectoryMatch:
+    """Score how well an agent's tool-call sequence matches an expected one.
+
+    This is YAAB's analogue of ADK's ``tool_trajectory_avg_score``. Unlike the
+    output-string metrics above, it scores the *process* — which tools were
+    called, in what order, with which arguments — which is what you actually
+    want to regression-test for tool-using agents.
+
+    The expected trajectory is a list of ``{"name": str, "arguments"?: dict}``
+    steps, read from ``case.metadata["expected_tool_trajectory"]`` (or, as a
+    convenience, ``case.expected`` when it is a list). The *actual* trajectory
+    is pulled from the run's events by :meth:`Experiment.run` and handed to this
+    evaluator via a context dict — so this evaluator's ``output`` argument is the
+    context dict, not the final string. That is why it is *context-aware*:
+    :meth:`Experiment.run` detects evaluators that accept the context and feeds
+    it to them, while keeping plain ``(case, output)`` evaluators working.
+
+    Scoring (``strict=False``, the default): the fraction of expected steps that
+    appear in the actual trajectory as an *ordered subsequence* (so a missing or
+    reordered step costs proportionally, never more). With ``strict=True`` the
+    actual sequence must equal the expected sequence exactly (1.0 or 0.0).
+
+    A step's arguments, when given, must be a *subset* of the actual call's
+    arguments (extra actual args are fine) — agents often pass defaults the
+    eval author did not pin down, and over-specifying would make tests brittle.
+    """
+
+    name = "tool_trajectory"
+
+    def __init__(self, *, strict: bool = False) -> None:
+        self.strict = strict
+
+    @staticmethod
+    def _expected(case: Case) -> list[dict[str, Any]]:
+        expected = case.metadata.get("expected_tool_trajectory")
+        if expected is None and isinstance(case.expected, list):
+            expected = case.expected
+        return list(expected or [])
+
+    @staticmethod
+    def _actual(output: Any) -> list[dict[str, Any]]:
+        # Context-aware path: Experiment.run passes {"tool_trajectory": [...]}.
+        if isinstance(output, dict) and "tool_trajectory" in output:
+            return list(output.get("tool_trajectory") or [])
+        # Tolerate being handed the raw trajectory list directly.
+        if isinstance(output, list):
+            return output
+        return []
+
+    @staticmethod
+    def _step_matches(expected: dict[str, Any], actual: dict[str, Any]) -> bool:
+        if expected.get("name") != actual.get("name"):
+            return False
+        want_args = expected.get("arguments")
+        if not want_args:
+            return True
+        got_args = actual.get("arguments") or {}
+        return all(got_args.get(k) == v for k, v in want_args.items())
+
+    def evaluate(self, case: Case, output: Any) -> float:
+        expected = self._expected(case)
+        actual = self._actual(output)
+        if not expected:
+            # Nothing was asked for: a run that also called nothing is perfect.
+            return 1.0 if not actual else 0.0
+
+        if self.strict:
+            if len(expected) != len(actual):
+                return 0.0
+            pairs = zip(expected, actual, strict=True)
+            return 1.0 if all(self._step_matches(e, a) for e, a in pairs) else 0.0
+
+        # Ordered match: the longest common subsequence (by step-match) between
+        # the expected and actual trajectories, normalized by the number of
+        # expected steps. LCS (not a greedy single pass) is what makes a missing
+        # middle step cost exactly that one step, and a reordered step cost only
+        # what falls out of order — never more.
+        n, m = len(expected), len(actual)
+        # dp[j] = LCS length using all of expected[:i] and actual[:j].
+        dp = [0] * (m + 1)
+        for i in range(1, n + 1):
+            prev_diag = 0
+            for j in range(1, m + 1):
+                cur = dp[j]
+                if self._step_matches(expected[i - 1], actual[j - 1]):
+                    dp[j] = prev_diag + 1
+                else:
+                    dp[j] = max(dp[j], dp[j - 1])
+                prev_diag = cur
+        return dp[m] / len(expected)
+
+
 class CaseResult(BaseModel):
     case: str
     output: Any = None
@@ -220,15 +312,81 @@ class Experiment:
                 out = task(case.inputs)
                 if inspect.isawaitable(out):
                     out = await out
-                cr.output = out
+                # When the task returns a RunResult, unpack it: the final-output
+                # string is what plain metrics score, while the tool-call
+                # trajectory (extracted from the run's events) is exposed to
+                # context-aware metrics like ToolTrajectoryMatch.
+                output, context = _unpack_task_output(out)
+                cr.output = output
                 for ev in self.evaluators:
-                    # Support both sync (evaluate) and async (ascore) metrics, so
-                    # built-in, RAG, RAGAS, and DeepEval evaluators all work here.
-                    if hasattr(ev, "ascore"):
-                        cr.scores[ev.name] = await ev.ascore(case, out)
-                    else:
-                        cr.scores[ev.name] = ev.evaluate(case, out)
+                    cr.scores[ev.name] = await _score_evaluator(ev, case, output, context)
             except Exception as exc:  # noqa: BLE001 - record, don't abort the suite
                 cr.error = str(exc)
             result.results.append(cr)
         return result
+
+
+def _unpack_task_output(out: Any) -> tuple[Any, dict[str, Any]]:
+    """Split a task result into (final_output, evaluator_context).
+
+    A plain string/value is returned as-is with an empty context. A
+    :class:`~yaab.types.RunResult` is unpacked into its ``.output`` plus a
+    context dict carrying the tool-call trajectory mined from ``.events``
+    (``EventType.TOOL_CALL`` payloads), so trajectory-aware evaluators can score
+    the agent's process without the eval author wiring it up by hand.
+    """
+    events = getattr(out, "events", None)
+    if events is None or not hasattr(out, "output"):
+        return out, {}
+    trajectory: list[dict[str, Any]] = []
+    for event in events:
+        # Match by the event-type *value* to avoid importing EventType eagerly
+        # (and to tolerate plain dicts/duck-typed events in tests).
+        etype = getattr(event, "type", None)
+        type_value = getattr(etype, "value", etype)
+        if type_value == "tool_call":
+            payload = getattr(event, "payload", {}) or {}
+            trajectory.append(
+                {"name": payload.get("name"), "arguments": payload.get("arguments", {})}
+            )
+    context = {"tool_trajectory": trajectory, "output": out.output, "run_result": out}
+    return out.output, context
+
+
+async def _score_evaluator(
+    ev: Evaluator, case: Case, output: Any, context: dict[str, Any]
+) -> float:
+    """Score one evaluator, feeding the run context to those that accept it.
+
+    Context-aware evaluators (e.g. :class:`ToolTrajectoryMatch`) need the tool
+    trajectory, not the final string. We pass ``context`` as the second argument
+    to any evaluator that opts in — detected via a ``wants_context`` flag, or by
+    falling back to the context on a ``TypeError`` — and pass the plain output to
+    everyone else, preserving backward compatibility with ``(case, output)``
+    metrics.
+    """
+    wants_context = getattr(ev, "wants_context", None)
+    is_trajectory = isinstance(ev, ToolTrajectoryMatch)
+    payload: Any = context if (wants_context or is_trajectory) else output
+    if hasattr(ev, "ascore"):
+        try:
+            return await ev.ascore(case, payload)
+        except TypeError:
+            return await ev.ascore(case, output)
+    try:
+        return ev.evaluate(case, payload)
+    except TypeError:
+        return ev.evaluate(case, output)
+
+
+# Register the trajectory metric under the "metric" component kind, the same way
+# the built-ins are registered in yaab.eval. This is a side effect of importing
+# this module (which yaab.eval already does), so `get_metric("tool_trajectory")`
+# works without touching files outside this module's ownership.
+def _register_trajectory_metric() -> None:
+    from ..extensions import register as _register
+
+    _register("metric", "tool_trajectory", lambda **kw: ToolTrajectoryMatch(**kw))
+
+
+_register_trajectory_metric()

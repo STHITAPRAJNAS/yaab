@@ -5,6 +5,7 @@ from __future__ import annotations
 from .agent_tool import AgentTool
 from .base import FunctionTool, Tool, coerce_tools, tool
 from .mcp import MCPTool, mcp_toolset
+from .openapi import OpenAPITool, openapi_toolset
 
 __all__ = [
     "Tool",
@@ -14,4 +15,6 @@ __all__ = [
     "AgentTool",
     "MCPTool",
     "mcp_toolset",
+    "OpenAPITool",
+    "openapi_toolset",
 ]
