@@ -12,11 +12,12 @@ path — the one you reach for when an auditor or SLA needs explicit control flo
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from collections.abc import Callable
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from .. import _core
 from ..exceptions import Interrupt, YaabError
@@ -42,6 +43,51 @@ class Channel:
     def __init__(self, reducer: str = "last_value", default: Any = None) -> None:
         self.reducer = reducer
         self.default = default
+
+
+class RetryPolicy(BaseModel):
+    """Per-node retry policy with exponential backoff.
+
+    Mirrors the ADK 2.0 Workflow Runtime retry semantics: a node that raises a
+    matching exception is re-run up to ``max_attempts`` times, waiting
+    ``backoff * backoff_multiplier**(attempt-1)`` seconds before each retry.
+
+    ``retry_on`` is a tuple of exception types — only matching errors retry, so
+    a deterministic bug (the wrong ``TypeError``) can still surface fast instead
+    of burning the whole budget. Note that :class:`~yaab.exceptions.Interrupt`
+    is control flow, not an error: the engine handles it *before* consulting
+    this policy, so an interrupt is never retried even when ``retry_on`` is the
+    default ``(Exception,)`` (and ``Interrupt`` is an ``Exception``).
+    """
+
+    # Exception *types* aren't pydantic-native; allow them through as-is.
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    max_attempts: int = Field(default=3, ge=1)
+    #: Initial backoff in seconds before the first retry.
+    backoff: float = Field(default=0.5, ge=0.0)
+    #: Each subsequent retry multiplies the backoff by this factor.
+    backoff_multiplier: float = Field(default=2.0, ge=1.0)
+    #: Only exceptions matching one of these types are retried.
+    retry_on: tuple[type[BaseException], ...] = (Exception,)
+
+    def backoff_for(self, attempt: int) -> float:
+        """Return the backoff (seconds) to wait before retrying ``attempt``.
+
+        ``attempt`` is 1-indexed: ``attempt == 1`` is the wait after the first
+        failure (the first retry), so the exponent is ``attempt - 1``.
+        """
+        return self.backoff * (self.backoff_multiplier ** (attempt - 1))
+
+    async def sleep(self, attempt: int) -> None:
+        """Sleep the computed backoff for ``attempt`` (async, cancellation-safe).
+
+        Routed through :func:`asyncio.sleep` so tests can monkeypatch it and so
+        a cancelling caller can interrupt the wait between retries.
+        """
+        delay = self.backoff_for(attempt)
+        if delay > 0:
+            await asyncio.sleep(delay)
 
 
 class GraphContext:
@@ -78,6 +124,9 @@ class GraphResult(BaseModel):
     interrupted: bool = False
     interrupt_value: Any = None
     steps: int = 0
+    #: Per-node count of retries actually consumed (nodes that never retried
+    #: are omitted), so retry behavior is observable to callers and auditors.
+    retries: dict[str, int] = Field(default_factory=dict)
 
 
 class StateGraph:
@@ -92,15 +141,25 @@ class StateGraph:
         self.state_schema = state_schema
         self.channels: dict[str, Channel] = channels or {}
         self.nodes: dict[str, NodeFn] = {}
+        #: Per-node retry policies; nodes without one abort on first error.
+        self.node_retry: dict[str, RetryPolicy] = {}
         self.edges: dict[str, list[str]] = {}
         self.conditional: dict[str, tuple[Router, dict[str, str]]] = {}
         self.entry: str | None = None
 
     # --- construction --------------------------------------------------
-    def add_node(self, name: str, fn: NodeFn) -> StateGraph:
+    def add_node(self, name: str, fn: NodeFn, *, retry: RetryPolicy | None = None) -> StateGraph:
+        """Register a node, optionally with a :class:`RetryPolicy`.
+
+        Without ``retry`` the node aborts the run on its first exception (the
+        historical behavior); with one, matching transient failures are retried
+        with backoff before the error is allowed to propagate.
+        """
         if name in (START, END):
             raise YaabError(f"'{name}' is a reserved node name")
         self.nodes[name] = fn
+        if retry is not None:
+            self.node_retry[name] = retry
         return self
 
     def add_edge(self, src: str, dst: str) -> StateGraph:
@@ -186,6 +245,7 @@ class CompiledGraph:
         #: "python" or "rust" — which superstep state-advancement engine is active.
         self.engine = engine
         self._reducers = {k: ch.reducer for k, ch in graph.channels.items()}
+        self._node_retry = dict(graph.node_retry)
 
     def _init_state(self, inputs: dict[str, Any]) -> dict[str, Any]:
         state: dict[str, Any] = {k: ch.default for k, ch in self.graph.channels.items()}
@@ -214,6 +274,44 @@ class CompiledGraph:
             return [target]
         return list(self.graph.edges.get(node, []))
 
+    async def _run_node(
+        self,
+        node: str,
+        fn: NodeFn,
+        state: dict[str, Any],
+        ctx: GraphContext,
+        retries: dict[str, int],
+    ) -> Any:
+        """Execute a node, applying its retry policy on matching failures.
+
+        ``Interrupt`` is re-raised immediately and never counted as a retry —
+        it is control flow, not an error — so HITL still pauses on the first
+        attempt regardless of the policy. Each consumed retry is recorded in
+        ``retries[node]`` so callers can observe the behavior. After the budget
+        is exhausted the last error propagates unchanged.
+        """
+        policy = self._node_retry.get(node)
+        if policy is None:
+            # Unchanged historical path: any exception aborts immediately.
+            return await _maybe_await(fn, state, ctx)
+
+        attempt = 0
+        while True:
+            try:
+                return await _maybe_await(fn, state, ctx)
+            except Interrupt:
+                # Control flow — let the caller's interrupt handling take over.
+                raise
+            except policy.retry_on as exc:
+                attempt += 1
+                if attempt >= policy.max_attempts:
+                    raise
+                retries[node] = retries.get(node, 0) + 1
+                # ``attempt`` is 1-indexed for the first wait, matching
+                # backoff_for; sleep is async so a cancel can break the wait.
+                await policy.sleep(attempt)
+                _ = exc  # the same node body re-runs on the next loop turn
+
     async def ainvoke(
         self,
         inputs: dict[str, Any] | None = None,
@@ -229,10 +327,13 @@ class CompiledGraph:
             step, snapshot = saved
             state = snapshot["state"]
             frontier = snapshot.get("frontier", [self.graph.entry])
+            # Carry forward retry counts so resumed runs report cumulative totals.
+            retries: dict[str, int] = dict(snapshot.get("retries", {}))
         else:
             step = 0
             state = self._init_state(inputs or {})
             frontier = [self.graph.entry]
+            retries = {}
 
         resume_for_first = resume
 
@@ -249,7 +350,7 @@ class CompiledGraph:
                 ctx = GraphContext(thread_id, deps, resume=resume_for_first)
                 resume_for_first = _MISSING  # only the first resumed node consumes it
                 try:
-                    updates = await _maybe_await(fn, state, ctx)
+                    updates = await self._run_node(node, fn, state, ctx, retries)
                 except Interrupt as itr:
                     # Park the interrupted node plus the nodes in this superstep
                     # that have NOT run yet — but never the already-executed ones
@@ -263,9 +364,15 @@ class CompiledGraph:
                     for n in next_frontier:
                         if n not in parked:
                             parked.append(n)
-                    self.checkpointer.put(thread_id, step, {"state": state, "frontier": parked})
+                    self.checkpointer.put(
+                        thread_id, step, {"state": state, "frontier": parked, "retries": retries}
+                    )
                     return GraphResult(
-                        state=state, interrupted=True, interrupt_value=itr.value, steps=step
+                        state=state,
+                        interrupted=True,
+                        interrupt_value=itr.value,
+                        steps=step,
+                        retries=retries,
                     )
                 if updates:
                     if self.engine == "rust":
@@ -287,12 +394,14 @@ class CompiledGraph:
                 state = self._advance(superstep_base, batch)
 
             step += 1
-            self.checkpointer.put(thread_id, step, {"state": state, "frontier": next_frontier})
+            self.checkpointer.put(
+                thread_id, step, {"state": state, "frontier": next_frontier, "retries": retries}
+            )
             frontier = next_frontier
             if not frontier:
                 break
 
-        return GraphResult(state=state, interrupted=False, steps=step)
+        return GraphResult(state=state, interrupted=False, steps=step, retries=retries)
 
     def invoke(self, inputs: dict[str, Any] | None = None, **kwargs: Any) -> GraphResult:
         import asyncio
@@ -315,6 +424,7 @@ __all__ = [
     "GraphResult",
     "GraphContext",
     "Channel",
+    "RetryPolicy",
     "interrupt",
     "START",
     "END",

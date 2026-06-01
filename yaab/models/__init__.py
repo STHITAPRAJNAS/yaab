@@ -5,6 +5,7 @@ from __future__ import annotations
 from .base import ModelProvider, ModelResponse, StreamChunk
 from .instrumented import InstrumentedModel
 from .litellm_provider import LiteLLMModel
+from .router import ModelRouter
 from .test_model import FunctionModel, TestModel
 
 __all__ = [
@@ -13,6 +14,7 @@ __all__ = [
     "StreamChunk",
     "LiteLLMModel",
     "InstrumentedModel",
+    "ModelRouter",
     "TestModel",
     "FunctionModel",
     "resolve_model",

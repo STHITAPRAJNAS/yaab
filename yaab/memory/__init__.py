@@ -144,7 +144,12 @@ __all__ = [
     "default_embedder",
     "resolve_embedder",
     "InMemoryVectorMemory",
+    "MemoryExtractor",
 ]
 
 # Register built-in embedders in the component registry (side-effect import).
 from . import embedders as _embedders  # noqa: E402,F401
+
+# LLM-based memory extraction (ADK MemoryBank parity). Imported after the core
+# types above so ``extraction`` can resolve them without a circular import.
+from .extraction import MemoryExtractor  # noqa: E402

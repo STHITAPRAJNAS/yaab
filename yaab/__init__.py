@@ -45,16 +45,23 @@ from .exceptions import (
 from .extensions import available as available_components
 from .extensions import get as get_component
 from .extensions import register as register_component
+from .governance.eval import ToolTrajectoryMatch
+from .governance.evalset import EvalCase, EvalSet
+from .graph.state import RetryPolicy
 from .limits import CancellationToken, UsageLimits
+from .memory.extraction import MemoryExtractor
 from .memory.manager import MemoryManager
+from .models.router import ModelRouter
 from .multiagent import LoopAgent, MapAgent, ParallelAgent, SequentialAgent, Swarm
 from .prompts import PromptRegistry
 from .rag import Document, KnowledgeBase
+from .rag.memory_service import KnowledgeBaseMemory
 from .runner import Runner
 from .sessions.manager import SessionManager
 from .skills import Skill
 from .state import State
 from .tools import AgentTool, FunctionTool, tool
+from .tools.openapi import OpenAPITool, openapi_toolset
 from .types import Event, EventType, Message, RunContext, RunResult, Usage
 
 __version__ = "0.1.0"
@@ -95,6 +102,20 @@ __all__ = [
     # RAG
     "KnowledgeBase",
     "Document",
+    # memory intelligence (ADK MemoryBank parity)
+    "MemoryExtractor",
+    "KnowledgeBaseMemory",
+    # model intelligence
+    "ModelRouter",
+    # graph retry policies
+    "RetryPolicy",
+    # eval depth (portable evalsets + trajectory metric)
+    "EvalSet",
+    "EvalCase",
+    "ToolTrajectoryMatch",
+    # OpenAPI toolset
+    "openapi_toolset",
+    "OpenAPITool",
     # run controls
     "UsageLimits",
     "CancellationToken",

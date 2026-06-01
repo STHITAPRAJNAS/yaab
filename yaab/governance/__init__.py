@@ -25,7 +25,9 @@ from .eval import (
     LLMJudge,
     NumericTolerance,
     Regex,
+    ToolTrajectoryMatch,
 )
+from .evalset import EvalCase, EvalSet
 
 # Side-effect import: registers the built-in scanners + industry adapters
 # (Presidio / LLM-Guard / NeMo) in the component registry under "guardrail".
@@ -120,6 +122,10 @@ __all__ = [
     "NumericTolerance",
     "Levenshtein",
     "LLMJudge",
+    "ToolTrajectoryMatch",
+    # evalset (portable .evalset.json format)
+    "EvalSet",
+    "EvalCase",
     # monitoring
     "DriftMonitor",
     "DriftReport",

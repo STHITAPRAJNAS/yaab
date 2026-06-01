@@ -25,6 +25,7 @@ from .chunking import (
 from .eval import FaithfulnessEvaluator, context_relevance, faithfulness
 from .knowledge import KnowledgeBase
 from .loaders import load, load_bytes, load_directory
+from .memory_service import KnowledgeBaseMemory
 from .rerank import CrossEncoderReranker, KeywordReranker, LLMReranker, Reranker
 from .store import InMemoryVectorStore, PgVectorStore, VectorStore
 from .types import Chunk, Document, RetrievedChunk
@@ -45,6 +46,8 @@ __all__ = [
     "LLMReranker",
     "CrossEncoderReranker",
     "KnowledgeBase",
+    # durable, vector-store-backed long-term memory (MemoryService impl)
+    "KnowledgeBaseMemory",
     # document loaders
     "load",
     "load_directory",

@@ -28,3 +28,4 @@ live_e2e_report.json
 .env
 yaab_audit.db
 yaab_registry.db
+gap_analysis_parsed.json
