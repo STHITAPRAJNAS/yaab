@@ -20,8 +20,15 @@ DEFAULT_USER = "default"
 class MemoryManager:
     """Manage long-term memory scoped by app and user."""
 
-    def __init__(self, service: MemoryService | None = None) -> None:
-        self.service = service or InMemoryVectorMemory()
+    def __init__(
+        self,
+        service: MemoryService | None = None,
+        *,
+        embedder: Any | None = None,
+    ) -> None:
+        # ``embedder`` (callable or LiteLLM model-name string) is a convenience for
+        # the default in-memory backend; ignored when an explicit service is given.
+        self.service = service or InMemoryVectorMemory(embedder=embedder)
 
     @staticmethod
     def _ns(app_name: str, user_id: str) -> dict[str, str]:

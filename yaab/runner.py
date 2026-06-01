@@ -52,6 +52,7 @@ class Runner:
         governance: GovernanceService | None = None,
         plugins: list[Plugin] | None = None,
         memory_app_name: str | None = None,
+        default_tool_timeout: float | None = None,
     ) -> None:
         self.session_service = session_service or InMemorySessionService()
         self.memory_service = memory_service
@@ -60,6 +61,9 @@ class Runner:
         self.plugins: list[Plugin] = list(plugins or [])
         #: App scope passed to a namespace-aware memory backend's search.
         self.memory_app_name = memory_app_name
+        #: Default per-tool execution timeout (seconds); a tool's own ``timeout``
+        #: overrides it. ``None`` means no timeout.
+        self.default_tool_timeout = default_tool_timeout
 
     def add_plugin(self, plugin: Plugin) -> Runner:
         self.plugins.append(plugin)
@@ -210,23 +214,51 @@ class Runner:
                             tool_calls=response.tool_calls,
                         )
                     )
-                    for tc in response.tool_calls:
+                    tcs = response.tool_calls
+                    # Pre-flight in call order: cancellation, counts, usage caps.
+                    for tc in tcs:
                         if cancellation is not None:
                             cancellation.raise_if_cancelled()
                         tool_counts[tc.name] = tool_counts.get(tc.name, 0) + 1
                         if usage_limits is not None:
                             usage_limits.check_tool_call(tc.name, tool_counts)
-                        yield emit(EventType.TOOL_CALL, name=tc.name, arguments=tc.arguments)
-                        result_value = await self._run_tool(agent, ctx, tc)
-                        yield emit(EventType.TOOL_RESULT, name=tc.name, result=_safe(result_value))
-                        messages.append(
-                            Message(
-                                role=Role.TOOL,
-                                name=tc.name,
-                                tool_call_id=tc.id,
-                                content=_to_text(result_value),
+
+                    parallel = getattr(agent, "parallel_tools", True) and len(tcs) > 1
+                    if parallel:
+                        # Announce all calls (in order), run concurrently, then
+                        # emit results (in order) so traces stay deterministic.
+                        for tc in tcs:
+                            yield emit(EventType.TOOL_CALL, name=tc.name, arguments=tc.arguments)
+                        results = await self._run_tools_parallel(agent, ctx, tcs)
+                        for tc, result_value in zip(tcs, results, strict=False):
+                            yield emit(
+                                EventType.TOOL_RESULT, name=tc.name, result=_safe(result_value)
                             )
-                        )
+                            messages.append(
+                                Message(
+                                    role=Role.TOOL,
+                                    name=tc.name,
+                                    tool_call_id=tc.id,
+                                    content=_to_text(result_value),
+                                )
+                            )
+                    else:
+                        for tc in tcs:
+                            if cancellation is not None:
+                                cancellation.raise_if_cancelled()
+                            yield emit(EventType.TOOL_CALL, name=tc.name, arguments=tc.arguments)
+                            result_value = await self._run_tool(agent, ctx, tc)
+                            yield emit(
+                                EventType.TOOL_RESULT, name=tc.name, result=_safe(result_value)
+                            )
+                            messages.append(
+                                Message(
+                                    role=Role.TOOL,
+                                    name=tc.name,
+                                    tool_call_id=tc.id,
+                                    content=_to_text(result_value),
+                                )
+                            )
                     # Forcing choice has done its job; let the next turn finalize.
                     if _is_forcing_tool_choice(effective_tool_choice):
                         effective_tool_choice = "auto"
@@ -398,7 +430,31 @@ class Runner:
                 response = amended
         return response
 
+    async def _run_tools_parallel(
+        self, agent: Any, ctx: RunContext, tcs: list[ToolCall]
+    ) -> list[Any]:
+        """Execute a turn's tool calls concurrently, returning results in order."""
+        import asyncio
+
+        max_parallel = getattr(agent, "max_parallel_tools", 0) or 0
+        sem = asyncio.Semaphore(max_parallel) if max_parallel > 0 else None
+
+        async def _one(tc: ToolCall) -> Any:
+            if sem is not None:
+                async with sem:
+                    return await self._run_tool(agent, ctx, tc)
+            return await self._run_tool(agent, ctx, tc)
+
+        return await asyncio.gather(*(_one(tc) for tc in tcs))
+
+    def _tool_timeout(self, tool: Any) -> float | None:
+        """Resolve the effective per-tool timeout (tool's own overrides default)."""
+        own = getattr(tool, "timeout", None)
+        return own if own is not None else self.default_tool_timeout
+
     async def _run_tool(self, agent: Any, ctx: RunContext, tc: ToolCall) -> Any:
+        import asyncio
+
         # Let plugins repair/coerce raw args before validation/execution.
         for plugin in self.plugins:
             repaired = await plugin.repair_tool_args(ctx, agent.name, tc.name, tc.arguments)
@@ -411,8 +467,14 @@ class Runner:
         tool = next((t for t in agent.tools if t.name == tc.name), None)
         if tool is None:
             return f"error: unknown tool '{tc.name}'"
+        timeout = self._tool_timeout(tool)
         try:
-            result = await tool.execute(ctx, **tc.arguments)
+            if timeout is not None:
+                result = await asyncio.wait_for(tool.execute(ctx, **tc.arguments), timeout)
+            else:
+                result = await tool.execute(ctx, **tc.arguments)
+        except TimeoutError:
+            result = f"error: tool '{tc.name}' timed out after {timeout}s"
         except ToolError as exc:
             result = f"error: {exc}"
         except Exception as exc:  # noqa: BLE001 - tools shouldn't crash the loop

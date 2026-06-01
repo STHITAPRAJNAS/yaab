@@ -50,10 +50,14 @@ class FunctionTool:
         *,
         name: str | None = None,
         description: str | None = None,
+        timeout: float | None = None,
     ) -> None:
         self.fn = fn
         self.name = name or fn.__name__
         self.description = description or (inspect.getdoc(fn) or "").strip()
+        #: Optional per-tool execution timeout (seconds); overrides the runner's
+        #: ``default_tool_timeout``. ``None`` defers to the runner default.
+        self.timeout = timeout
         self._is_async = inspect.iscoroutinefunction(fn)
         self._takes_ctx, self._arg_model = self._build_model(fn)
 
@@ -114,14 +118,15 @@ def tool(
     *,
     name: str | None = None,
     description: str | None = None,
+    timeout: float | None = None,
 ) -> Any:
     """Decorator turning a typed function into a :class:`FunctionTool`.
 
-    Usable bare (``@tool``) or parameterized (``@tool(name=...)``).
+    Usable bare (``@tool``) or parameterized (``@tool(name=..., timeout=...)``).
     """
 
     def wrap(func: Callable[..., Any]) -> FunctionTool:
-        return FunctionTool(func, name=name, description=description)
+        return FunctionTool(func, name=name, description=description, timeout=timeout)
 
     if fn is not None:
         return wrap(fn)

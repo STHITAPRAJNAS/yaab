@@ -43,6 +43,8 @@ class Agent(Generic[Deps, Output]):
         output_retries: int = 2,
         tool_choice: Any | None = None,
         context_strategy: Any | None = None,
+        parallel_tools: bool = True,
+        max_parallel_tools: int = 0,
         runner: Any | None = None,
         instrument: bool = True,
     ) -> None:
@@ -62,6 +64,11 @@ class Agent(Generic[Deps, Output]):
         #: Optional ContextStrategy that trims/summarizes history before each
         #: model call to stay within the context window.
         self.context_strategy = context_strategy
+        #: Execute a turn's multiple tool calls concurrently (default). Set False
+        #: for ordering-sensitive tools that must run one at a time.
+        self.parallel_tools = parallel_tools
+        #: Cap on concurrent tool executions (0 = unbounded) when parallel.
+        self.max_parallel_tools = max_parallel_tools
         self.instrument = instrument
         self.permissions: list[str] = []
 

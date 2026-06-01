@@ -59,11 +59,67 @@ def hashing_embedder(dim: int = 64) -> Embedder:
     return embed
 
 
+#: Provider key -> its standard small embedding model, for default auto-upgrade.
+_EMBED_PROVIDERS = {
+    "OPENAI_API_KEY": "openai/text-embedding-3-small",
+    "GEMINI_API_KEY": "gemini/text-embedding-004",
+    "COHERE_API_KEY": "cohere/embed-english-v3.0",
+    "MISTRAL_API_KEY": "mistral/mistral-embed",
+    "VOYAGE_API_KEY": "voyage/voyage-3",
+}
+
+_warned_hashing = False
+
+
+def default_embedder() -> Embedder:
+    """Pick a sensible default embedder.
+
+    Auto-upgrades to a real :class:`LiteLLMEmbedder` when ``litellm`` is installed
+    **and** an embedding-provider key is in the environment (explicit opt-in by
+    configuration); otherwise falls back to the deterministic hashing stub and
+    logs a one-time warning that semantic recall will be weak. Construction is
+    cheap and offline — the real embedder only calls the provider when used.
+    """
+    import importlib.util
+    import os
+
+    for env_key, model in _EMBED_PROVIDERS.items():
+        if os.environ.get(env_key) and importlib.util.find_spec("litellm") is not None:
+            from .embedders import LiteLLMEmbedder
+
+            return LiteLLMEmbedder(model)
+
+    global _warned_hashing
+    if not _warned_hashing:
+        _warned_hashing = True
+        import logging
+
+        logging.getLogger("yaab").warning(
+            "Using the deterministic hashing embedder — semantic recall will be weak. "
+            "Set an embedding key (e.g. OPENAI_API_KEY) or pass "
+            "embedder='openai/text-embedding-3-small' for real embeddings."
+        )
+    return hashing_embedder()
+
+
+def resolve_embedder(embedder: Embedder | str | None = None) -> Embedder:
+    """Normalize an embedder argument: ``None`` -> default, ``str`` -> a LiteLLM
+    model-name shorthand, callable -> passthrough.
+    """
+    if embedder is None:
+        return default_embedder()
+    if isinstance(embedder, str):
+        from .embedders import LiteLLMEmbedder
+
+        return LiteLLMEmbedder(embedder)
+    return embedder
+
+
 class InMemoryVectorMemory:
     """A simple in-process vector store over :func:`yaab._core.top_k`."""
 
-    def __init__(self, embedder: Embedder | None = None) -> None:
-        self.embedder = embedder or hashing_embedder()
+    def __init__(self, embedder: Embedder | str | None = None) -> None:
+        self.embedder = resolve_embedder(embedder)
         self._records: list[MemoryRecord] = []
 
     async def add(self, text: str, *, metadata: dict | None = None) -> MemoryRecord:
@@ -85,6 +141,8 @@ __all__ = [
     "MemoryService",
     "Embedder",
     "hashing_embedder",
+    "default_embedder",
+    "resolve_embedder",
     "InMemoryVectorMemory",
 ]
 

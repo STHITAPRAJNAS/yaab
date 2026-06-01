@@ -93,8 +93,14 @@ class ParallelAgent(_WorkflowBase):
         self.instructions = f"Parallel fan-out across {len(agents)} agents."
 
     async def run(self, prompt: str, *, deps: Any = None, session_id=None, identity=None):
+        # Thread session_id/identity to children so they replay shared session
+        # history. Children sharing one session_id may interleave appends; give
+        # each its own session_id if isolated write history is required.
         results = await asyncio.gather(
-            *(a.run(prompt, deps=deps, identity=identity) for a in self.agents)
+            *(
+                a.run(prompt, deps=deps, session_id=session_id, identity=identity)
+                for a in self.agents
+            )
         )
         usage = Usage()
         output: dict[str, Any] = {}
