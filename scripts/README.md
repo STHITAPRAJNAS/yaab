@@ -29,7 +29,7 @@ tool calling, and structured output against a live provider. Run it where the
 provider is reachable (your laptop/CI) — **not** inside a restricted sandbox.
 
 ```bash
-pip install 'yaab[litellm]'
+pip install 'yaab-sdk[litellm]'
 
 # Groq free tier — https://console.groq.com
 export GROQ_API_KEY=...                       # keep secret; never commit

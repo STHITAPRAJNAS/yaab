@@ -18,7 +18,7 @@ output against a live provider. Set a model + its API key in the environment:
 
     python scripts/live_llm_check.py
 
-Requires:  pip install 'yaab[litellm]'
+Requires:  pip install 'yaab-sdk[litellm]'
 """
 
 from __future__ import annotations

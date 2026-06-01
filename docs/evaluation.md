@@ -32,7 +32,7 @@ imported **only when a metric is instantiated and scored**, so they stay
 optional.
 
 ```python
-# pip install 'yaab[ragas]'  /  'yaab[deepeval]'
+# pip install 'yaab-sdk[ragas]'  /  'yaab-sdk[deepeval]'
 faith = get_metric("ragas:faithfulness")
 rel   = get_metric("deepeval:answer_relevancy", threshold=0.7)
 ```

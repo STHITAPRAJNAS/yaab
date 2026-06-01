@@ -75,7 +75,7 @@ def _require_litellm() -> Any:
     except ImportError as exc:  # pragma: no cover - depends on optional extra
         raise ModelError(
             "litellm is not installed. Install the voice/model layer with "
-            "`pip install 'yaab[litellm]'`, or inject a custom "
+            "`pip install 'yaab-sdk[litellm]'`, or inject a custom "
             "Transcriber/Speaker (e.g. for offline tests)."
         ) from exc
     return litellm

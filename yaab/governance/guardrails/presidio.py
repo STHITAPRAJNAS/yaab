@@ -5,7 +5,7 @@ robustly than regex, then anonymizes it. This adapter exposes that as a YAAB
 :class:`~yaab.governance.policy.GuardrailScanner` that ``REDACT``s on detection.
 
 The ``presidio-analyzer`` / ``presidio-anonymizer`` packages are an optional
-extra (``pip install 'yaab[presidio]'``), imported lazily; inject ``analyzer`` /
+extra (``pip install 'yaab-sdk[presidio]'``), imported lazily; inject ``analyzer`` /
 ``anonymizer`` to test or customize.
 """
 
@@ -46,7 +46,7 @@ class PresidioPIIScanner:
         except ImportError as exc:  # pragma: no cover - optional extra
             raise ImportError(
                 "PresidioPIIScanner needs Microsoft Presidio. "
-                "Install it with `pip install 'yaab[presidio]'` (and a spaCy model, "
+                "Install it with `pip install 'yaab-sdk[presidio]'` (and a spaCy model, "
                 "e.g. `python -m spacy download en_core_web_lg`)."
             ) from exc
         if self._analyzer is None:

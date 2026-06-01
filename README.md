@@ -361,12 +361,15 @@ Full guides live in [`docs/`](docs/index.md):
 ## Install
 
 ```bash
-pip install yaab                 # SDK + high-performance async-first Python core
-pip install 'yaab[litellm]'      # universal model layer
-pip install 'yaab[all]'          # everything on PyPI (litellm, otel, rag, serve, …)
+pip install yaab-sdk                 # SDK + high-performance async-first Python core
+pip install 'yaab-sdk[litellm]'      # universal model layer
+pip install 'yaab-sdk[all]'          # everything on PyPI (litellm, otel, rag, serve, …)
 ```
 
-**Two cores, one API.** `pip install yaab` ships a high-performance,
+> The PyPI distribution is **`yaab-sdk`**; the import package and CLI are **`yaab`**:
+> `pip install yaab-sdk` → `import yaab` / `from yaab import Agent` / `$ yaab web`.
+
+**Two cores, one API.** `pip install yaab-sdk` ships a high-performance,
 async-first **pure-Python core** that works on every platform with zero build
 tooling — this is what runs today (`yaab.BACKEND == "python"`).
 
@@ -374,7 +377,7 @@ The optional **`yaab-core`** Rust accelerator transparently speeds up the hot
 paths (vector search, checkpoint serialization, channel reducers, audit hashing,
 the graph engine). It is **not yet published to PyPI**, so today you build it
 from source (needs only `maturin`); a prebuilt `abi3` wheel and `pip install
-'yaab[rust]'` are planned. YAAB auto-selects Rust when present and falls back to
+'yaab-sdk[rust]'` are planned. YAAB auto-selects Rust when present and falls back to
 Python otherwise — your code never changes either way.
 
 ```bash

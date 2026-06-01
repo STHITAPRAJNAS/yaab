@@ -88,9 +88,9 @@ optional extras, imported lazily.
 from yaab.governance import PresidioPIIScanner, LLMGuardScanner, NeMoGuardrailsScanner
 
 gov.policy = PolicyEngine([
-    PresidioPIIScanner(),                 # pip install 'yaab[presidio]' — NER-based PII
-    LLMGuardScanner(),                    # pip install 'yaab[llm-guard]' — Protect AI scanners
-    NeMoGuardrailsScanner(rails=my_rails) # pip install 'yaab[nemo]'      — NVIDIA NeMo rails
+    PresidioPIIScanner(),                 # pip install 'yaab-sdk[presidio]' — NER-based PII
+    LLMGuardScanner(),                    # pip install 'yaab-sdk[llm-guard]' — Protect AI scanners
+    NeMoGuardrailsScanner(rails=my_rails) # pip install 'yaab-sdk[nemo]'      — NVIDIA NeMo rails
 ])
 
 # …or by name through the component registry:

@@ -58,7 +58,7 @@ OpenTelemetry span following the **GenAI semantic conventions**
 extra and configure an exporter:
 
 ```bash
-pip install 'yaab[otel]'
+pip install 'yaab-sdk[otel]'
 ```
 
 Disable wrapping per agent with `Agent(..., instrument=False)`.

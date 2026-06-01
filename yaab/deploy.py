@@ -103,7 +103,7 @@ def generate_dockerfile(
 ) -> str:
     """Generate a production Dockerfile that serves ``agent_spec`` over HTTP.
 
-    Slim base + a single ``pip install`` of ``yaab[extras]`` plus the user's app
+    Slim base + a single ``pip install`` of ``yaab-sdk[extras]`` plus the user's app
     (the build context is copied in, so an editable/local module is installed),
     then ``yaab serve`` bound to ``0.0.0.0`` so the container is reachable. We
     pin the agent into the CMD rather than an env var so the image is
@@ -122,7 +122,7 @@ RUN apt-get update \\
 
 # Copy the agent code in, then install YAAB with the chosen extras plus the app.
 COPY . /app
-RUN pip install --no-cache-dir "yaab[{extras}]" \\
+RUN pip install --no-cache-dir "yaab-sdk[{extras}]" \\
     && pip install --no-cache-dir .
 
 EXPOSE {port}

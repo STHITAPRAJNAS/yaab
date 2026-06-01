@@ -12,7 +12,7 @@ Provide either:
 * ``rails`` — a configured ``nemoguardrails.LLMRails``; the adapter derives a
   ``check`` from it (input rails on the prompt).
 
-``nemoguardrails`` is an optional extra (``pip install 'yaab[nemo]'``), imported
+``nemoguardrails`` is an optional extra (``pip install 'yaab-sdk[nemo]'``), imported
 lazily only when ``rails`` is used without a ``check``.
 """
 

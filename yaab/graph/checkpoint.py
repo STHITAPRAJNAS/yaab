@@ -82,7 +82,7 @@ class SQLiteSaver:
 class PostgresSaver:
     """Durable checkpointer backed by Postgres / Aurora PostgreSQL.
 
-    Uses ``psycopg`` (``pip install 'yaab[postgres]'``), imported lazily. Stores
+    Uses ``psycopg`` (``pip install 'yaab-sdk[postgres]'``), imported lazily. Stores
     the framed checkpoint blob per ``(thread_id, step)`` — point the DSN at an
     Aurora endpoint for a managed, HA checkpoint store.
     """
@@ -92,7 +92,7 @@ class PostgresSaver:
             import psycopg
         except ImportError as exc:  # pragma: no cover - optional extra
             raise RuntimeError(
-                "psycopg is required for PostgresSaver. `pip install 'yaab[postgres]'`."
+                "psycopg is required for PostgresSaver. `pip install 'yaab-sdk[postgres]'`."
             ) from exc
         self._conn = psycopg.connect(dsn, autocommit=True)
         self._table = table
@@ -129,7 +129,7 @@ class PostgresSaver:
 class RedisSaver:
     """Durable checkpointer backed by Redis / ElastiCache / MemoryDB.
 
-    Uses ``redis`` (``pip install 'yaab[redis]'``), imported lazily. Each step is
+    Uses ``redis`` (``pip install 'yaab-sdk[redis]'``), imported lazily. Each step is
     a base64 blob in a per-thread Redis hash, so the full history (and
     time-travel) survives across processes.
     """
@@ -150,7 +150,7 @@ class RedisSaver:
                 import redis
             except ImportError as exc:  # pragma: no cover - optional extra
                 raise RuntimeError(
-                    "redis is required for RedisSaver. `pip install 'yaab[redis]'`."
+                    "redis is required for RedisSaver. `pip install 'yaab-sdk[redis]'`."
                 ) from exc
             self._redis = redis.Redis.from_url(url, decode_responses=True)
         self._prefix = prefix

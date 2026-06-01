@@ -36,9 +36,9 @@ Conversation history + structured KV state. Protocol: `SessionService`.
 |---|---|---|---|
 | `memory` | `InMemorySessionService` | — (default) | dev, tests |
 | `sqlite` | `SQLiteSessionService` | — | single-node, local persistence |
-| `postgres` | `PostgresSessionService` | `yaab[postgres]` | Postgres |
-| `aurora` | `PostgresSessionService` | `yaab[postgres]` | **Amazon Aurora PostgreSQL** (same driver; point the DSN at the cluster) |
-| `redis` | `RedisSessionService` | `yaab[redis]` | **ElastiCache / MemoryDB / Azure Cache**, low-latency distributed sessions |
+| `postgres` | `PostgresSessionService` | `yaab-sdk[postgres]` | Postgres |
+| `aurora` | `PostgresSessionService` | `yaab-sdk[postgres]` | **Amazon Aurora PostgreSQL** (same driver; point the DSN at the cluster) |
+| `redis` | `RedisSessionService` | `yaab-sdk[redis]` | **ElastiCache / MemoryDB / Azure Cache**, low-latency distributed sessions |
 
 ```python
 from yaab.sessions import RedisSessionService
@@ -69,18 +69,18 @@ Embedded-chunk storage + similarity search with metadata filtering. Protocol:
 | Name | Class | Install | Notes |
 |---|---|---|---|
 | `memory` | `InMemoryVectorStore` | — (default) | dev/tests; Rust top-k |
-| `pgvector` | `PgVectorStore` | `yaab[postgres]` | Postgres + pgvector |
-| `aurora` | `PgVectorStore` | `yaab[postgres]` | **Aurora PostgreSQL** with pgvector |
-| `chroma` | `ChromaVectorStore` | `yaab[chroma]` | local/embedded or server |
-| `qdrant` | `QdrantVectorStore` | `yaab[qdrant]` | in-memory, server, or Qdrant Cloud |
-| `opensearch` | `OpenSearchVectorStore` | `yaab[opensearch]` | **Amazon OpenSearch Service / Serverless**, self-managed |
-| `oracle` | `OracleVectorStore` | `yaab[oracle]` | **Oracle Database 23ai** AI Vector Search |
-| `pinecone` | `PineconeVectorStore` | `yaab[pinecone]` | Pinecone serverless/pod |
-| `weaviate` | `WeaviateVectorStore` | `yaab[weaviate]` | Weaviate (local or Cloud) |
+| `pgvector` | `PgVectorStore` | `yaab-sdk[postgres]` | Postgres + pgvector |
+| `aurora` | `PgVectorStore` | `yaab-sdk[postgres]` | **Aurora PostgreSQL** with pgvector |
+| `chroma` | `ChromaVectorStore` | `yaab-sdk[chroma]` | local/embedded or server |
+| `qdrant` | `QdrantVectorStore` | `yaab-sdk[qdrant]` | in-memory, server, or Qdrant Cloud |
+| `opensearch` | `OpenSearchVectorStore` | `yaab-sdk[opensearch]` | **Amazon OpenSearch Service / Serverless**, self-managed |
+| `oracle` | `OracleVectorStore` | `yaab-sdk[oracle]` | **Oracle Database 23ai** AI Vector Search |
+| `pinecone` | `PineconeVectorStore` | `yaab-sdk[pinecone]` | Pinecone serverless/pod |
+| `weaviate` | `WeaviateVectorStore` | `yaab-sdk[weaviate]` | Weaviate (local or Cloud) |
 
 ```python
 from yaab.rag import KnowledgeBase
-from yaab.rag import OpenSearchVectorStore        # yaab[opensearch]
+from yaab.rag import OpenSearchVectorStore        # yaab-sdk[opensearch]
 
 kb = KnowledgeBase(store=OpenSearchVectorStore(index="kb", hosts=[{"host": "...", "port": 443}],
                                                http_auth=(...), use_ssl=True))
@@ -100,8 +100,8 @@ Durable graph state for crash recovery, resume, and time-travel. Protocol:
 |---|---|---|
 | `memory` | `MemorySaver` | — (default) |
 | `sqlite` | `SQLiteSaver` | — |
-| `postgres` / `aurora` | `PostgresSaver` | `yaab[postgres]` |
-| `redis` | `RedisSaver` | `yaab[redis]` |
+| `postgres` / `aurora` | `PostgresSaver` | `yaab-sdk[postgres]` |
+| `redis` | `RedisSaver` | `yaab-sdk[redis]` |
 
 ```python
 from yaab.graph import StateGraph, PostgresSaver

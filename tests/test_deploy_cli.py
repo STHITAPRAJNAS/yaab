@@ -41,7 +41,7 @@ def test_dockerfile_has_load_bearing_lines():
     assert "FROM python:3.12-slim" in df
     # Installs YAAB with the requested extras.
     assert "pip install" in df
-    assert "yaab[litellm,serve]" in df
+    assert "yaab-sdk[litellm,serve]" in df
     # The CMD must serve *this* agent, bound to all interfaces.
     assert "yaab serve" in df
     assert SPEC in df
@@ -52,7 +52,7 @@ def test_dockerfile_has_load_bearing_lines():
 def test_dockerfile_respects_python_version_extras_and_port():
     df = generate_dockerfile(SPEC, python_version="3.11", extras="serve,otel", port=9000)
     assert "FROM python:3.11-slim" in df
-    assert "yaab[serve,otel]" in df
+    assert "yaab-sdk[serve,otel]" in df
     assert "EXPOSE 9000" in df
     assert "--port 9000" in df
 

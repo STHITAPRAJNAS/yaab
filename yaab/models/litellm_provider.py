@@ -56,7 +56,7 @@ def _require_litellm() -> Any:
     except ImportError as exc:  # pragma: no cover - depends on optional extra
         raise ModelError(
             "litellm is not installed. Install the model layer with "
-            "`pip install 'yaab[litellm]'`, or use TestModel for offline runs."
+            "`pip install 'yaab-sdk[litellm]'`, or use TestModel for offline runs."
         ) from exc
     return litellm
 

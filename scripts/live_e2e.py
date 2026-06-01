@@ -18,7 +18,7 @@ Setup (a .env in the repo root is auto-loaded):
     python scripts/live_e2e.py --only tools,rag # run a subset (by tag)
     python scripts/live_e2e.py --delay 1.0      # inter-check delay (rate limits)
 
-Requires:  pip install 'yaab[litellm,serve,rag,http]'
+Requires:  pip install 'yaab-sdk[litellm,serve,rag,http]'
 """
 
 from __future__ import annotations
