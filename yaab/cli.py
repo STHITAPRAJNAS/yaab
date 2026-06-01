@@ -121,8 +121,8 @@ def _evaluators_for_case(case: Any, requested: list[str]) -> list[Any]:
 
     Explicit ``--metric`` flags win and apply to every case (the caller asked
     for them by name, so we don't second-guess). With no flags we *auto-detect*
-    per case the way ``adk eval`` does: ``exact_match`` when an expected output
-    is present and ``tool_trajectory`` when an expected tool trajectory is — so
+    per case: ``exact_match`` when an expected output is present and
+    ``tool_trajectory`` when an expected tool trajectory is — so
     a mixed suite of output-cases and tool-cases scores the right thing for each
     without the author wiring metrics up by hand.
     """

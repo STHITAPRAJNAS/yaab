@@ -1,4 +1,4 @@
-"""Session / memory / artifact managers, ADK-style (offline)."""
+"""Session / memory / artifact managers (offline)."""
 
 import asyncio
 

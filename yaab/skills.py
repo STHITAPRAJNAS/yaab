@@ -2,9 +2,9 @@
 
 A :class:`Skill` packages a capability (its tools, an instruction fragment, an
 optional prompt, and declared permissions) so it can be attached to any agent
-and discovered/loaded via entry points. This is YAAB's analog of ADK's tool
-bundles and Pydantic AI's "capabilities", made first-class and governable: a
-skill's ``permissions`` feed the registry's action-scope, and its tools appear
+and discovered/loaded via entry points. Reusable capability bundles are made
+first-class and governable: a skill's ``permissions`` feed the registry's
+action-scope, and its tools appear
 in the agent card.
 
     from yaab import Agent

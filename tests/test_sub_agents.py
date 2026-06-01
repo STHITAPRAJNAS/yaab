@@ -1,4 +1,4 @@
-"""Tests for ADK-style sub-agent delegation (sub_agents + transfer_to_agent).
+"""Tests for sub-agent delegation (sub_agents + transfer_to_agent).
 
 These exercise the framework-managed handoff: a parent declares ``sub_agents``,
 the framework injects a ``transfer_to_agent`` tool, the model picks a sub-agent

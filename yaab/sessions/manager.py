@@ -1,8 +1,8 @@
-"""Session manager — scoped, high-level session operations (ADK-style).
+"""Session manager — scoped, high-level session operations.
 
 Where a :class:`SessionService` is the raw storage protocol, the
-:class:`SessionManager` adds the ``(app_name, user_id, session_id)`` scoping
-ADK developers expect, plus listing, state updates, and event appends. It
+:class:`SessionManager` adds ``(app_name, user_id, session_id)`` scoping,
+plus listing, state updates, and event appends. It
 composes a stable storage key from the scope so any flat ``SessionService``
 backend (in-memory, SQLite, Postgres, Redis) works unchanged.
 """
@@ -29,7 +29,7 @@ class SessionManager:
         self.service = service or InMemorySessionService()
         # (app, user) -> ordered list of session ids (best-effort index).
         self._index: dict[tuple[str, str], list[str]] = {}
-        # Shared state stores for the prefix scopes (ADK-style).
+        # Shared state stores for the prefix scopes.
         self._app_state: dict[str, dict[str, Any]] = {}  # app -> app: state
         self._user_state: dict[tuple[str, str], dict[str, Any]] = {}  # (app,user) -> user: state
 
@@ -73,7 +73,7 @@ class SessionManager:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[str]:
-        """List a user's session ids, with optional pagination (ADK #4621)."""
+        """List a user's session ids, with optional pagination."""
         ids = list(self._index.get((app_name, user_id), []))
         ids = ids[offset:]
         if limit is not None:
@@ -104,7 +104,7 @@ class SessionManager:
         session = await self.service.get(session_id)
         return dict(session.state) if session else {}
 
-    # --- prefix-scoped state (ADK temp:/user:/app:) -------------------
+    # --- prefix-scoped state (temp:/user:/app:) -------------------
     async def resolve_state(
         self,
         session_id: str,

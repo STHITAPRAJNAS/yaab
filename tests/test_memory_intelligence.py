@@ -1,4 +1,4 @@
-"""Tests for ADK-MemoryBank-parity memory intelligence.
+"""Tests for memory intelligence.
 
 Covers:
 - LLM-based memory extraction (distilled memories, not raw lines),

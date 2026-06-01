@@ -1,4 +1,4 @@
-"""Optional optimizable-program layer (DSPy-style)."""
+"""Optional optimizable-program layer."""
 
 from __future__ import annotations
 

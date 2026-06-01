@@ -1,12 +1,12 @@
 # YAAB documentation
 
 **Yet Another Agent Builder** — a type-safe, governance-first agent SDK with a
-Rust performance core. Type-safe like Pydantic AI, optimizable like DSPy,
-durable like LangGraph, clean like Google ADK, simple like Strands — on a
-universal LiteLLM model layer.
+Rust performance core. Type-safe, optimizable, durable, and simple — the best
+ideas from across the agent ecosystem on one runtime, on a universal LiteLLM
+model layer.
 
-YAAB is designed as a **drop-in upgrade path for teams on Google ADK** (and other
-frameworks): the same building blocks you expect — agents, runners, sessions,
+YAAB is designed as a **drop-in upgrade path for teams on other agent frameworks**:
+the same building blocks you expect — agents, runners, sessions,
 memory, artifacts, tools, multi-agent workflows, MCP/A2A interop, streaming — plus
 a first-class governance/registry/compliance layer that none of them ship.
 
@@ -33,13 +33,13 @@ a first-class governance/registry/compliance layer that none of them ship.
 | [Interop: MCP & A2A](interop.md) | MCP client/tools, A2A server + client (RemoteAgent) |
 | [Governance & compliance](governance.md) | Registry, lifecycle, guardrails, audit, evals, compliance mappers |
 | [Evaluation](evaluation.md) | Metric registry, RAGAS/DeepEval adapters, experiments, custom metrics |
-| [Optimization](optimization.md) | DSPy-style Signature/Module/Optimizer, compiled artifacts |
+| [Optimization](optimization.md) | Signature/Module/Optimizer, compiled artifacts |
 | [Prompts & skills](prompts-skills.md) | Versioned prompt management, reusable skill bundles |
 | [Serving & auth](serving.md) | `fastapi_server_app`, A2A server, bearer/API-key/OAuth2 |
 | [Platform extensions](platform.md) | Doc loaders, Chroma/Qdrant, sandbox, structured streaming, batch, `yaab web`, sinks |
 | [Extending YAAB](extending.md) | The component registry, protocols, entry points |
 | [Deployment](DEPLOYMENT.md) | Local → Cloud Run / Fargate / Lambda / K8s, durable backends |
-| [Comparison & gaps](COMPARISON.md) | Feature matrix vs. ADK/DSPy/Pydantic AI/Strands/LangGraph |
+| [Comparison & gaps](COMPARISON.md) | Feature matrix vs. other agent frameworks |
 | [Roadmap](ROADMAP.md) | What the ecosystem is requesting, mapped to YAAB & prioritized |
 
 ## The mental model
@@ -54,9 +54,9 @@ yaab-core ── a Rust performance core for the compute-bound primitives (pure-
 
 Three orchestration paths compose over **one runtime**:
 
-1. **Fast path** — `agent.run(prompt)`: a model-driven tool loop (Strands-style).
-2. **Graph path** — `StateGraph`: durable, checkpointed, HITL (LangGraph-style).
-3. **Optimizable path** — `Module.compile(...)`: tune at build time, freeze for prod (DSPy-style).
+1. **Fast path** — `agent.run(prompt)`: a model-driven tool loop.
+2. **Graph path** — `StateGraph`: durable, checkpointed, HITL.
+3. **Optimizable path** — `Module.compile(...)`: tune at build time, freeze for prod.
 
 ### Python vs Rust — the honest split
 

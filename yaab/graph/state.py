@@ -1,4 +1,4 @@
-"""Durable, checkpointed graph orchestration (LangGraph-style).
+"""Durable, checkpointed graph orchestration.
 
 A :class:`StateGraph` has nodes (functions), edges (incl. conditional edges and
 cycles), and typed state channels with reducers. It compiles to a runtime that
@@ -48,9 +48,9 @@ class Channel:
 class RetryPolicy(BaseModel):
     """Per-node retry policy with exponential backoff.
 
-    Mirrors the ADK 2.0 Workflow Runtime retry semantics: a node that raises a
-    matching exception is re-run up to ``max_attempts`` times, waiting
-    ``backoff * backoff_multiplier**(attempt-1)`` seconds before each retry.
+    A node that raises a matching exception is re-run up to ``max_attempts``
+    times, waiting ``backoff * backoff_multiplier**(attempt-1)`` seconds before
+    each retry.
 
     ``retry_on`` is a tuple of exception types — only matching errors retry, so
     a deterministic bug (the wrong ``TypeError``) can still surface fast instead

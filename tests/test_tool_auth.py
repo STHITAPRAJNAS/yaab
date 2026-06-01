@@ -1,6 +1,6 @@
 """Tests for tool-level authentication (credentials + OAuth2 consent surface).
 
-Covers the YAAB equivalent of ADK's tool ``auth_scheme``/``auth_credential``:
+Covers tool-level auth credentials:
 
 * :func:`as_headers` renders all four credential kinds to HTTP headers.
 * :meth:`ToolAuth.resolve` returns a static credential, calls a sync/async

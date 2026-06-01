@@ -1,10 +1,9 @@
-"""Durable, vector-store-backed long-term memory (ADK VertexAiRagMemory parity).
+"""Durable, vector-store-backed long-term memory.
 
 The only built-in :class:`~yaab.memory.MemoryService` is
-``InMemoryVectorMemory`` — process-local, lost on restart. ADK closes this gap
-with ``VertexAiRagMemoryService`` (memory persisted in a managed RAG corpus).
-:class:`KnowledgeBaseMemory` brings the same durability to YAAB, backend-
-agnostically: it implements the ``MemoryService`` protocol on top of a
+``InMemoryVectorMemory`` — process-local, lost on restart.
+:class:`KnowledgeBaseMemory` adds durability, backend-agnostically: it
+implements the ``MemoryService`` protocol on top of a
 :class:`~yaab.rag.knowledge.KnowledgeBase`, so memory persists in *any* of the
 eight vector-store backends (pgvector, Chroma, Qdrant, Pinecone, Weaviate,
 OpenSearch, Oracle, Aurora) the KnowledgeBase already supports.

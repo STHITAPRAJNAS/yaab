@@ -1,8 +1,7 @@
 """Run lifecycle management on the FastAPI server.
 
-Covers the gap-closing endpoints that let a remote caller submit a run in the
-background, poll its status, list runs, and cancel an in-flight run (the ADK
-"cancel runs" / OpenAI "interrupt active run" parity feature):
+Covers the endpoints that let a remote caller submit a run in the
+background, poll its status, list runs, and cancel an in-flight run:
 
 * ``POST /run`` with ``{"background": true}`` -> 202 + ``{run_id, status}``;
 * ``GET  /runs/{run_id}``  -> status (+ output/usage or error when finished);

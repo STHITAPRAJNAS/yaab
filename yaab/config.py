@@ -5,9 +5,9 @@ and non-coders can review and diff — and it pairs naturally with the governanc
 registry. ``yaml`` is imported lazily; :func:`agent_from_dict` works with no
 extra dependency.
 
-This mirrors Google ADK's "Agent Config" YAML: a single document fully
-describes an agent (or a *workflow* of agents) so the same artifact can be
-linted, versioned, and promoted through environments without code.
+A single YAML document fully describes an agent (or a *workflow* of agents) so
+the same artifact can be linted, versioned, and promoted through environments
+without code.
 
 Schema (all keys optional except ``name``)::
 
