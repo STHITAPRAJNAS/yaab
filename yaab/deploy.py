@@ -1,0 +1,411 @@
+"""One-command containerized deployment — ``yaab deploy``.
+
+This module *generates* deployment artifacts (a production Dockerfile, a
+``gcloud run deploy`` argv, a ``fly.toml``, a ``docker-compose.yml``) and
+optionally *executes* them, so an agent goes from a YAML spec to a running
+container with a single command.
+
+Two invariants drive the design, because deploy tooling that gets either wrong
+is dangerous:
+
+* **Plan-by-default.** :func:`deploy` returns a :class:`DeployPlan` and touches
+  nothing unless ``dry_run=False`` is passed explicitly. You can always inspect
+  exactly what would be written and run before anything happens — the CLI's
+  default mode just prints the plan.
+* **Secrets are never harvested.** We *never* read a real value out of the local
+  environment into a generated file or command. A key the user wants set on the
+  remote (e.g. ``GEMINI_API_KEY``) is emitted as the placeholder
+  ``GEMINI_API_KEY=<your-key>`` with a note telling them to fill it in via their
+  platform's secret manager. An accidental ``export GEMINI_API_KEY=...`` on the
+  build box can therefore never leak into an artifact we hand back.
+
+Generators are plain string/argv builders so they are trivially unit-testable
+and usable on a bare install (no Docker/gcloud/flyctl needed to *generate*). The
+optional execution path shells out via :mod:`subprocess` with ``check=False`` so
+a failing step is captured in the plan rather than raising — the caller decides
+what to do with a non-zero return.
+"""
+
+from __future__ import annotations
+
+import subprocess
+from collections.abc import Callable
+from pathlib import Path
+
+from pydantic import BaseModel, Field
+
+#: Targets :func:`deploy` understands. ``docker`` builds (and optionally runs) a
+#: local image; ``cloud-run`` builds + ``gcloud run deploy``; ``fly`` emits a
+#: ``fly.toml`` + ``flyctl deploy``.
+TARGETS = ("docker", "cloud-run", "fly")
+
+#: The placeholder we substitute for any env value that looks like a secret with
+#: no explicit value. Chosen to be obviously-not-a-real-value so it can't be
+#: mistaken for a credential in a diff or a CI log.
+SECRET_PLACEHOLDER = "<your-key>"
+
+#: Substrings that mark an env *name* as sensitive. When such a key arrives with
+#: an empty value we render the placeholder instead of an empty string so the
+#: user is reminded to set it (and we never read the real value from os.environ).
+_SECRET_HINTS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "API")
+
+
+class DeployPlan(BaseModel):
+    """The full, inspectable plan a :func:`deploy` call produced (or executed).
+
+    Keeping files and commands as plain data (rather than side effects) is what
+    makes ``dry_run`` honest: the same object describes both "what I would do"
+    and "what I did" — after execution, ``notes`` carries the captured stdout so
+    a CI log shows exactly what each step emitted.
+    """
+
+    target: str
+    #: filename -> file content, in the order they should be written.
+    files: dict[str, str] = Field(default_factory=dict)
+    #: argv lists to run in order (each is ready for ``subprocess.run``).
+    commands: list[list[str]] = Field(default_factory=list)
+    #: Human-facing guidance + (after execution) captured command output.
+    notes: list[str] = Field(default_factory=list)
+
+
+def _is_secret_key(name: str) -> bool:
+    """Whether an env var *name* should be treated as sensitive."""
+    upper = name.upper()
+    return any(hint in upper for hint in _SECRET_HINTS)
+
+
+def _render_env_value(name: str, value: str) -> str:
+    """Render an env value for an artifact, masking secrets that have no value.
+
+    A non-empty value the caller passed explicitly is theirs to use (they typed
+    it), so it passes through. An *empty* value for a secret-looking key becomes
+    the placeholder — this is the only branch that matters for the no-leak
+    guarantee, and crucially it never consults ``os.environ``.
+    """
+    if value:
+        return value
+    if _is_secret_key(name):
+        return SECRET_PLACEHOLDER
+    return value
+
+
+def _format_env_pairs(env: dict[str, str]) -> list[str]:
+    """Render ``{NAME: value}`` as ``NAME=value`` pairs with secrets masked."""
+    return [f"{name}={_render_env_value(name, value)}" for name, value in env.items()]
+
+
+def generate_dockerfile(
+    agent_spec: str,
+    *,
+    python_version: str = "3.12",
+    extras: str = "litellm,serve",
+    port: int = 8000,
+) -> str:
+    """Generate a production Dockerfile that serves ``agent_spec`` over HTTP.
+
+    Slim base + a single ``pip install`` of ``yaab[extras]`` plus the user's app
+    (the build context is copied in, so an editable/local module is installed),
+    then ``yaab serve`` bound to ``0.0.0.0`` so the container is reachable. We
+    pin the agent into the CMD rather than an env var so the image is
+    self-describing; override at ``docker run`` time if needed.
+    """
+    return f"""\
+# Generated by `yaab deploy` — production serving image for {agent_spec}.
+FROM python:{python_version}-slim
+
+WORKDIR /app
+
+# System certs for outbound model calls; kept minimal.
+RUN apt-get update \\
+    && apt-get install -y --no-install-recommends ca-certificates \\
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the agent code in, then install YAAB with the chosen extras plus the app.
+COPY . /app
+RUN pip install --no-cache-dir "yaab[{extras}]" \\
+    && pip install --no-cache-dir .
+
+EXPOSE {port}
+
+# Serve the agent on all interfaces so the container is reachable. Equivalent to:
+#   yaab serve {agent_spec} --host 0.0.0.0 --port {port}
+CMD ["yaab", "serve", "{agent_spec}", "--host", "0.0.0.0", "--port", "{port}"]
+"""
+
+
+def generate_cloud_run_cmd(
+    image: str,
+    *,
+    service_name: str,
+    region: str = "us-central1",
+    env: dict[str, str] | None = None,
+    allow_unauthenticated: bool = False,
+) -> list[str]:
+    """Build the ``gcloud run deploy`` argv for ``image`` as ``service_name``.
+
+    Returned as an argv list (not a shell string) so it drops straight into
+    ``subprocess.run`` without quoting hazards. Auth defaults to *locked down*
+    (``--no-allow-unauthenticated``) — a deploy command should never open a
+    service to the public internet unless the operator asks for it. Secret-ish
+    env values arrive masked via :func:`_render_env_value`, so this argv is safe
+    to print in a build log.
+    """
+    argv = [
+        "gcloud",
+        "run",
+        "deploy",
+        service_name,
+        "--image",
+        image,
+        "--region",
+        region,
+        "--platform",
+        "managed",
+    ]
+    if allow_unauthenticated:
+        argv.append("--allow-unauthenticated")
+    else:
+        argv.append("--no-allow-unauthenticated")
+    pairs = _format_env_pairs(env or {})
+    if pairs:
+        argv.extend(["--set-env-vars", ",".join(pairs)])
+    return argv
+
+
+def generate_fly_toml(app_name: str, port: int) -> str:
+    """Generate a minimal ``fly.toml`` for ``flyctl deploy`` keyed to ``app_name``."""
+    return f"""\
+# Generated by `yaab deploy` — Fly.io app config.
+app = "{app_name}"
+primary_region = "iad"
+
+[build]
+
+[http_service]
+  internal_port = {port}
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+"""
+
+
+def generate_compose(
+    agent_spec: str,
+    port: int,
+    *,
+    postgres: bool = False,
+    redis: bool = False,
+) -> str:
+    """Generate a ``docker-compose.yml`` with the agent + optional backends.
+
+    The agent service always builds from the local Dockerfile. ``postgres`` and
+    ``redis`` are opt-in (keyed by flags) because most agents need neither — when
+    requested they're wired in as named services so the compose stack is a
+    one-liner local mirror of a Cloud Run + managed-backend deployment. Secrets
+    are referenced as placeholders, never baked in.
+    """
+    lines = [
+        "# Generated by `yaab deploy` — local compose stack.",
+        'version: "3.9"',
+        "",
+        "services:",
+        "  agent:",
+        "    build: .",
+        f'    command: ["yaab", "serve", "{agent_spec}", "--host", "0.0.0.0", "--port", "{port}"]',
+        "    ports:",
+        f'      - "{port}:{port}"',
+        "    environment:",
+        f"      - GEMINI_API_KEY={SECRET_PLACEHOLDER}",
+    ]
+    depends: list[str] = []
+    if postgres:
+        depends.append("postgres")
+    if redis:
+        depends.append("redis")
+    if depends:
+        lines.append("    depends_on:")
+        lines.extend(f"      - {name}" for name in depends)
+    if postgres:
+        lines.extend(
+            [
+                "  postgres:",
+                "    image: postgres:16-alpine",
+                "    environment:",
+                # Bare variable name = compose pass-through: the operator supplies
+                # the value in their own environment; the compose file never
+                # carries a literal credential.
+                "      - POSTGRES_PASSWORD",
+                "      - POSTGRES_DB=yaab",
+                "    ports:",
+                '      - "5432:5432"',
+            ]
+        )
+    if redis:
+        lines.extend(
+            [
+                "  redis:",
+                "    image: redis:7-alpine",
+                "    ports:",
+                '      - "6379:6379"',
+            ]
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _docker_plan(agent_spec: str, *, port: int, extras: str, **_: object) -> DeployPlan:
+    """Plan for the ``docker`` target: a Dockerfile + ``docker build`` argv."""
+    dockerfile = generate_dockerfile(agent_spec, extras=extras, port=port)
+    compose = generate_compose(agent_spec, port)
+    tag = "yaab-agent"
+    return DeployPlan(
+        target="docker",
+        files={"Dockerfile": dockerfile, "docker-compose.yml": compose},
+        commands=[["docker", "build", "-t", tag, "."]],
+        notes=[
+            f"Build the image with `docker build -t {tag} .`",
+            f"Run it with `docker run -p {port}:{port} {tag}` "
+            "(set real secrets via -e at run time).",
+        ],
+    )
+
+
+def _cloud_run_plan(
+    agent_spec: str,
+    *,
+    port: int,
+    extras: str,
+    service_name: str = "yaab-agent",
+    region: str = "us-central1",
+    image: str | None = None,
+    env: dict[str, str] | None = None,
+    allow_unauthenticated: bool = False,
+    **_: object,
+) -> DeployPlan:
+    """Plan for ``cloud-run``: build the image, then ``gcloud run deploy``."""
+    dockerfile = generate_dockerfile(agent_spec, extras=extras, port=port)
+    image = image or f"gcr.io/PROJECT_ID/{service_name}:latest"
+    gcloud = generate_cloud_run_cmd(
+        image,
+        service_name=service_name,
+        region=region,
+        env=env or {},
+        allow_unauthenticated=allow_unauthenticated,
+    )
+    notes = [
+        f"Replace PROJECT_ID in the image tag ({image}) with your GCP project.",
+        "Build + push with `gcloud builds submit --tag <image>` "
+        "(or `docker build` + `docker push`).",
+        "Set real secret values in Cloud Run via Secret Manager / the console — "
+        "the --set-env-vars above only carries placeholders.",
+    ]
+    return DeployPlan(
+        target="cloud-run",
+        files={"Dockerfile": dockerfile},
+        commands=[["gcloud", "builds", "submit", "--tag", image], gcloud],
+        notes=notes,
+    )
+
+
+def _fly_plan(
+    agent_spec: str,
+    *,
+    port: int,
+    extras: str,
+    app_name: str = "yaab-agent",
+    **_: object,
+) -> DeployPlan:
+    """Plan for ``fly``: a Dockerfile + fly.toml, then ``flyctl deploy``."""
+    dockerfile = generate_dockerfile(agent_spec, extras=extras, port=port)
+    fly_toml = generate_fly_toml(app_name, port)
+    return DeployPlan(
+        target="fly",
+        files={"Dockerfile": dockerfile, "fly.toml": fly_toml},
+        commands=[["flyctl", "deploy", "--app", app_name]],
+        notes=[
+            f"Create the app once with `flyctl apps create {app_name}` if it does not exist.",
+            "Set secrets with `flyctl secrets set GEMINI_API_KEY=...` — never commit them.",
+        ],
+    )
+
+
+_PLANNERS: dict[str, Callable[..., DeployPlan]] = {
+    "docker": _docker_plan,
+    "cloud-run": _cloud_run_plan,
+    "fly": _fly_plan,
+}
+
+
+def deploy(
+    target: str,
+    agent_spec: str,
+    *,
+    dry_run: bool = True,
+    port: int = 8000,
+    extras: str = "litellm,serve",
+    **opts: object,
+) -> DeployPlan:
+    """Plan (and optionally execute) a deployment of ``agent_spec`` to ``target``.
+
+    With ``dry_run=True`` (the default) this is pure: it returns the
+    :class:`DeployPlan` and touches nothing. With ``dry_run=False`` it writes
+    every file in the plan to the current working directory and runs each command
+    via :mod:`subprocess` (``check=False`` — a failing step is recorded, not
+    raised), appending captured output to ``plan.notes`` so the returned object
+    is a complete record of what happened.
+
+    ``**opts`` carries target-specific knobs (``service_name``, ``region``,
+    ``env``, ``app_name``, ``image``, ``allow_unauthenticated``) straight to the
+    per-target planner.
+    """
+    planner = _PLANNERS.get(target)
+    if planner is None:
+        valid = ", ".join(TARGETS)
+        raise ValueError(f"unknown deploy target '{target}'. Valid targets: {valid}")
+
+    plan = planner(agent_spec, port=port, extras=extras, **opts)
+    if dry_run:
+        return plan
+
+    _execute(plan)
+    return plan
+
+
+def _execute(plan: DeployPlan, *, out_dir: Path | None = None) -> None:
+    """Write the plan's files to disk and run its commands, recording results.
+
+    Side-effecting half of :func:`deploy`. Files land in ``out_dir`` (default:
+    cwd). Each command runs with ``check=False`` and its output is folded into
+    ``plan.notes`` so a non-zero step shows up in the record instead of aborting
+    the run — deploy steps often partially succeed and the operator needs to see
+    which one failed and why.
+    """
+    target_dir = out_dir or Path.cwd()
+    write_files(plan, target_dir)
+    for cmd in plan.commands:
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        head = " ".join(cmd)
+        output = (result.stdout or "") + (result.stderr or "")
+        plan.notes.append(f"$ {head}\n[exit {result.returncode}] {output.strip()}")
+
+
+def write_files(plan: DeployPlan, out_dir: Path) -> list[Path]:
+    """Write every file in ``plan`` into ``out_dir`` (created if missing).
+
+    Factored out so the CLI's ``--out`` can write artifacts without executing
+    any commands — generate-and-inspect is a first-class workflow, not just a
+    side effect of a full deploy.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for name, content in plan.files.items():
+        path = out_dir / name
+        path.write_text(content, encoding="utf-8")
+        written.append(path)
+    return written

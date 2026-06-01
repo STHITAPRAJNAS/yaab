@@ -56,8 +56,12 @@ def main() -> int:
     from yaab.auth import BearerTokenAuth
     from yaab.serve import fastapi_server_app
 
-    agent = Agent("assistant", model=MODEL, registry_id="assistant",
-                  instructions="Answer in one short sentence.")
+    agent = Agent(
+        "assistant",
+        model=MODEL,
+        registry_id="assistant",
+        instructions="Answer in one short sentence.",
+    )
     auth = BearerTokenAuth({"secret-token": "alice"})
     port = _free_port()
     app = fastapi_server_app(agent, auth=auth, base_url=f"http://127.0.0.1:{port}")
@@ -90,18 +94,24 @@ def main() -> int:
 
         try:
             r = client.get(f"{base}/health")
-            check("GET /health", r.status_code == 200 and r.json()["status"] == "ok",
-                  r.json().get("agent", ""))
+            check(
+                "GET /health",
+                r.status_code == 200 and r.json()["status"] == "ok",
+                r.json().get("agent", ""),
+            )
         except Exception as e:  # noqa: BLE001
             check("GET /health", False, str(e)[:60])
 
         try:
             r = client.get(f"{base}/.well-known/agent.json")
             card = r.json()
-            check("GET /.well-known/agent.json",
-                  r.status_code == 200 and card["name"] == "assistant"
-                  and "bearer" in card.get("securitySchemes", {}),
-                  f"card={card['name']}")
+            check(
+                "GET /.well-known/agent.json",
+                r.status_code == 200
+                and card["name"] == "assistant"
+                and "bearer" in card.get("securitySchemes", {}),
+                f"card={card['name']}",
+            )
         except Exception as e:  # noqa: BLE001
             check("agent card", False, str(e)[:60])
 
@@ -114,34 +124,44 @@ def main() -> int:
 
         # /run with a real model.
         try:
-            r = client.post(f"{base}/run", json={"prompt": "What is the capital of France?"},
-                            headers=auth_h)
+            r = client.post(
+                f"{base}/run", json={"prompt": "What is the capital of France?"}, headers=auth_h
+            )
             out = r.json().get("output", "")
-            check("POST /run (live model)", r.status_code == 200 and "paris" in out.lower(),
-                  f"{out[:40]!r} | tok={r.json().get('usage', {}).get('total_tokens')}")
+            check(
+                "POST /run (live model)",
+                r.status_code == 200 and "paris" in out.lower(),
+                f"{out[:40]!r} | tok={r.json().get('usage', {}).get('total_tokens')}",
+            )
         except Exception as e:  # noqa: BLE001
             check("POST /run", False, str(e)[:60])
 
         # A2A task submit + poll.
         try:
-            r = client.post(f"{base}/a2a/tasks",
-                            json={"message": {"parts": [{"text": "Say the word OK."}]}},
-                            headers=auth_h)
+            r = client.post(
+                f"{base}/a2a/tasks",
+                json={"message": {"parts": [{"text": "Say the word OK."}]}},
+                headers=auth_h,
+            )
             task = r.json()
             tid = task["id"]
             polled = client.get(f"{base}/a2a/tasks/{tid}", headers=auth_h)
-            check("POST /a2a/tasks + poll (live)",
-                  r.status_code == 200 and task["status"]["state"] == "completed"
-                  and polled.json()["id"] == tid,
-                  f"task={tid[:18]} state={task['status']['state']}")
+            check(
+                "POST /a2a/tasks + poll (live)",
+                r.status_code == 200
+                and task["status"]["state"] == "completed"
+                and polled.json()["id"] == tid,
+                f"task={tid[:18]} state={task['status']['state']}",
+            )
         except Exception as e:  # noqa: BLE001
             check("A2A task", False, str(e)[:60])
 
         # SSE event stream over HTTP.
         try:
             got_start = got_end = False
-            with client.stream("POST", f"{base}/run/stream",
-                               json={"prompt": "Count to three."}, headers=auth_h) as resp:
+            with client.stream(
+                "POST", f"{base}/run/stream", json={"prompt": "Count to three."}, headers=auth_h
+            ) as resp:
                 for line in resp.iter_lines():
                     if "event: run_start" in line:
                         got_start = True
@@ -154,8 +174,9 @@ def main() -> int:
         # Token streaming over HTTP.
         try:
             chunks = 0
-            with client.stream("POST", f"{base}/chat/stream",
-                               json={"prompt": "Say hello."}, headers=auth_h) as resp:
+            with client.stream(
+                "POST", f"{base}/chat/stream", json={"prompt": "Say hello."}, headers=auth_h
+            ) as resp:
                 for line in resp.iter_lines():
                     if line.startswith("data:") and "[DONE]" not in line:
                         chunks += 1
