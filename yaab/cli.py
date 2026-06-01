@@ -264,6 +264,86 @@ def _eval(
     return 0
 
 
+def _parse_env_pairs(items: list[str]) -> dict[str, str]:
+    """Parse repeated ``--env KEY=VAL`` flags into an ordered dict.
+
+    A bare ``KEY=`` (empty value) is intentional and meaningful: it tells the
+    deploy layer "the remote needs this var set, but I'm not giving you the
+    value" — secrets are rendered as placeholders, never read from the local
+    environment. We preserve flag order so the generated argv is deterministic.
+    """
+    env: dict[str, str] = {}
+    for item in items:
+        key, sep, value = item.partition("=")
+        if not sep:
+            raise SystemExit(f"--env expects KEY=VALUE (or KEY= for a placeholder), got '{item}'")
+        env[key] = value
+    return env
+
+
+def _print_plan(plan: Any) -> None:
+    """Print a deploy plan as files-then-commands-then-notes, plainly.
+
+    Dependency-free formatting (like the rest of this CLI) so it reads cleanly in
+    any terminal or CI log. Commands are shown as the exact argv that would run,
+    so plan-only mode doubles as documentation the user can copy.
+    """
+    for name, content in plan.files.items():
+        print(f"# --- {name} " + "-" * max(0, 60 - len(name)))
+        print(content)
+    print("# --- commands " + "-" * 48)
+    for cmd in plan.commands:
+        print("  " + " ".join(cmd))
+    if plan.notes:
+        print("# --- notes " + "-" * 51)
+        for note in plan.notes:
+            print(f"  - {note}")
+
+
+def _deploy(
+    target: str,
+    spec: str,
+    *,
+    out: str | None,
+    execute: bool,
+    port: int,
+    env: dict[str, str],
+    service_name: str | None,
+    region: str,
+) -> int:
+    """Generate (and optionally write/execute) deployment artifacts for an agent.
+
+    Default is plan-only: build the :class:`~yaab.deploy.DeployPlan` and print
+    it, touching nothing. ``--out`` writes the files without running anything;
+    ``--execute`` writes them *and* runs the build/deploy commands (docker /
+    gcloud / flyctl must be installed). We never resolve the real secret values
+    here — they flow through as placeholders.
+    """
+    from .deploy import DeployPlan, deploy, write_files
+
+    opts: dict[str, Any] = {"port": port, "env": env, "region": region}
+    if service_name:
+        # Used as the service name (cloud-run) and the app name (fly).
+        opts["service_name"] = service_name
+        opts["app_name"] = service_name
+
+    plan: DeployPlan = deploy(target, spec, dry_run=not execute, **opts)
+
+    if out and not execute:
+        from pathlib import Path
+
+        written = write_files(plan, Path(out))
+        for path in written:
+            print(f"wrote {path}")
+        print("# --- commands (run these to deploy) " + "-" * 24)
+        for cmd in plan.commands:
+            print("  " + " ".join(cmd))
+        return 0
+
+    _print_plan(plan)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="yaab", description="Yet Another Agent Builder")
     parser.add_argument("--version", action="version", version=f"yaab {__version__}")
@@ -314,6 +394,34 @@ def main(argv: list[str] | None = None) -> int:
         help="exit 1 if any metric mean is below this score (CI gate)",
     )
 
+    p_deploy = sub.add_parser(
+        "deploy",
+        help="generate (and optionally run) container deploy artifacts",
+    )
+    p_deploy.add_argument("target", choices=["docker", "cloud-run", "fly"])
+    p_deploy.add_argument("spec", help="agent as module:attribute (e.g. app.main:agent)")
+    p_deploy.add_argument("--out", default=None, help="write the generated files to this directory")
+    p_deploy.add_argument(
+        "--execute",
+        action="store_true",
+        help="actually build/deploy (docker, gcloud, or flyctl must be installed)",
+    )
+    p_deploy.add_argument("--port", type=int, default=8000)
+    p_deploy.add_argument(
+        "--env",
+        action="append",
+        default=[],
+        dest="env",
+        metavar="KEY=VAL",
+        help="env var for the deploy (repeatable); secrets render as placeholders",
+    )
+    p_deploy.add_argument(
+        "--service-name",
+        default=None,
+        help="Cloud Run service name / Fly app name (default: yaab-agent)",
+    )
+    p_deploy.add_argument("--region", default="us-central1")
+
     args = parser.parse_args(argv)
 
     if args.command == "info" or args.command is None:
@@ -341,6 +449,17 @@ def main(argv: list[str] | None = None) -> int:
             metrics=args.metrics,
             output=args.output,
             fail_under=args.fail_under,
+        )
+    if args.command == "deploy":
+        return _deploy(
+            args.target,
+            args.spec,
+            out=args.out,
+            execute=args.execute,
+            port=args.port,
+            env=_parse_env_pairs(args.env),
+            service_name=args.service_name,
+            region=args.region,
         )
     parser.print_help()
     return 1

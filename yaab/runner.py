@@ -53,6 +53,7 @@ class Runner:
         plugins: list[Plugin] | None = None,
         memory_app_name: str | None = None,
         default_tool_timeout: float | None = None,
+        run_checkpointer: Any | None = None,
     ) -> None:
         self.session_service = session_service or InMemorySessionService()
         self.memory_service = memory_service
@@ -64,6 +65,12 @@ class Runner:
         #: Default per-tool execution timeout (seconds); a tool's own ``timeout``
         #: overrides it. ``None`` means no timeout.
         self.default_tool_timeout = default_tool_timeout
+        #: Optional :class:`~yaab.graph.checkpoint.Checkpointer`. When set *and* a
+        #: ``resume_id`` is passed to ``run``/``run_stream``, the fast-path loop is
+        #: made fault-tolerant: progress is persisted after every completed step so
+        #: a crashed run can resume where it left off. ``None`` keeps the
+        #: classic zero-overhead fast path.
+        self.run_checkpointer = run_checkpointer
 
     def add_plugin(self, plugin: Plugin) -> Runner:
         self.plugins.append(plugin)
@@ -81,6 +88,7 @@ class Runner:
         usage_limits: UsageLimits | None = None,
         cancellation: CancellationToken | None = None,
         timeout: float | None = None,
+        resume_id: str | None = None,
     ) -> RunResult[Any]:
         events: list[Event] = []
         async for event in self.run_stream(
@@ -92,6 +100,7 @@ class Runner:
             usage_limits=usage_limits,
             cancellation=cancellation,
             timeout=timeout,
+            resume_id=resume_id,
         ):
             events.append(event)
         final = events[-1]
@@ -118,16 +127,41 @@ class Runner:
         usage_limits: UsageLimits | None = None,
         cancellation: CancellationToken | None = None,
         timeout: float | None = None,
+        resume_id: str | None = None,
         _transfer_depth: int = 0,
         _transfer_cap: int | None = None,
     ) -> AsyncIterator[Event]:
         """Execute the loop, yielding a typed :class:`Event` per step.
+
+        When the runner has a ``run_checkpointer`` and ``resume_id`` is set, loop
+        progress is persisted after every completed step. A crashed run can then
+        be resumed by re-invoking with the same ``resume_id`` (the captured model
+        turns are NOT re-requested), and a finished ``resume_id`` returns the
+        persisted result idempotently. Sub-agent handoffs ignore ``resume_id`` —
+        only the root run is checkpointed.
 
         ``_transfer_depth``/``_transfer_cap`` are internal: they track how many
         sub-agent handoffs deep this run already is (and the root's cap) so a
         chain of ``transfer_to_agent`` calls can't loop forever. External callers
         leave them at their defaults.
         """
+        # Resumable fast path: only the root run (never a sub-agent handoff) is
+        # checkpointed, and only when both a checkpointer and a resume_id exist.
+        # ``ckpt_id`` is the narrowed (non-None) resume key when checkpointing is on.
+        ckpt_id: str | None = None
+        if self.run_checkpointer is not None and _transfer_depth == 0:
+            ckpt_id = resume_id
+        resume_state: dict[str, Any] | None = None
+        if self.run_checkpointer is not None and ckpt_id is not None:
+            saved = self.run_checkpointer.get(ckpt_id)
+            if saved is not None:
+                _, state = saved
+                if state.get("finished"):
+                    # Idempotent re-invoke: rebuild the final result, no model calls.
+                    yield self._replay_finished(agent, state)
+                    return
+                resume_state = state
+
         ctx: RunContext = RunContext(
             deps=deps, session_id=session_id, identity=identity, usage=Usage()
         )
@@ -173,12 +207,6 @@ class Runner:
                     prompt_text, Stage.INPUT, agent_id=agent.registry_id, identity=identity
                 )
 
-            messages = await self._build_messages(agent, ctx, scanned_prompt, original=prompt)
-            user_msg = messages[-1]
-            yield emit(EventType.USER_MESSAGE, content=scanned_prompt)
-            for plugin in self.plugins:
-                await plugin.on_user_message(ctx, agent.name, user_msg)
-
             tool_schemas = [t.schema() for t in agent.tools] or None
             output_adapter, output_schema = _output_spec(agent.output_type)
             tool_choice = _normalize_tool_choice(getattr(agent, "tool_choice", None), tool_schemas)
@@ -195,9 +223,30 @@ class Runner:
             # (the configured agent.output_retries must hold for every run).
             output_retries_left = agent.output_retries
 
+            if resume_state is not None:
+                # Resume: rehydrate the loop from the last checkpoint instead of
+                # rebuilding the prompt. The captured model turns are already in
+                # ``messages`` so they are never re-requested; the forced first
+                # model call (if any) has already happened, so relax tool_choice.
+                messages = [Message.model_validate(m) for m in resume_state["messages"]]
+                tool_counts = dict(resume_state.get("tool_counts", {}))
+                ctx.usage = Usage.model_validate(resume_state["usage"])
+                output_retries_left = resume_state.get("output_retries_left", output_retries_left)
+                start_step = int(resume_state["step"]) + 1
+                if _is_forcing_tool_choice(effective_tool_choice):
+                    effective_tool_choice = "auto"
+                yield emit(EventType.USER_MESSAGE, content=scanned_prompt)
+            else:
+                messages = await self._build_messages(agent, ctx, scanned_prompt, original=prompt)
+                user_msg = messages[-1]
+                yield emit(EventType.USER_MESSAGE, content=scanned_prompt)
+                for plugin in self.plugins:
+                    await plugin.on_user_message(ctx, agent.name, user_msg)
+                start_step = 0
+
             context_strategy = getattr(agent, "context_strategy", None)
 
-            for _step in range(agent.max_steps):
+            for _step in range(start_step, agent.max_steps):
                 check_controls()  # cancellation / timeout / usage caps
                 # Keep the conversation within the model's context window.
                 if context_strategy is not None:
@@ -305,6 +354,13 @@ class Runner:
                         produced = True
                         break
 
+                    # Tool round complete: checkpoint progress so a crash after
+                    # this point resumes from here (the captured model+tool turn
+                    # is never re-requested).
+                    if ckpt_id is not None:
+                        self._save_step(
+                            ckpt_id, _step, messages, tool_counts, ctx.usage, output_retries_left
+                        )
                     # Forcing choice has done its job; let the next turn finalize.
                     if _is_forcing_tool_choice(effective_tool_choice):
                         effective_tool_choice = "auto"
@@ -330,6 +386,11 @@ class Runner:
                             ),
                         )
                     )
+                    # A validation retry is also a completed model step.
+                    if ckpt_id is not None:
+                        self._save_step(
+                            ckpt_id, _step, messages, tool_counts, ctx.usage, output_retries_left
+                        )
                     continue
 
             if not produced:
@@ -361,6 +422,12 @@ class Runner:
                 usage=ctx.usage,
                 run_id=ctx.run_id,
             )
+            # Terminal marker: a finished resume_id must never re-run; a later
+            # re-invoke reconstructs this exact result from the checkpoint.
+            if ckpt_id is not None:
+                self._save_finished(
+                    ckpt_id, agent.max_steps, messages, ctx.usage, final_output, ctx.run_id
+                )
             yield emit(EventType.RUN_END, result=result)
 
         except Exception as exc:  # noqa: BLE001 - surface as a terminal ERROR event
@@ -372,6 +439,68 @@ class Runner:
                     error=str(exc),
                 )
             yield emit(EventType.ERROR, error=exc)
+
+    # ------------------------------------------------------------------
+    # Resumable fast-path checkpoint helpers.
+    # ------------------------------------------------------------------
+    def _save_step(
+        self,
+        resume_id: str,
+        step: int,
+        messages: list[Message],
+        tool_counts: dict[str, int],
+        usage: Usage,
+        output_retries_left: int,
+    ) -> None:
+        """Persist loop progress after a completed step (model turn + tools)."""
+        assert self.run_checkpointer is not None
+        state = {
+            "step": step,
+            "messages": [m.model_dump(mode="json") for m in messages],
+            "tool_counts": dict(tool_counts),
+            "usage": usage.model_dump(mode="json"),
+            "output_retries_left": output_retries_left,
+        }
+        self.run_checkpointer.put(resume_id, step, state)
+
+    def _save_finished(
+        self,
+        resume_id: str,
+        step: int,
+        messages: list[Message],
+        usage: Usage,
+        output: Any,
+        run_id: str,
+    ) -> None:
+        """Write the terminal ``finished`` marker carrying the final result."""
+        assert self.run_checkpointer is not None
+        state = {
+            "step": step,
+            "finished": True,
+            "messages": [m.model_dump(mode="json") for m in messages],
+            "usage": usage.model_dump(mode="json"),
+            "output": _safe(output),
+            "run_id": run_id,
+        }
+        # Use a high step number so this marker sorts last in history().
+        self.run_checkpointer.put(resume_id, step + 1, state)
+
+    def _replay_finished(self, agent: Any, state: dict[str, Any]) -> Event:
+        """Reconstruct a terminal RUN_END event from a finished checkpoint."""
+        messages = [Message.model_validate(m) for m in state.get("messages", [])]
+        usage = Usage.model_validate(state["usage"]) if "usage" in state else Usage()
+        result: RunResult = RunResult(
+            output=state.get("output"),
+            messages=messages,
+            usage=usage,
+            run_id=state.get("run_id", ""),
+        )
+        return Event(
+            type=EventType.RUN_END,
+            agent=agent.name,
+            run_id=result.run_id,
+            payload={"result": result},
+        )
 
     # ------------------------------------------------------------------
     async def stream_run(
