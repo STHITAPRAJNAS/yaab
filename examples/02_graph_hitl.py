@@ -35,7 +35,7 @@ app = graph.compile(checkpointer=MemorySaver())
 
 # First call runs until the interrupt, then pauses.
 paused = app.invoke({"amount": 10_000}, thread_id="txn-1")
-print("paused:", paused.interrupted, "→ needs review of:", paused.interrupt_value)
+print("paused:", paused.interrupted, "-> needs review of:", paused.interrupt_value)
 
 # A human approves; resume the same thread.
 done = app.invoke(thread_id="txn-1", resume=True)

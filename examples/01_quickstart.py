@@ -37,4 +37,4 @@ weather = Agent(
     output_type=Weather,
 )
 result = weather.run_sync("weather in Paris")
-print("structured:", result.output, "→ city =", result.output.city)
+print("structured:", result.output, "-> city =", result.output.city)
