@@ -6,6 +6,29 @@ All notable changes to YAAB are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — Tested examples & accurate docs
+- **Example test coverage** — every `examples/*.py` script and `samples/*` package
+  runs in CI two ways: as a subprocess under a forced legacy-Windows console
+  encoding (catches `UnicodeEncodeError` crashes before users hit them) and
+  imported in-process with assertions on what `main()` actually returns
+  (`tests/test_examples.py`).
+- **Import-safe examples** — examples 01–09 expose `main()` entry points that
+  return their results; the streaming example demonstrates the public
+  `Agent.stream_events` API.
+- **Doc-snippet tests** — `tests/test_doc_snippets.py` parses every Python snippet
+  in the onboarding docs, resolves its imports, and verifies every name it uses is
+  real, so the docs can't drift from the API.
+- **Windows CI** — the suite runs on `windows-latest` (pure-Python core) alongside
+  the Linux matrix.
+
+### Fixed — Examples & docs accuracy
+- `examples/01_quickstart.py` and `examples/02_graph_hitl.py` crashed with
+  `UnicodeEncodeError` on legacy Windows (cp1252) consoles.
+- `docs/state.md` snippets used `Role` / `Runner` without importing them;
+  `docs/streaming-events.md` documented events the runner never emits and a
+  private accessor instead of `Agent.stream_events`; `docs/quickstart.md` and
+  `docs/get-started.md` overstated offline coverage and the `[rust]` extra.
+
 ### Added — Multi-agent delegation, eval CLI, declarative specs & run management
 - **Sub-agent delegation** — `Agent(sub_agents=[...], transfer_depth=3)` auto-injects
   a built-in `transfer_to_agent` tool; the LLM routes by each sub-agent's
@@ -64,10 +87,10 @@ All notable changes to YAAB are documented here. The format follows
   `RemoteAgent.poll_task()` for long-running A2A tasks.
 - **`BootstrapFewShotWithRandomSearch`** optimizer and minibatched `MIPROv2`,
   closer to DSPy's real search loops.
-- `samples/` — six end-to-end sample apps & patterns (customer support, research
-  assistant, document Q&A, approval pipeline, triage swarm, coding helper), each
-  runnable offline and against a real/free model via `YAAB_SAMPLE_MODEL`, with a
-  test that validates each on a deterministic model.
+- `samples/` — seven end-to-end sample apps & patterns (customer support, personal
+  assistant, memory patterns, multi-agent state, approval pipeline, triage swarm,
+  coding helper), each runnable offline and against a real/free model via
+  `YAAB_SAMPLE_MODEL`, with a test that validates each on a deterministic model.
 - `docs/concepts.md` — what every component is for, with disambiguation of the
   confusable pairs (Checkpointer vs Session, Memory vs RAG, authorization vs
   approval vs guardrails, optimizer vs evaluator).
