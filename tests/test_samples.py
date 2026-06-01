@@ -86,9 +86,23 @@ async def test_triage_swarm_routes_to_tech():
 @pytest.mark.asyncio
 async def test_coding_helper_approved():
     from samples import coding_helper
+    from yaab import EventType
 
-    out = await coding_helper.run("sum 0..9")
-    assert "45" in out
+    agent, runner = coding_helper.build()
+    result = await runner.run(agent, "Compute the sum of 0..9 in Python.")
+
+    # The sandboxed python_exec tool must have actually executed and produced
+    # the answer -- a scripted final message alone is not a passing run.
+    tool_results = [
+        e
+        for e in result.events
+        if e.type is EventType.TOOL_RESULT and e.payload.get("name") == "python_exec"
+    ]
+    assert tool_results, "python_exec never executed"
+    executed = str(tool_results[0].payload["result"])
+    assert "error" not in executed.lower(), f"python_exec failed: {executed}"
+    assert "45" in executed, f"sandbox did not compute the sum: {executed!r}"
+    assert "45" in result.output
 
 
 @pytest.mark.asyncio

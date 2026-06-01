@@ -1,0 +1,52 @@
+# YAAB
+
+> Yet Another Agent Builder — a type-safe, governance-first Python agent SDK with a
+> Rust performance core. Agents, tools, typed output, durable graph orchestration,
+> RAG, multi-agent composition, MCP/A2A interop, and a first-class
+> governance/registry/compliance layer, on a universal LiteLLM model layer.
+> Everything runs offline with TestModel for development and CI.
+
+## Getting started
+
+- [Get started](https://sthitaprajnas.github.io/yaab/get-started/): install → first agent → tools → RAG → memory → multi-agent → govern → deploy
+- [Quickstart](https://sthitaprajnas.github.io/yaab/quickstart/): three-line agent, tools, typed output, offline testing
+- [Concepts](https://sthitaprajnas.github.io/yaab/concepts/): what each component is for
+
+## Core
+
+- [Agents](https://sthitaprajnas.github.io/yaab/agents/): Agent[Deps, Output], dependency injection, instructions
+- [Tools](https://sthitaprajnas.github.io/yaab/tools/): typed function tools, agent-as-tool, MCP tools
+- [Models](https://sthitaprajnas.github.io/yaab/models/): LiteLLM layer, fallbacks, retries, TestModel
+- [State: sessions, memory, artifacts](https://sthitaprajnas.github.io/yaab/state/)
+- [Storage & backends](https://sthitaprajnas.github.io/yaab/storage-backends/): Postgres, Redis, pgvector, OpenSearch, Chroma, Qdrant
+- [RAG](https://sthitaprajnas.github.io/yaab/rag/): knowledge base, chunking, vector stores, citations
+- [Multi-agent](https://sthitaprajnas.github.io/yaab/multi-agent/): Sequential, Parallel, Loop, Swarm
+- [Streaming & events](https://sthitaprajnas.github.io/yaab/streaming-events/): token streaming, semantic events, SSE
+- [Usage limits & run control](https://sthitaprajnas.github.io/yaab/limits/)
+- [Robustness](https://sthitaprajnas.github.io/yaab/robustness/): built-in tools, HITL approval, resilience
+
+## Orchestration
+
+- [Graph orchestration](https://sthitaprajnas.github.io/yaab/graph/): durable StateGraph, checkpoints, HITL
+- [Interop: MCP & A2A](https://sthitaprajnas.github.io/yaab/interop/)
+
+## Governance
+
+- [Governance & compliance](https://sthitaprajnas.github.io/yaab/governance/): registry, lifecycle, guardrails, audit, compliance mappers
+- [Evaluation](https://sthitaprajnas.github.io/yaab/evaluation/): metrics, RAGAS/DeepEval adapters, experiments
+
+## Going further
+
+- [Optimization](https://sthitaprajnas.github.io/yaab/optimization/): Signature/Module/Optimizer, compiled artifacts
+- [Prompts & skills](https://sthitaprajnas.github.io/yaab/prompts-skills/)
+- [Serving & auth](https://sthitaprajnas.github.io/yaab/serving/): fastapi_server_app, A2A server, auth
+- [Platform extensions](https://sthitaprajnas.github.io/yaab/platform/)
+- [Extending YAAB](https://sthitaprajnas.github.io/yaab/extending/): component registry, protocols, entry points
+- [Deployment](https://sthitaprajnas.github.io/yaab/DEPLOYMENT/): Cloud Run, Fargate, Lambda, K8s
+
+## Optional
+
+- [Repository](https://github.com/STHITAPRAJNAS/yaab)
+- [Examples](https://github.com/STHITAPRAJNAS/yaab/tree/main/examples): tested, runnable example scripts
+- [Samples](https://github.com/STHITAPRAJNAS/yaab/tree/main/samples): end-to-end sample applications
+- [Changelog](https://github.com/STHITAPRAJNAS/yaab/blob/main/CHANGELOG.md)

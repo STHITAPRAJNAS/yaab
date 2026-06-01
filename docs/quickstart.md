@@ -13,7 +13,9 @@ print(agent.run_sync("Say hello in one sentence.").output)
 
 ## No API key? Run fully offline
 
-Every example in these docs runs without a network using `TestModel`:
+Swap any model string for `TestModel` and the same code runs without a network —
+that's how YAAB's own test suite and `examples/` run in CI. (Snippets that show a
+provider model string like `"openai/gpt-4o"` need that provider's API key.)
 
 ```python
 from yaab import Agent

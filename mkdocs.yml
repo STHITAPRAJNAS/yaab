@@ -1,0 +1,117 @@
+site_name: YAAB
+site_description: >-
+  Yet Another Agent Builder — a type-safe, governance-first agent SDK with a
+  Rust performance core.
+site_url: https://sthitaprajnas.github.io/yaab/
+repo_url: https://github.com/STHITAPRAJNAS/yaab
+repo_name: STHITAPRAJNAS/yaab
+edit_uri: edit/develop/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+# Internal working notes live in docs/ on developer machines but are git-ignored;
+# never publish them.
+exclude_docs: |
+  ADK_GAP_ANALYSIS.md
+  COMPARISON.md
+  ROADMAP.md
+  RESEARCH_FEATURE_DEMAND.md
+  superpowers/
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_root_heading: true
+            show_source: false
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+            filters: ["!^_"]
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Get started: get-started.md
+      - Quickstart: quickstart.md
+      - Concepts: concepts.md
+  - Core:
+      - Agents: agents.md
+      - Tools: tools.md
+      - Models: models.md
+      - "State: sessions, memory, artifacts": state.md
+      - Storage & backends: storage-backends.md
+      - State scoping & AG-UI: state-and-agui.md
+      - RAG: rag.md
+      - Multi-agent: multi-agent.md
+      - Streaming & events: streaming-events.md
+      - Usage limits & run control: limits.md
+      - Robustness: robustness.md
+  - Orchestration:
+      - Graph orchestration: graph.md
+      - "Interop: MCP & A2A": interop.md
+  - Governance:
+      - Governance & compliance: governance.md
+      - Evaluation: evaluation.md
+  - Going further:
+      - Optimization: optimization.md
+      - Prompts & skills: prompts-skills.md
+      - Serving & auth: serving.md
+      - Platform extensions: platform.md
+      - Extending YAAB: extending.md
+      - Deployment: DEPLOYMENT.md
+  - API reference:
+      - yaab.agent: api/agent.md
+      - yaab.runner: api/runner.md
+      - yaab.types: api/types.md
+      - yaab.tools: api/tools.md
+      - yaab.models: api/models.md
+      - yaab.testing: api/testing.md
+      - yaab.graph: api/graph.md
+      - yaab.multiagent: api/multiagent.md
+      - yaab.sessions: api/sessions.md
+      - yaab.memory: api/memory.md
+      - yaab.rag: api/rag.md
+      - yaab.governance: api/governance.md
+      - yaab.serve: api/serve.md
+      - yaab.limits: api/limits.md
