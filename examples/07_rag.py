@@ -11,7 +11,8 @@ from yaab.rag import KeywordReranker
 from yaab.testing import TestModel
 
 
-async def main():
+async def main() -> dict:
+    """Build a knowledge base, retrieve from it, and hand it to an agent."""
     # 1) Build a knowledge base and ingest documents (chunk -> embed -> store).
     kb = KnowledgeBase(reranker=KeywordReranker(weight=0.4), name="handbook")
     kb.add(
@@ -21,7 +22,8 @@ async def main():
             Document(text="The on-call rotation is published every Monday.", source="ops.md"),
         ]
     )
-    print("chunks indexed:", kb.count())
+    chunks = kb.count()
+    print("chunks indexed:", chunks)
 
     # 2) Retrieve with source citations.
     results = await kb.retrieve("How do I file an expense report?", k=1)
@@ -32,7 +34,8 @@ async def main():
     kb.reindex(
         Document(text="Expense reports now use the new portal.", source="hr.md"), source="hr.md"
     )
-    print("after reindex:", kb.count())
+    after_reindex = kb.count()
+    print("after reindex:", after_reindex)
 
     # 4) Give retrieval to an agent as a tool.
     agent = Agent(
@@ -42,8 +45,16 @@ async def main():
         ),
         tools=[kb.as_tool()],
     )
-    answer = await agent.run("Where do expense reports go?")
-    print("agent:", answer.output)
+    answer = (await agent.run("Where do expense reports go?")).output
+    print("agent:", answer)
+
+    return {
+        "chunks": chunks,
+        "results": results,
+        "after_reindex": after_reindex,
+        "answer": answer,
+    }
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
