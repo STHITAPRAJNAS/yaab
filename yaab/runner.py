@@ -328,6 +328,163 @@ class Runner:
             yield emit(EventType.ERROR, error=exc)
 
     # ------------------------------------------------------------------
+    async def stream_run(
+        self,
+        agent: Any,
+        prompt: str,
+        *,
+        deps: Any = None,
+        session_id: str | None = None,
+        identity: str | None = None,
+        usage_limits: UsageLimits | None = None,
+        cancellation: CancellationToken | None = None,
+        timeout: float | None = None,
+    ) -> AsyncIterator[Event]:
+        """Run the full multi-step loop while streaming token deltas.
+
+        Unlike :meth:`run_stream` (which calls the model with ``complete`` and so
+        only emits whole responses), this drives each turn with ``model.stream``:
+        text arrives as :attr:`EventType.TEXT_DELTA` events *as it generates*,
+        tools execute mid-run (``TOOL_CALL``/``TOOL_RESULT``), and the loop
+        continues until a final answer — the LangGraph/ADK "stream through the
+        tool loop" behavior. Terminates with ``FINAL_OUTPUT`` then ``RUN_END``.
+        """
+        ctx: RunContext = RunContext(
+            deps=deps, session_id=session_id, identity=identity, usage=Usage()
+        )
+        gov = self.governance
+        if timeout is not None:
+            if cancellation is None:
+                cancellation = CancellationToken.with_timeout(timeout)
+            elif cancellation.deadline is None:
+                cancellation.deadline = time.monotonic() + timeout
+        tool_counts: dict[str, int] = {}
+
+        def emit(etype: EventType, **payload: Any) -> Event:
+            return Event(type=etype, agent=agent.name, run_id=ctx.run_id, payload=payload)
+
+        try:
+            if gov is not None:
+                gov.check_registered(agent.registry_id, identity)
+                gov.record_run_start(agent.registry_id, identity, prompt)
+            yield emit(EventType.RUN_START, prompt=prompt)
+
+            for plugin in self.plugins:
+                await plugin.before_run(ctx, agent.name, prompt)
+
+            from .content import Content
+
+            prompt_text = prompt.text if isinstance(prompt, Content) else str(prompt)
+            scanned_prompt = prompt_text
+            if gov is not None:
+                scanned_prompt = gov.scan(
+                    prompt_text, Stage.INPUT, agent_id=agent.registry_id, identity=identity
+                )
+            messages = await self._build_messages(agent, ctx, scanned_prompt, original=prompt)
+            yield emit(EventType.USER_MESSAGE, content=scanned_prompt)
+
+            tool_schemas = [t.schema() for t in agent.tools] or None
+            output_adapter, _ = _output_spec(agent.output_type)
+            effective_tool_choice = _normalize_tool_choice(
+                getattr(agent, "tool_choice", None), tool_schemas
+            )
+            context_strategy = getattr(agent, "context_strategy", None)
+            final_output: Any = None
+            produced = False
+
+            for _step in range(agent.max_steps):
+                if cancellation is not None:
+                    cancellation.raise_if_cancelled()
+                if usage_limits is not None:
+                    usage_limits.check_usage(ctx.usage)
+                if context_strategy is not None:
+                    messages = await context_strategy.apply(messages, model=agent.model)
+
+                # Stream this turn: accumulate text + tool calls.
+                text_parts: list[str] = []
+                turn_tool_calls: list[ToolCall] = []
+                stream_kwargs: dict[str, Any] = {}
+                if effective_tool_choice is not None and tool_schemas:
+                    stream_kwargs["tool_choice"] = effective_tool_choice
+                async for chunk in agent.model.stream(
+                    messages, tools=tool_schemas, **stream_kwargs
+                ):
+                    if chunk.delta:
+                        text_parts.append(chunk.delta)
+                        yield emit(EventType.TEXT_DELTA, delta=chunk.delta)
+                    if chunk.tool_call is not None:
+                        turn_tool_calls.append(chunk.tool_call)
+                content = "".join(text_parts)
+
+                if turn_tool_calls:
+                    messages.append(
+                        Message(
+                            role=Role.ASSISTANT, content=content, tool_calls=turn_tool_calls
+                        )
+                    )
+                    for tc in turn_tool_calls:
+                        tool_counts[tc.name] = tool_counts.get(tc.name, 0) + 1
+                        if usage_limits is not None:
+                            usage_limits.check_tool_call(tc.name, tool_counts)
+                    for tc in turn_tool_calls:
+                        yield emit(EventType.TOOL_CALL, name=tc.name, arguments=tc.arguments)
+                    if getattr(agent, "parallel_tools", True) and len(turn_tool_calls) > 1:
+                        results = await self._run_tools_parallel(agent, ctx, turn_tool_calls)
+                    else:
+                        results = [await self._run_tool(agent, ctx, tc) for tc in turn_tool_calls]
+                    for tc, result_value in zip(turn_tool_calls, results, strict=False):
+                        yield emit(EventType.TOOL_RESULT, name=tc.name, result=_safe(result_value))
+                        messages.append(
+                            Message(
+                                role=Role.TOOL,
+                                name=tc.name,
+                                tool_call_id=tc.id,
+                                content=_to_text(result_value),
+                            )
+                        )
+                    if _is_forcing_tool_choice(effective_tool_choice):
+                        effective_tool_choice = "auto"
+                    continue
+
+                # No tool calls -> finalize.
+                final_output = self._coerce_output(agent, content, output_adapter)
+                produced = True
+                break
+
+            if not produced:
+                raise MaxStepsExceeded(
+                    f"agent '{agent.name}' did not finish within {agent.max_steps} steps"
+                )
+
+            text_out = _to_text(final_output)
+            if gov is not None:
+                scanned = gov.scan(
+                    text_out, Stage.OUTPUT, agent_id=agent.registry_id, identity=identity
+                )
+                if scanned != text_out and isinstance(final_output, str):
+                    final_output = scanned
+            yield emit(EventType.FINAL_OUTPUT, output=_safe(final_output))
+            for plugin in self.plugins:
+                await plugin.after_run(ctx, agent.name, final_output)
+            await self._persist(agent, ctx, scanned_prompt, final_output)
+            if gov is not None:
+                gov.record_run_end(agent.registry_id, identity, text_out)
+            result: RunResult = RunResult(
+                output=final_output, messages=messages, usage=ctx.usage, run_id=ctx.run_id
+            )
+            yield emit(EventType.RUN_END, result=result)
+
+        except Exception as exc:  # noqa: BLE001 - surface as a terminal ERROR event
+            if gov is not None:
+                gov.audit.record(
+                    AuditKind.ERROR,
+                    agent_id=agent.registry_id,
+                    identity=identity,
+                    error=str(exc),
+                )
+            yield emit(EventType.ERROR, error=exc)
+
+    # ------------------------------------------------------------------
     async def stream_text(
         self,
         agent: Any,

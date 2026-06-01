@@ -196,6 +196,40 @@ class Agent(Generic[Deps, Output]):
         ot = output_type or self.output_type
         return _stream_structured(self, prompt, output_type=ot, deps=deps, identity=identity)
 
+    def stream_events(
+        self,
+        prompt: str,
+        *,
+        deps: Deps = None,  # type: ignore[assignment]
+        session_id: str | None = None,
+        identity: str | None = None,
+        usage_limits: Any | None = None,
+        cancellation: Any | None = None,
+        timeout: float | None = None,
+    ) -> Any:
+        """Stream the full multi-step run as typed events, tokens included.
+
+        Yields :class:`~yaab.types.Event` objects: ``TEXT_DELTA`` token deltas as
+        the model generates, ``TOOL_CALL``/``TOOL_RESULT`` as tools run mid-run,
+        and a terminal ``FINAL_OUTPUT`` + ``RUN_END`` (which carries the
+        :class:`~yaab.types.RunResult`). Unlike :meth:`stream` this drives the
+        whole tool loop, not just the answering turn::
+
+            async for event in agent.stream_events("..."):
+                if event.type is EventType.TEXT_DELTA:
+                    print(event.payload["delta"], end="")
+        """
+        return self._get_runner().stream_run(
+            self,
+            prompt,
+            deps=deps,
+            session_id=session_id,
+            identity=identity,
+            usage_limits=usage_limits,
+            cancellation=cancellation,
+            timeout=timeout,
+        )
+
     def run_sync(
         self,
         prompt: str,

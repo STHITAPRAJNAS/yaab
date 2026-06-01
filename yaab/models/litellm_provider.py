@@ -147,6 +147,7 @@ class LiteLLMModel:
         messages: list[Message],
         *,
         tools: list[dict[str, Any]] | None = None,
+        tool_choice: Any | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         litellm = _require_litellm()
@@ -154,12 +155,40 @@ class LiteLLMModel:
         extra = self._params(**kwargs)
         if tools:
             extra["tools"] = tools
+            if tool_choice is not None:
+                extra["tool_choice"] = tool_choice
         response = await litellm.acompletion(
             model=self.model, messages=payload, stream=True, **extra
         )
+        # Accumulate streamed tool-call fragments (id/name/args arrive in pieces,
+        # keyed by index) so we can emit assembled ToolCalls at the end.
+        pending: dict[int, dict[str, Any]] = {}
         async for chunk in response:
             delta = chunk.choices[0].delta
             text = getattr(delta, "content", None)
             if text:
                 yield StreamChunk(delta=text)
+            for tcd in getattr(delta, "tool_calls", None) or []:
+                idx = getattr(tcd, "index", 0) or 0
+                slot = pending.setdefault(idx, {"id": None, "name": "", "args": ""})
+                if getattr(tcd, "id", None):
+                    slot["id"] = tcd.id
+                fn = getattr(tcd, "function", None)
+                if fn is not None:
+                    if getattr(fn, "name", None):
+                        slot["name"] = fn.name
+                    if getattr(fn, "arguments", None):
+                        slot["args"] += fn.arguments
+        for idx in sorted(pending):
+            slot = pending[idx]
+            if not slot["name"]:
+                continue
+            try:
+                args = json.loads(slot["args"] or "{}")
+            except (json.JSONDecodeError, TypeError):
+                args = {}
+            tc_kwargs: dict[str, Any] = {"name": slot["name"], "arguments": args}
+            if slot["id"]:
+                tc_kwargs["id"] = slot["id"]
+            yield StreamChunk(tool_call=ToolCall(**tc_kwargs))
         yield StreamChunk(done=True)

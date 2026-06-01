@@ -152,6 +152,33 @@ async def c_tool_loop_multi():
     return f"{len(tool_events)} tool calls -> {r.output[:40]!r}"
 
 
+async def c_streaming_tool_loop():
+    """Stream tokens AND run a tool mid-stream against a live model."""
+    from yaab import Agent, EventType, tool
+
+    @tool
+    def get_time(zone: str = "UTC") -> str:
+        """Return the current time for a timezone."""
+        return f"12:00 {zone}"
+
+    agent = Agent("s", model=MODEL, tools=[get_time],
+                  instructions="Use get_time, then state the time in a sentence.")
+    types: list = []
+    deltas: list[str] = []
+    tool_calls: list[str] = []
+    async for e in agent.stream_events("What time is it in UTC?"):
+        types.append(e.type)
+        if e.type is EventType.TEXT_DELTA:
+            deltas.append(e.payload["delta"])
+        elif e.type is EventType.TOOL_CALL:
+            tool_calls.append(e.payload["name"])
+    assert EventType.TOOL_CALL in types and EventType.RUN_END in types, types
+    assert tool_calls, "no tool call streamed"
+    text = "".join(deltas)
+    assert "12" in text, text
+    return f"{len(deltas)} deltas, tools={tool_calls}, text={text[:30]!r}"
+
+
 async def c_tool_choice_required():
     from yaab import Agent, tool
 
@@ -664,6 +691,7 @@ CHECKS = [
     ("basic completion", ["core"], c_basic),
     ("token streaming", ["core", "stream"], c_streaming),
     ("multi-turn tool loop (2 calls)", ["tools"], c_tool_loop_multi),
+    ("streaming through tool loop", ["tools", "stream"], c_streaming_tool_loop),
     ("tool_choice=required", ["tools"], c_tool_choice_required),
     ("structured output (pydantic)", ["structured"], c_structured_output),
     ("structured output (nested list)", ["structured"], c_structured_nested),

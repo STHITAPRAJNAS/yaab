@@ -105,8 +105,16 @@ class TestModel:
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         resp = await self.complete(messages, tools=tools, **kwargs)
-        for token in resp.content.split(" "):
-            yield StreamChunk(delta=token + " ")
+        # Surface tool calls so the streaming tool loop can drive them; otherwise
+        # stream the text answer token-by-token.
+        if resp.tool_calls:
+            for tc in resp.tool_calls:
+                yield StreamChunk(tool_call=tc)
+        else:
+            # Tokenize so the deltas reconstruct the content exactly (no spurious
+            # trailing space): first word as-is, each subsequent prefixed by space.
+            for i, word in enumerate(resp.content.split(" ")):
+                yield StreamChunk(delta=word if i == 0 else " " + word)
         yield StreamChunk(done=True)
 
 

@@ -120,6 +120,8 @@ class EventType(str, Enum):
     USER_MESSAGE = "user_message"
     MODEL_REQUEST = "model_request"
     MODEL_DELTA = "model_delta"
+    #: A token-level text delta during a streaming run (Runner.stream_run).
+    TEXT_DELTA = "text_delta"
     MODEL_RESPONSE = "model_response"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
