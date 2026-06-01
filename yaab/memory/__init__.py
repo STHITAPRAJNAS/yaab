@@ -62,7 +62,7 @@ def hashing_embedder(dim: int = 64) -> Embedder:
 #: Provider key -> its standard small embedding model, for default auto-upgrade.
 _EMBED_PROVIDERS = {
     "OPENAI_API_KEY": "openai/text-embedding-3-small",
-    "GEMINI_API_KEY": "gemini/text-embedding-004",
+    "GEMINI_API_KEY": "gemini/gemini-embedding-001",
     "COHERE_API_KEY": "cohere/embed-english-v3.0",
     "MISTRAL_API_KEY": "mistral/mistral-embed",
     "VOYAGE_API_KEY": "voyage/voyage-3",
