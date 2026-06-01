@@ -17,26 +17,34 @@ failure-mode/anti-pattern doc sections, community templates
 (CODE_OF_CONDUCT, issue/PR templates), docstring backfill, `mike` versioning,
 and any public-API code changes (e.g. exporting `Role` from top-level `yaab`,
 a public alias for `_get_runner().run_stream`). API changes belong to the
-parallel feature-gap workstream (see Coordination).
+parallel feature-gap workstream (see Coordination). Also deferred to
+follow-up waves: examples for the Wave 1 features, the SRE incident/runbook
+docs page (kill switch / replay / audit-trail query), perf-harness docs,
+golden-signal metrics docs — these depend on the feature workstream's
+roadmap items.
 
 ---
 
 ## Coordination with the feature-gap workstream
 
-A separate agent is concurrently closing feature gaps vs ADK
-(`feature/adk-parity-wave1`). Two consequences:
+A separate agent is concurrently closing feature gaps vs ADK. Its
+**ADK-parity Wave 1 (PR #26) is already merged into `develop`** and into this
+branch: model router, OpenAPI toolset, EvalSet, memory intelligence
+(extraction), graph retries, context caching, per-run cost tracking. Two
+consequences:
 
 1. **Conflict surface is kept minimal.** This wave touches `docs/`,
    `examples/`, `samples/coding_helper/`, `tests/`, `mkdocs.yml`,
    `.github/workflows/`, and `pyproject.toml` (docs extra only). The only
    files both waves may touch are `ci.yml` and `pyproject.toml` — both are
    small, append-only edits here, so merge conflicts are trivially resolvable.
-2. **New features will need new examples.** When the feature wave lands
-   (parallel tools, guardrail adapters, streaming tool loop, …), each new
-   capability should get an example/sample *plus an entry in
-   `tests/test_examples.py`*. The test harness built in Tier 2 is designed so
-   adding a new example is a two-line parametrization change. That follow-up
-   examples wave is explicitly **not** part of this PR.
+2. **New features will need new examples.** Each Wave 1 capability (model
+   router, OpenAPI tools, EvalSet, memory extraction, graph retries) should
+   get an example/sample *plus an entry in `tests/test_examples.py`*. The
+   test harness built in Tier 2 is designed so adding a new example is a
+   two-line parametrization change. That follow-up examples wave is
+   explicitly **not** part of this PR. The new modules DO get API-reference
+   pages in Tier 3 (§3.2), since those are auto-generated.
 
 ---
 
@@ -195,9 +203,11 @@ the Tier 3 doc-snippet tests where applicable, otherwise by review.
 
 ### 3.2 Auto-generated API reference (mkdocstrings)
 - `mkdocstrings[python]` plugin; new `docs/api/` section with one page per
-  public module: `yaab` (top-level exports), `yaab.tools`, `yaab.models`,
-  `yaab.graph`, `yaab.multiagent`, `yaab.rag`, `yaab.governance`,
-  `yaab.sessions`/`memory`/`artifacts`, `yaab.testing`, `yaab.serve`.
+  public module: `yaab` (top-level exports), `yaab.tools` (incl. the new
+  `yaab.tools.openapi`), `yaab.models` (incl. the new `yaab.models.router`),
+  `yaab.graph`, `yaab.multiagent`, `yaab.rag`, `yaab.governance` (incl. the
+  new `yaab.governance.evalset`), `yaab.sessions`/`memory`/`artifacts`
+  (incl. the new `yaab.memory.extraction`), `yaab.testing`, `yaab.serve`.
 - Renders existing docstrings + signatures (source is `py.typed` with PEP 224
   attribute docstrings). Coverage holes are accepted this wave; backfill is a
   follow-up.
@@ -253,4 +263,5 @@ the Tier 3 doc-snippet tests where applicable, otherwise by review.
 4. `mkdocs build --strict` passes; the site deploys to GitHub Pages on merge;
    the API reference renders for all listed modules.
 5. `llms.txt` is generated and served.
-6. Existing tests (320 passed / 3 skipped baseline) stay green throughout.
+6. Existing tests (399 passed / 3 skipped baseline, post-Wave-1 merge) stay
+   green throughout.
