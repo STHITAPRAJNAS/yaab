@@ -60,18 +60,102 @@ class BootstrapFewShot:
         )
 
 
-class MIPROv2:
-    """Instruction-proposal search (simplified).
+class BootstrapFewShotWithRandomSearch:
+    """DSPy's workhorse optimizer: bootstrap a demo pool, then random-search demo
+    subsets and keep the best on a validation set.
 
-    Tries a small set of candidate instruction phrasings, scores each on the
-    trainset, and keeps the best. A production implementation would run a
-    Bayesian search over instructions *and* demos; this captures the contract.
+    1. Run the module over ``trainset`` and collect every example it answers
+       correctly (per ``metric``) into a demo pool.
+    2. Build candidate demo sets — zero-shot, the full (capped) pool, and
+       ``num_candidates`` random subsets — and score each on ``valset`` (defaults
+       to ``trainset``).
+    3. Freeze the best-scoring set. Falls back to zero-shot if nothing bootstraps.
+
+    Random choices are seeded (``seed``) so a compile is reproducible.
+    """
+
+    name = "bootstrap_rs"
+
+    def __init__(
+        self,
+        *,
+        max_demos: int = 4,
+        num_candidates: int = 8,
+        threshold: float = 0.5,
+        seed: int = 0,
+    ) -> None:
+        self.max_demos = max_demos
+        self.num_candidates = num_candidates
+        self.threshold = threshold
+        self.seed = seed
+
+    async def compile(
+        self,
+        module: Module,
+        trainset: list[Case],
+        metric: Metric,
+        *,
+        valset: list[Case] | None = None,
+    ) -> CompiledArtifact:
+        import random
+
+        val = valset or trainset
+        # 1. Bootstrap a pool of demos the module already gets right.
+        pool: list[dict[str, Any]] = []
+        for case in trainset:
+            inputs = case.inputs if isinstance(case.inputs, dict) else {"input": case.inputs}
+            prediction = await module.forward(**inputs)
+            if metric(case, prediction) >= self.threshold:
+                demo = dict(inputs)
+                demo.update(prediction)
+                pool.append(demo)
+
+        # 2. Candidate demo sets: zero-shot, full (capped) pool, random subsets.
+        rng = random.Random(self.seed)
+        candidates: list[list[dict[str, Any]]] = [[]]
+        if pool:
+            candidates.append(pool[: self.max_demos])
+            for _ in range(self.num_candidates):
+                k = rng.randint(1, min(self.max_demos, len(pool)))
+                candidates.append(rng.sample(pool, k))
+
+        # 3. Score each candidate on the validation set; keep the best.
+        best_demos: list[dict[str, Any]] = []
+        best_score = -1.0
+        for demos in candidates:
+            module.demos = demos
+            score = await _mean_score(module, val, metric)
+            if score > best_score:
+                best_demos, best_score = demos, score
+
+        module.demos = best_demos
+        return CompiledArtifact(
+            instructions=module.signature.instructions,
+            demos=best_demos,
+            optimizer=self.name,
+            train_score=max(best_score, 0.0),
+        )
+
+
+class MIPROv2:
+    """Instruction × demo search with minibatched candidate evaluation.
+
+    Proposes candidate instruction phrasings and demo sets (zero-shot +
+    bootstrapped), scores each candidate on a random ``minibatch_size`` slice of
+    the trainset (DSPy minibatches to keep search cheap), then re-scores the top
+    candidates on the full set to pick a winner. A fuller implementation would run
+    a Bayesian search; this captures the minibatch-then-confirm contract.
     """
 
     name = "miprov2"
 
     def __init__(
-        self, candidates: list[str] | None = None, *, bootstrap_demos: bool = True
+        self,
+        candidates: list[str] | None = None,
+        *,
+        bootstrap_demos: bool = True,
+        minibatch_size: int = 0,
+        seed: int = 0,
     ) -> None:
         self.candidates = candidates or [
             "Answer accurately and concisely.",
@@ -79,26 +163,46 @@ class MIPROv2:
             "Be correct. Prefer the exact expected format.",
         ]
         self.bootstrap_demos = bootstrap_demos
+        self.minibatch_size = minibatch_size
+        self.seed = seed
 
     async def compile(
         self, module: Module, trainset: list[Case], metric: Metric
     ) -> CompiledArtifact:
+        import random
+
         original = module.signature.instructions
-        # Candidate demo sets: none, or bootstrapped from correct predictions.
         demo_sets: list[list[dict]] = [[]]
         if self.bootstrap_demos:
             booted = await BootstrapFewShot().compile(module, trainset, metric)
             module.demos = []  # reset; we search demos explicitly
             demo_sets.append(booted.demos)
 
-        best = (original, list(module.demos), -1.0)
+        rng = random.Random(self.seed)
+
+        def batch() -> list[Case]:
+            if self.minibatch_size and 0 < self.minibatch_size < len(trainset):
+                return rng.sample(trainset, self.minibatch_size)
+            return trainset
+
+        # Stage 1: cheap minibatch scoring of every (instruction, demos) candidate.
+        scored: list[tuple[str, list[dict], float]] = []
         for instr in [original, *self.candidates]:
             for demos in demo_sets:
                 module.signature.instructions = instr
                 module.demos = demos
-                score = await _mean_score(module, trainset, metric)
-                if score > best[2]:
-                    best = (instr, demos, score)
+                score = await _mean_score(module, batch(), metric)
+                scored.append((instr, demos, score))
+
+        # Stage 2: confirm the top few candidates on the full trainset.
+        scored.sort(key=lambda t: t[2], reverse=True)
+        best = (original, list(module.demos), -1.0)
+        for instr, demos, _ in scored[:3]:
+            module.signature.instructions = instr
+            module.demos = demos
+            score = await _mean_score(module, trainset, metric)
+            if score > best[2]:
+                best = (instr, demos, score)
 
         module.signature.instructions, module.demos = best[0], best[1]
         return CompiledArtifact(
@@ -182,4 +286,11 @@ async def _mean_score(module: Module, trainset: list[Case], metric: Metric) -> f
     return total / len(trainset)
 
 
-__all__ = ["Optimizer", "BootstrapFewShot", "MIPROv2", "GEPA", "Metric"]
+__all__ = [
+    "Optimizer",
+    "BootstrapFewShot",
+    "BootstrapFewShotWithRandomSearch",
+    "MIPROv2",
+    "GEPA",
+    "Metric",
+]
