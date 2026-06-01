@@ -7,6 +7,22 @@ All notable changes to YAAB are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Streaming through the tool loop** — `Agent.stream_events` / `Runner.stream_run`
+  yield `TEXT_DELTA` token deltas live AND run tools mid-run across multiple steps
+  (vs the single-turn `agent.stream()`); `LiteLLMModel.stream` now surfaces
+  streamed tool calls.
+- **`Agent(model_settings=…)`** — forward arbitrary provider kwargs (temperature,
+  top_p, seed, max_tokens, reasoning_effort, extra_body, …) on every model call.
+- **Run lifecycle control** — `UsageLimits.max_wall_seconds` is now enforced,
+  `Agent.reset()` clears cached state for reuse, and external mid-run
+  cancellation via `CancellationToken` is hardened across the run + streaming
+  paths.
+- **MCP server resources & prompts** — `MCPResource` / `MCPPrompt` let an
+  `MCPServer` serve resources and prompt templates (not just tools); plus
+  `RemoteAgent.poll_task()` for long-running A2A tasks.
+- **`BootstrapFewShotWithRandomSearch`** optimizer and minibatched `MIPROv2`,
+  closer to DSPy's real search loops.
+- `docs/RESEARCH_FEATURE_DEMAND.md` — cross-framework feature-demand study.
 - `samples/` — six end-to-end sample apps & patterns (customer support, research
   assistant, document Q&A, approval pipeline, triage swarm, coding helper), each
   runnable offline and against a real/free model via `YAAB_SAMPLE_MODEL`, with a
