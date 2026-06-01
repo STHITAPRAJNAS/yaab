@@ -61,7 +61,9 @@ jobs:
           - { os: ubuntu-latest,  target: x86_64 }
           - { os: ubuntu-latest,  target: aarch64 }
           - { os: macos-latest,   target: aarch64 }
-          - { os: macos-13,       target: x86_64 }
+          # Intel macOS wheels cross-compile from the ARM runner (the dedicated
+          # Intel runners are retired and jobs targeting them never start).
+          - { os: macos-latest,   target: x86_64 }
           - { os: windows-latest, target: x64 }
     steps:
       - uses: actions/checkout@v4
@@ -138,6 +140,9 @@ jobs:
           path: dist
           merge-multiple: true
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Idempotent re-runs: files already on PyPI are skipped, not errors.
+          skip-existing: true
 
   # Publishes independently of yaab-core so the SDK ships even if the core
   # publish fails (the `rust` extra simply resolves once core is published).
@@ -154,6 +159,9 @@ jobs:
           name: sdk-dist
           path: dist
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Idempotent re-runs: files already on PyPI are skipped, not errors.
+          skip-existing: true
 
   github-release:
     name: GitHub release
