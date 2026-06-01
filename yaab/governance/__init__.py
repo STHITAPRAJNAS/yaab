@@ -62,6 +62,13 @@ from .registry import (
     SQLiteRegistryBackend,
 )
 from .service import GovernanceMode, GovernanceService
+from .simulation import (
+    SimulationEvaluator,
+    SimulationResult,
+    UserSimulator,
+    simulate,
+    simulate_evalset,
+)
 
 __all__ = [
     # service
@@ -126,6 +133,12 @@ __all__ = [
     # evalset (portable .evalset.json format)
     "EvalSet",
     "EvalCase",
+    # user simulation (multi-turn agent eval)
+    "UserSimulator",
+    "SimulationResult",
+    "SimulationEvaluator",
+    "simulate",
+    "simulate_evalset",
     # monitoring
     "DriftMonitor",
     "DriftReport",

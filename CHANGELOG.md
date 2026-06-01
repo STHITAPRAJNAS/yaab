@@ -6,6 +6,31 @@ All notable changes to YAAB are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — Resumable runs, simulation evals, dev console, deploy CLI & voice
+- **Resumable fast-path runs** — `Runner(run_checkpointer=…)` plus a `resume_id`
+  makes the model-driven loop fault-tolerant: progress is checkpointed after
+  every completed step, a crashed run resumes without re-requesting captured
+  model turns, and a finished `resume_id` replays its result idempotently with
+  zero model calls.
+- **User-simulation evals** — `UserSimulator` / `simulate` / `simulate_evalset`
+  drive a multi-turn conversation against the agent under test with an LLM
+  persona pursuing a goal, then score goal achievement — exercising real
+  turn-taking instead of a pre-scripted transcript.
+- **Dev console** — `yaab web` now serves a single-page playground (chat, live
+  event stream, agent info) on top of the FastAPI server.
+- **Built-in tool catalog** — sandboxed file read/write/list tools, `fetch_url`
+  (URL → readable page text), provider-native search-grounding settings, and a
+  keyless DuckDuckGo provider for `web_search`; every built-in is registered in
+  the component registry.
+- **`yaab deploy` CLI** — generate (and optionally execute) Dockerfile /
+  Cloud Run / Fly.io deployment artifacts from an agent spec; plan-by-default,
+  with secrets always emitted as placeholders rather than read from the
+  environment.
+- **Turn-based voice agents** — `VoiceAgent` (speech-to-text → agent loop →
+  text-to-speech) with streaming transcripts, injectable `Transcriber`/`Speaker`
+  protocols, and a documented contract for future realtime (bidirectional)
+  backends.
+
 ### Added — Multi-agent delegation, eval CLI, declarative specs & run management
 - **Sub-agent delegation** — `Agent(sub_agents=[...], transfer_depth=3)` auto-injects
   a built-in `transfer_to_agent` tool; the LLM routes by each sub-agent's
