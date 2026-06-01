@@ -26,7 +26,7 @@ from . import _core
 from .agent import Agent
 from .artifacts.manager import ArtifactManager
 from .batch import batch_embed, batch_map, batch_run
-from .config import agent_from_dict, agent_from_yaml
+from .config import agent_from_dict, agent_from_yaml, runner_from_dict
 from .content import Content, Part, PartKind
 from .context import KeepAll, SummarizeHistory, TruncateMessages
 from .eval import available_metrics, get_metric, register_metric
@@ -61,6 +61,7 @@ from .sessions.manager import SessionManager
 from .skills import Skill
 from .state import State
 from .tools import AgentTool, FunctionTool, tool
+from .tools.auth import ToolAuth, ToolAuthRequired, ToolCredential
 from .tools.openapi import OpenAPITool, openapi_toolset
 from .types import Event, EventType, Message, RunContext, RunResult, Usage
 
@@ -116,6 +117,10 @@ __all__ = [
     # OpenAPI toolset
     "openapi_toolset",
     "OpenAPITool",
+    # tool-level auth (credentials + OAuth2 consent)
+    "ToolAuth",
+    "ToolCredential",
+    "ToolAuthRequired",
     # run controls
     "UsageLimits",
     "CancellationToken",
@@ -126,6 +131,7 @@ __all__ = [
     # declarative config
     "agent_from_dict",
     "agent_from_yaml",
+    "runner_from_dict",
     # batch / offline inference
     "batch_run",
     "batch_map",
