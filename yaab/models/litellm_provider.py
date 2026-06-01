@@ -61,6 +61,67 @@ def _require_litellm() -> Any:
     return litellm
 
 
+#: The ephemeral cache-control marker Anthropic (via litellm) understands. A
+#: breakpoint caches the entire prefix up to and including the marked block.
+_EPHEMERAL = {"type": "ephemeral"}
+
+
+def _supports_anthropic_cache(model: str) -> bool:
+    """Whether ``model`` accepts Anthropic-style ``cache_control`` breakpoints.
+
+    Keyed off the model name so it works across the routes litellm exposes a
+    Claude model through (``anthropic/``, ``bedrock/...claude...``,
+    ``vertex_ai/claude-...``), without importing provider tables.
+    """
+    name = model.lower()
+    return "anthropic" in name or "claude" in name
+
+
+def _cache_last_system_block(payload: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return a copy of ``payload`` with a cache breakpoint on the system prompt.
+
+    The system message's string content is rewritten into Anthropic's
+    list-of-blocks form and the LAST block carries ``cache_control`` so the
+    whole (typically large, stable) system prompt is cached. Messages are copied
+    shallowly so the caller's :class:`Message`-derived dicts are never mutated.
+    If there is no system message the payload is returned unchanged.
+    """
+    out: list[dict[str, Any]] = []
+    patched = False
+    for msg in payload:
+        if not patched and msg.get("role") == "system":
+            content = msg.get("content")
+            if isinstance(content, str):
+                blocks: list[dict[str, Any]] = [{"type": "text", "text": content}]
+            elif isinstance(content, list):
+                # Already block form (e.g. multimodal): copy so we can mark a block.
+                blocks = [dict(b) if isinstance(b, dict) else b for b in content]
+            else:
+                out.append(msg)
+                continue
+            if blocks:
+                blocks[-1] = {**blocks[-1], "cache_control": _EPHEMERAL}
+                out.append({**msg, "content": blocks})
+                patched = True
+                continue
+        out.append(msg)
+    return out
+
+
+def _cache_last_tool(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return a copy of ``tools`` with a cache breakpoint on the last definition.
+
+    One breakpoint on the final tool caches the entire tool block, which is the
+    stable, expensive-to-resend prefix. The input list and its dicts are not
+    mutated.
+    """
+    if not tools:
+        return tools
+    out = list(tools)
+    out[-1] = {**out[-1], "cache_control": _EPHEMERAL}
+    return out
+
+
 class LiteLLMModel:
     """Provider-agnostic model over LiteLLM's unified interface."""
 
@@ -75,6 +136,8 @@ class LiteLLMModel:
         api_base: str | None = None,
         api_key: str | None = None,
         track_cost: bool = True,
+        cache_system_prompt: bool = False,
+        cache_tools: bool = False,
         **default_params: Any,
     ) -> None:
         self.name = model
@@ -86,6 +149,15 @@ class LiteLLMModel:
         self.api_base = api_base
         self.api_key = api_key
         self.track_cost = track_cost
+        #: Write-side prompt/context caching. When set, cache breakpoints are
+        #: injected for providers that support them (Anthropic ``cache_control``
+        #: blocks today) so the heavy, stable prefix — the system prompt and/or
+        #: tool definitions — is billed at the cheaper cached rate on reuse.
+        #: Providers without explicit cache directives (OpenAI, Gemini implicit
+        #: caching) are left untouched. This is the WRITE counterpart to the
+        #: cached-token READ accounting in :meth:`_normalize`.
+        self.cache_system_prompt = cache_system_prompt
+        self.cache_tools = cache_tools
         self.default_params = default_params
 
     def _params(self, **overrides: Any) -> dict[str, Any]:
@@ -98,6 +170,29 @@ class LiteLLMModel:
             params.setdefault("api_key", self.api_key)
         params.update(overrides)
         return params
+
+    def _apply_cache(
+        self, candidate: str, payload: list[dict[str, Any]], extra: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Inject provider-specific cache directives for ``candidate``.
+
+        Returns the (possibly rewritten) messages payload; tool-cache markers are
+        mutated into ``extra["tools"]`` in place of the original list. Applied
+        per-candidate because a fallback chain can span providers — only the
+        Anthropic candidates get ``cache_control`` blocks.
+
+        Gemini needs no marker here: a user-supplied ``cached_content`` already
+        flows through ``extra`` (it is a normal litellm kwarg), and otherwise
+        Gemini's implicit caching applies automatically. Unsupported providers
+        (OpenAI, etc.) are left untouched.
+        """
+        if not _supports_anthropic_cache(candidate):
+            return payload
+        if self.cache_system_prompt:
+            payload = _cache_last_system_block(payload)
+        if self.cache_tools and extra.get("tools"):
+            extra["tools"] = _cache_last_tool(extra["tools"])
+        return payload
 
     async def complete(
         self,
@@ -126,9 +221,15 @@ class LiteLLMModel:
         candidates = [self.model, *self.fallbacks]
         last_error: Exception | None = None
         for candidate in candidates:
+            # Cache directives are provider-specific, so build them per-candidate
+            # from the base payload/extra (a fallback chain can cross providers).
+            cand_extra = dict(extra)
+            cand_payload = self._apply_cache(candidate, payload, cand_extra)
             for attempt in range(self.max_retries + 1):
                 try:
-                    resp = await litellm.acompletion(model=candidate, messages=payload, **extra)
+                    resp = await litellm.acompletion(
+                        model=candidate, messages=cand_payload, **cand_extra
+                    )
                     return self._normalize(resp, candidate, litellm)
                 except Exception as exc:  # noqa: BLE001 - normalize provider errors
                     last_error = exc
@@ -201,6 +302,8 @@ class LiteLLMModel:
             extra["tools"] = tools
             if tool_choice is not None:
                 extra["tool_choice"] = tool_choice
+        # Same write-side cache injection as complete(), so both paths benefit.
+        payload = self._apply_cache(self.model, payload, extra)
         response = await litellm.acompletion(
             model=self.model, messages=payload, stream=True, **extra
         )

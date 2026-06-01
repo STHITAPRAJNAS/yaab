@@ -16,6 +16,7 @@ from .state import (
     CompiledGraph,
     GraphContext,
     GraphResult,
+    RetryPolicy,
     StateGraph,
     interrupt,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "GraphResult",
     "GraphContext",
     "Channel",
+    "RetryPolicy",
     "interrupt",
     "START",
     "END",
