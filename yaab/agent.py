@@ -45,6 +45,7 @@ class Agent(Generic[Deps, Output]):
         context_strategy: Any | None = None,
         parallel_tools: bool = True,
         max_parallel_tools: int = 0,
+        model_settings: dict[str, Any] | None = None,
         runner: Any | None = None,
         instrument: bool = True,
     ) -> None:
@@ -69,6 +70,10 @@ class Agent(Generic[Deps, Output]):
         self.parallel_tools = parallel_tools
         #: Cap on concurrent tool executions (0 = unbounded) when parallel.
         self.max_parallel_tools = max_parallel_tools
+        #: Arbitrary provider kwargs forwarded to the model on every call
+        #: (temperature, top_p, seed, max_tokens, reasoning_effort, stop,
+        #: extra_body, extra_headers, …) — anything LiteLLM / the model accepts.
+        self.model_settings: dict[str, Any] = dict(model_settings or {})
         self.instrument = instrument
         self.permissions: list[str] = []
 

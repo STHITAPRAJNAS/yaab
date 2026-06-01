@@ -403,7 +403,7 @@ class Runner:
                 # Stream this turn: accumulate text + tool calls.
                 text_parts: list[str] = []
                 turn_tool_calls: list[ToolCall] = []
-                stream_kwargs: dict[str, Any] = {}
+                stream_kwargs: dict[str, Any] = dict(getattr(agent, "model_settings", {}))
                 if effective_tool_choice is not None and tool_schemas:
                     stream_kwargs["tool_choice"] = effective_tool_choice
                 async for chunk in agent.model.stream(
@@ -509,7 +509,7 @@ class Runner:
                 prompt_text, Stage.INPUT, agent_id=agent.registry_id, identity=identity
             )
         messages = await self._build_messages(agent, ctx, prompt_text, original=prompt)
-        async for chunk in agent.model.stream(messages):
+        async for chunk in agent.model.stream(messages, **getattr(agent, "model_settings", {})):
             if chunk.delta:
                 yield chunk.delta
 
@@ -578,7 +578,11 @@ class Runner:
                 ctx.usage.add(short.usage)
                 return short
         response = await agent.model.complete(
-            messages, tools=tool_schemas, output_schema=output_schema, tool_choice=tool_choice
+            messages,
+            tools=tool_schemas,
+            output_schema=output_schema,
+            tool_choice=tool_choice,
+            **getattr(agent, "model_settings", {}),
         )
         ctx.usage.add(response.usage)
         for plugin in self.plugins:
