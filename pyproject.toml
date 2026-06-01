@@ -73,6 +73,11 @@ dev = [
     "fastapi>=0.110",
     "pyyaml>=6.0",
 ]
+# Documentation site (MkDocs Material + auto-generated API reference).
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.24",
+]
 # Everything that installs from PyPI today. The Rust core (`rust` extra) is
 # deliberately NOT bundled here: it ships as a separately-published `yaab-core`
 # wheel and YAAB falls back to its pure-Python core when absent, so folding it

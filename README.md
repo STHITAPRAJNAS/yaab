@@ -7,6 +7,8 @@ Rust core that accelerates the compute-bound hot paths (and an opt-in native
 graph engine). Governance, an agent registry, audit lineage, and policy
 guardrails are **first-class, not bolted on**.
 
+📖 **[Documentation](https://sthitaprajnas.github.io/yaab/)** — guides, concepts, and the full API reference.
+
 ```python
 from yaab import Agent
 

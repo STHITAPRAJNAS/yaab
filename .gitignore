@@ -30,6 +30,9 @@ yaab_audit.db
 yaab_registry.db
 gap_analysis_parsed.json
 
+# Docs site build output
+site/
+
 # Local tooling, scratch, and internal working notes (never commit)
 .claude/
 CLAUDE.md
