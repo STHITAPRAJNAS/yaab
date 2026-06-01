@@ -237,7 +237,9 @@ def generate_compose(
                 "  postgres:",
                 "    image: postgres:16-alpine",
                 "    environment:",
-                "      - POSTGRES_PASSWORD=postgres",
+                # Operator supplies the password via their own environment; the
+                # compose file never carries a literal credential.
+                "      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set in your shell or .env}",
                 "      - POSTGRES_DB=yaab",
                 "    ports:",
                 '      - "5432:5432"',

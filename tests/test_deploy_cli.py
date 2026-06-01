@@ -147,10 +147,12 @@ def test_deploy_unknown_target_raises():
 
 
 def test_deploy_never_reads_real_secret_from_env(monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "super-secret-real-value")
+    # An obviously-fake sentinel: the test only checks it never leaks into artifacts.
+    sentinel = "fake-test-value-" + "do-not-leak"
+    monkeypatch.setenv("GEMINI_API_KEY", sentinel)
     plan = deploy("cloud-run", SPEC, dry_run=True, service_name="svc", env={"GEMINI_API_KEY": ""})
     blob = json.dumps(plan.model_dump())
-    assert "super-secret-real-value" not in blob
+    assert sentinel not in blob
     assert "GEMINI_API_KEY=<your-key>" in blob
 
 
@@ -256,9 +258,11 @@ def test_cli_deploy_env_and_service_name_flags(tmp_path, capsys):
 
 
 def test_cli_deploy_secrets_never_show_real_env_values(monkeypatch, capsys):
-    monkeypatch.setenv("GEMINI_API_KEY", "leak-me-not")
+    # An obviously-fake sentinel: the test only checks it never leaks into output.
+    sentinel = "fake-test-value-" + "do-not-leak"
+    monkeypatch.setenv("GEMINI_API_KEY", sentinel)
     code = main(["deploy", "cloud-run", SPEC, "--service-name", "svc", "--env", "GEMINI_API_KEY="])
     assert code == 0
     out = capsys.readouterr().out
-    assert "leak-me-not" not in out
+    assert sentinel not in out
     assert "GEMINI_API_KEY=<your-key>" in out

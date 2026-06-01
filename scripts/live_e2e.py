@@ -788,7 +788,7 @@ CHECKS = [
     ("central registry + custom fields + live", ["governance"], c_central_registry_live),
     ("guardrail prompt-injection block", ["governance"], c_guardrail_block),
     ("HITL tool approval (deny)", ["governance", "tools"], c_tool_approval_deny),
-    ("optimizer compile (DSPy-style)", ["optimize"], c_optimizer),
+    ("optimizer compile", ["optimize"], c_optimizer),
     ("A2A server + client", ["interop"], c_a2a),
     ("MCP tools + live agent", ["interop", "tools"], c_mcp_agent),
     ("resilience fallback chain", ["resilience"], c_resilience_fallback),
