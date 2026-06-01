@@ -4,22 +4,31 @@ resilience, and declarative config. Runs offline with TestModel.
 
 import asyncio
 
-from yaab import Agent, Runner, SummarizeHistory, agent_from_dict
+from yaab import Agent, Runner, SummarizeHistory, agent_from_dict, tool
 from yaab.governance import AuditLog, ToolApprovalPlugin
+from yaab.models.base import ModelResponse
 from yaab.models.resilient import CircuitBreaker, RateLimiter, ResilientModel
 from yaab.models.test_model import TestModel
 from yaab.tools.builtin import calculator, default_toolset
+from yaab.types import RunContext, ToolCall
 
 
-async def main():
+@tool
+def refund(amount: int = 0) -> str:
+    """Issue a refund."""
+    return f"refunded {amount}"
+
+
+async def main() -> dict:
+    """Exercise the robustness features and return each one's result."""
     # 1) Built-in tools — no need to write your own.
-    print("tools:", [t.name for t in default_toolset()])
-    from yaab.types import RunContext
-
-    print("calc 6*7:", await calculator.execute(RunContext(), expression="6 * 7"))
+    tool_names = [t.name for t in default_toolset()]
+    print("tools:", tool_names)
+    calc = await calculator.execute(RunContext(), expression="6 * 7")
+    print("calc 6*7:", calc)
 
     # 2) Declarative agent (auditable config, not code).
-    agent = agent_from_dict(
+    config_agent = agent_from_dict(
         {
             "name": "assistant",
             "model": "openai/gpt-4o",
@@ -28,7 +37,7 @@ async def main():
             "max_steps": 5,
         }
     )
-    print("config agent:", agent.name, "with", len(agent.tools), "tools")
+    print("config agent:", config_agent.name, "with", len(config_agent.tools), "tools")
 
     # 3) Context-window management + resilience on a real run (offline model).
     resilient = ResilientModel(
@@ -37,18 +46,10 @@ async def main():
         circuit_breaker=CircuitBreaker(threshold=3, cooldown=30),
     )
     robust = Agent("robust", model=resilient, context_strategy=SummarizeHistory(max_tokens=4000))
-    print("robust run:", (await robust.run("What is the meaning of life?")).output)
+    robust_out = (await robust.run("What is the meaning of life?")).output
+    print("robust run:", robust_out)
 
     # 4) HITL approval for a sensitive tool on the fast path.
-    from yaab import tool
-    from yaab.models.base import ModelResponse
-    from yaab.types import ToolCall
-
-    @tool
-    def refund(amount: int = 0) -> str:
-        """Issue a refund."""
-        return f"refunded {amount}"
-
     async def approver(tool_name, args, ctx):
         print(f"  [approval] {tool_name}({args}) -> auto-approved")
         return True
@@ -67,5 +68,14 @@ async def main():
     result = await runner.run(Agent("billing", model=model, tools=[refund]), "refund 50")
     print("approved run:", result.output)
 
+    return {
+        "tool_names": tool_names,
+        "calc": calc,
+        "config_agent_tools": len(config_agent.tools),
+        "robust_out": robust_out,
+        "approved_run": result.output,
+    }
 
-asyncio.run(main())
+
+if __name__ == "__main__":
+    asyncio.run(main())

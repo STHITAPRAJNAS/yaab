@@ -7,18 +7,21 @@ from yaab.multiagent import SwarmState
 from yaab.testing import TestModel
 
 
-async def main():
+async def main() -> dict:
+    """Run the three multi-agent patterns and return each one's output."""
     # Sequential pipeline: extract -> summarize.
     extract = Agent("extract", model=TestModel("raw facts"))
     summarize = Agent("summarize", model=TestModel("a tidy summary"))
     pipeline = SequentialAgent("pipeline", [extract, summarize])
-    print("sequential:", (await pipeline.run("a document")).output)
+    sequential = (await pipeline.run("a document")).output
+    print("sequential:", sequential)
 
     # Parallel review board.
     legal = Agent("legal", model=TestModel("legally fine"))
     finance = Agent("finance", model=TestModel("budget approved"))
     board = ParallelAgent("board", [legal, finance])
-    print("parallel:", (await board.run("review contract")).output)
+    parallel = (await board.run("review contract")).output
+    print("parallel:", parallel)
 
     # Swarm: triage hands off to a specialist.
     triage = Agent(
@@ -26,7 +29,11 @@ async def main():
     )
     billing = Agent("billing", model=TestModel("refund processed"))
     swarm = Swarm("support", [triage, billing], entry="triage")
-    print("swarm:", (await swarm.run("I was double charged", deps=SwarmState())).output)
+    swarm_out = (await swarm.run("I was double charged", deps=SwarmState())).output
+    print("swarm:", swarm_out)
+
+    return {"sequential": sequential, "parallel": parallel, "swarm": swarm_out}
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

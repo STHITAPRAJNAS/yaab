@@ -22,21 +22,29 @@ def execute(state, ctx):
     return {"status": status}
 
 
-graph = StateGraph(channels={"amount": Channel(default=0)})
-graph.add_node("draft", draft)
-graph.add_node("approve", approve)
-graph.add_node("execute", execute)
-graph.add_edge(START, "draft")
-graph.add_edge("draft", "approve")
-graph.add_edge("approve", "execute")
-graph.set_finish_point("execute")
+def main() -> dict:
+    """Run the draft -> approve -> execute graph, pausing for approval."""
+    graph = StateGraph(channels={"amount": Channel(default=0)})
+    graph.add_node("draft", draft)
+    graph.add_node("approve", approve)
+    graph.add_node("execute", execute)
+    graph.add_edge(START, "draft")
+    graph.add_edge("draft", "approve")
+    graph.add_edge("approve", "execute")
+    graph.set_finish_point("execute")
 
-app = graph.compile(checkpointer=MemorySaver())
+    app = graph.compile(checkpointer=MemorySaver())
 
-# First call runs until the interrupt, then pauses.
-paused = app.invoke({"amount": 10_000}, thread_id="txn-1")
-print("paused:", paused.interrupted, "-> needs review of:", paused.interrupt_value)
+    # First call runs until the interrupt, then pauses.
+    paused = app.invoke({"amount": 10_000}, thread_id="txn-1")
+    print("paused:", paused.interrupted, "-> needs review of:", paused.interrupt_value)
 
-# A human approves; resume the same thread.
-done = app.invoke(thread_id="txn-1", resume=True)
-print("final state:", done.state)
+    # A human approves; resume the same thread.
+    done = app.invoke(thread_id="txn-1", resume=True)
+    print("final state:", done.state)
+
+    return {"paused": paused, "done": done}
+
+
+if __name__ == "__main__":
+    main()
