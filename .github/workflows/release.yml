@@ -1,15 +1,19 @@
 name: Release
 
-# Publish on a version tag (e.g. v0.1.0). Builds the yaab-core abi3 wheels for
-# all platforms + the pure-Python `yaab-sdk` wheel/sdist, then publishes to PyPI
-# via Trusted Publishing (OIDC) — no API token stored.
+# Publish to PyPI on a version tag (e.g. v0.1.0) cut from the `main` release
+# branch. Builds the yaab-core abi3 wheels for all platforms + the pure-Python
+# `yaab-sdk` wheel/sdist, then publishes via Trusted Publishing (OIDC) — no API
+# token stored.
 #
 # PyPI trusted publishers (one per project, both -> this repo + release.yml):
 #   yaab-sdk   : the SDK (import name stays `yaab`, CLI stays `yaab`)
 #   yaab-core  : the optional Rust accelerator wheel
 #
-# Cut a release:
-#   git tag v0.1.0 && git push origin v0.1.0
+# Release process (see RELEASING.md):
+#   1. Merge develop -> main
+#   2. git tag vX.Y.Z on main && git push origin vX.Y.Z
+# The preflight job refuses tags whose commit is not on main or whose version
+# doesn't match pyproject.toml, so a stray tag on develop can never publish.
 
 on:
   push:
@@ -17,9 +21,38 @@ on:
   workflow_dispatch:
 
 jobs:
+  preflight:
+    name: Verify release tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tag commit must be on main
+        if: github.ref_type == 'tag'
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME points to a commit that is not on main." \
+                 "Releases are cut from the main branch (see RELEASING.md)." >&2
+            exit 1
+          fi
+
+      - name: Tag must match pyproject version
+        if: github.ref_type == 'tag'
+        run: |
+          PKG_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match pyproject version $PKG_VERSION" >&2
+            exit 1
+          fi
+
   # yaab-core: one abi3 wheel per OS/arch (works on CPython 3.11+).
   core-wheels:
     name: yaab-core wheels (${{ matrix.platform.target }})
+    needs: [preflight]
     runs-on: ${{ matrix.platform.os }}
     strategy:
       fail-fast: false
@@ -48,6 +81,7 @@ jobs:
 
   core-sdist:
     name: yaab-core sdist
+    needs: [preflight]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -63,22 +97,13 @@ jobs:
   # yaab-sdk: the pure-Python package (wheel + sdist). Import name stays `yaab`.
   sdk-dist:
     name: yaab-sdk sdist + wheel
+    needs: [preflight]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Verify tag matches pyproject version
-        if: github.ref_type == 'tag'
-        run: |
-          PKG_VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match pyproject version $PKG_VERSION" >&2
-            exit 1
-          fi
 
       - name: Build sdist + wheel
         run: |
@@ -115,7 +140,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   # Publishes independently of yaab-core so the SDK ships even if the core
-  # publisher isn't configured yet (the `rust` extra simply resolves later).
+  # publish fails (the `rust` extra simply resolves once core is published).
   publish-sdk:
     name: Publish yaab-sdk to PyPI
     needs: [sdk-dist]
