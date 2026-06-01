@@ -151,4 +151,3 @@ Containerize and deploy to Cloud Run / Fargate / Lambda / K8s — see
 - [Agents](agents.md) — the full `Agent` surface.
 - [Storage & backends](storage-backends.md) — sessions, memory, vector stores.
 - [Extending YAAB](extending.md) — add models, tools, stores, metrics, mappers.
-- [Comparison & gaps](COMPARISON.md) — feature comparison with other agent frameworks.

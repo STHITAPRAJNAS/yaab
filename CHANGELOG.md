@@ -64,7 +64,6 @@ All notable changes to YAAB are documented here. The format follows
   `RemoteAgent.poll_task()` for long-running A2A tasks.
 - **`BootstrapFewShotWithRandomSearch`** optimizer and minibatched `MIPROv2`,
   closer to DSPy's real search loops.
-- `docs/RESEARCH_FEATURE_DEMAND.md` — cross-framework feature-demand study.
 - `samples/` — six end-to-end sample apps & patterns (customer support, research
   assistant, document Q&A, approval pipeline, triage swarm, coding helper), each
   runnable offline and against a real/free model via `YAAB_SAMPLE_MODEL`, with a
