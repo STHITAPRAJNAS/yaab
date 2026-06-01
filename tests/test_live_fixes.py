@@ -79,7 +79,7 @@ async def test_pinned_function_tool_choice_relaxes():
 # --- 2. parse_partial_json tolerates Markdown fences --------------------
 def test_parse_partial_json_strips_code_fence():
     assert parse_partial_json('```json\n{"a": 1}\n```') == {"a": 1}
-    assert parse_partial_json("```\n{\"a\": 1}\n```") == {"a": 1}
+    assert parse_partial_json('```\n{"a": 1}\n```') == {"a": 1}
     # Partial (closing fence not yet streamed) still parses.
     assert parse_partial_json('```json\n{"a": 1, "b":') == {"a": 1}
     # Plain JSON unaffected.

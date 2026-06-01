@@ -422,9 +422,7 @@ class Runner:
 
                 if turn_tool_calls:
                     messages.append(
-                        Message(
-                            role=Role.ASSISTANT, content=content, tool_calls=turn_tool_calls
-                        )
+                        Message(role=Role.ASSISTANT, content=content, tool_calls=turn_tool_calls)
                     )
                     for tc in turn_tool_calls:
                         tool_counts[tc.name] = tool_counts.get(tc.name, 0) + 1

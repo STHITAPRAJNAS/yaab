@@ -263,9 +263,7 @@ class CompiledGraph:
                     for n in next_frontier:
                         if n not in parked:
                             parked.append(n)
-                    self.checkpointer.put(
-                        thread_id, step, {"state": state, "frontier": parked}
-                    )
+                    self.checkpointer.put(thread_id, step, {"state": state, "frontier": parked})
                     return GraphResult(
                         state=state, interrupted=True, interrupt_value=itr.value, steps=step
                     )

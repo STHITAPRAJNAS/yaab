@@ -84,8 +84,12 @@ def test_auth_accepts_valid_token_and_flows_identity():
         seen["id"] = ctx.identity
         return ctx.identity or "none"
 
-    agent = Agent("svc", model=TestModel(custom_output="done", call_tools=["whoami"]),
-                  tools=[whoami], registry_id="svc")
+    agent = Agent(
+        "svc",
+        model=TestModel(custom_output="done", call_tools=["whoami"]),
+        tools=[whoami],
+        registry_id="svc",
+    )
     auth = BearerTokenAuth({"secret": "alice"})
     client = TestClient(fastapi_server_app(agent, auth=auth))
     r = client.post("/run", json={"prompt": "hi"}, headers={"Authorization": "Bearer secret"})
@@ -154,6 +158,9 @@ def test_a2a_task_stream_status_events():
     # working -> completed task, then done.
     assert '"state": "working"' in body
     assert '"state": "completed"' in body
-    payloads = [json.loads(line[5:]) for line in body.splitlines()
-                if line.startswith("data:") and line[5:].strip().startswith("{")]
+    payloads = [
+        json.loads(line[5:])
+        for line in body.splitlines()
+        if line.startswith("data:") and line[5:].strip().startswith("{")
+    ]
     assert any(p.get("status", {}).get("state") == "completed" for p in payloads)

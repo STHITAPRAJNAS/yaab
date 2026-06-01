@@ -82,8 +82,11 @@ async def test_server_lists_and_gets_prompts():
 
 @pytest.mark.asyncio
 async def test_server_capabilities_advertise_resources_and_prompts():
-    server = MCPServer([], resources=[MCPResource(uri="u", name="n", text="t")],
-                       prompts=[MCPPrompt(name="p", template="x")])
+    server = MCPServer(
+        [],
+        resources=[MCPResource(uri="u", name="n", text="t")],
+        prompts=[MCPPrompt(name="p", template="x")],
+    )
     init = await server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
     caps = init["result"]["capabilities"]
     assert "resources" in caps and "prompts" in caps

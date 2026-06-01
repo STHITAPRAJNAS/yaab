@@ -71,9 +71,7 @@ async def test_retry_honors_retry_after(monkeypatch):
             return 0.0
 
     model = LiteLLMModel("x/y", max_retries=2, retry_base_delay=0.5)
-    monkeypatch.setattr(
-        "yaab.models.litellm_provider._require_litellm", lambda: FakeLiteLLM()
-    )
+    monkeypatch.setattr("yaab.models.litellm_provider._require_litellm", lambda: FakeLiteLLM())
 
     async def fake_sleep(s):
         slept.append(s)

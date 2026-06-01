@@ -13,8 +13,13 @@ import pytest
 import yaab.memory as memory
 from yaab.memory.embedders import LiteLLMEmbedder
 
-_EMBED_KEYS = ["OPENAI_API_KEY", "GEMINI_API_KEY", "COHERE_API_KEY",
-               "MISTRAL_API_KEY", "VOYAGE_API_KEY"]
+_EMBED_KEYS = [
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "COHERE_API_KEY",
+    "MISTRAL_API_KEY",
+    "VOYAGE_API_KEY",
+]
 
 
 @pytest.fixture
