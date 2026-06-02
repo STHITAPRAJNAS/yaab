@@ -12,6 +12,8 @@ layers.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import time
 from collections.abc import AsyncIterator
@@ -19,7 +21,7 @@ from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
-from .exceptions import MaxStepsExceeded, ToolError
+from .exceptions import ApprovalRequired, MaxStepsExceeded, ToolError
 from .governance.audit import AuditKind
 from .governance.policy import Stage
 from .governance.service import GovernanceService
@@ -54,6 +56,8 @@ class Runner:
         memory_app_name: str | None = None,
         default_tool_timeout: float | None = None,
         run_checkpointer: Any | None = None,
+        checkpoint_mode: str = "step",
+        trace_store: Any | None = None,
     ) -> None:
         self.session_service = session_service or InMemorySessionService()
         self.memory_service = memory_service
@@ -71,6 +75,19 @@ class Runner:
         #: a crashed run can resume where it left off. ``None`` keeps the
         #: classic zero-overhead fast path.
         self.run_checkpointer = run_checkpointer
+        #: Durability granularity for the resumable fast path. ``"step"`` (the
+        #: default) persists progress after every completed step so a run can
+        #: resume from any point; ``"final"`` writes only the terminal marker
+        #: (cheap for short runs, still idempotent on a finished re-invoke).
+        if checkpoint_mode not in ("step", "final"):
+            raise ValueError("checkpoint_mode must be 'step' or 'final'")
+        self.checkpoint_mode = checkpoint_mode
+        #: Optional durable per-run trace store. When set, every emitted event is
+        #: appended (its JSON-safe payload) keyed by ``(run_id, seq)`` so a run's
+        #: full timeline survives the run and a restart for the trace console.
+        #: Code against the duck-typed ``append(run_id, seq, event_dict)`` so any
+        #: compatible backend can be dropped in. ``None`` keeps today's behavior.
+        self.trace_store = trace_store
 
     def add_plugin(self, plugin: Plugin) -> Runner:
         self.plugins.append(plugin)
@@ -89,6 +106,7 @@ class Runner:
         cancellation: CancellationToken | None = None,
         timeout: float | None = None,
         resume_id: str | None = None,
+        approval_decision: str | None = None,
     ) -> RunResult[Any]:
         events: list[Event] = []
         async for event in self.run_stream(
@@ -101,6 +119,7 @@ class Runner:
             cancellation=cancellation,
             timeout=timeout,
             resume_id=resume_id,
+            approval_decision=approval_decision,
         ):
             events.append(event)
         final = events[-1]
@@ -128,6 +147,7 @@ class Runner:
         cancellation: CancellationToken | None = None,
         timeout: float | None = None,
         resume_id: str | None = None,
+        approval_decision: str | None = None,
         _transfer_depth: int = 0,
         _transfer_cap: int | None = None,
     ) -> AsyncIterator[Event]:
@@ -139,6 +159,15 @@ class Runner:
         turns are NOT re-requested), and a finished ``resume_id`` returns the
         persisted result idempotently. Sub-agent handoffs ignore ``resume_id`` —
         only the root run is checkpointed.
+
+        A sensitive tool call guarded for out-of-band sign-off pauses the run
+        durably: the loop checkpoints a pending-approval marker, emits an
+        :attr:`~yaab.types.EventType.APPROVAL_REQUIRED` event, and returns (no
+        thread is blocked). Re-invoking with the same ``resume_id`` and an
+        ``approval_decision`` of ``"approved"`` (run the tool now) or ``"denied"``
+        (feed the model a denial) finishes the loop without re-requesting the
+        captured model turns. Without a checkpointer the call raises instead —
+        backward compatible.
 
         ``_transfer_depth``/``_transfer_cap`` are internal: they track how many
         sub-agent handoffs deep this run already is (and the root's cap) so a
@@ -165,6 +194,16 @@ class Runner:
         ctx: RunContext = RunContext(
             deps=deps, session_id=session_id, identity=identity, usage=Usage()
         )
+        # Thread the checkpoint key into the run context so a queue-mode approval
+        # plugin can correlate its durable pending record to the exact checkpoint
+        # the loop will resume from.
+        if ckpt_id is not None:
+            ctx.state["__resume_id__"] = ckpt_id
+            # Key the run (and therefore its trace) by the durable resume id so the
+            # persisted timeline correlates with the run record and is retrievable
+            # via ``GET /runs/{id}/trace`` — and so a resume appends to the same
+            # trace rather than starting a disconnected one.
+            ctx.run_id = ckpt_id
         gov = self.governance
 
         # A timeout is just a deadline on the cancellation token.
@@ -183,8 +222,43 @@ class Runner:
                 usage_limits.check_usage(ctx.usage)
                 usage_limits.check_wall_clock(run_started)
 
-        def emit(etype: EventType, **payload: Any) -> Event:
-            return Event(type=etype, agent=agent.name, run_id=ctx.run_id, payload=payload)
+        trace_store = self.trace_store
+        seq = [0]
+        # Trace appends are async; ``emit`` is sync (called as ``yield emit(...)``)
+        # so it schedules each append as a task and we drain them at run end. This
+        # guarantees the timeline (including APPROVAL_REQUIRED) is actually
+        # persisted — previously the coroutine was created and dropped unawaited,
+        # so durable traces were silently never written.
+        trace_tasks: list[Any] = []
+
+        def emit(etype: EventType, *, duration_ms: float | None = None, **payload: Any) -> Event:
+            event = Event(
+                type=etype,
+                agent=agent.name,
+                run_id=ctx.run_id,
+                payload=payload,
+                duration_ms=duration_ms,
+            )
+            # Persist the full timeline for the trace console, keyed by sequence,
+            # in a JSON-safe shape (so it survives the run and a restart). The
+            # append may be sync (duck-typed store) or async (the durable
+            # backends); a returned coroutine is scheduled and drained at run end.
+            if trace_store is not None:
+                safe = _safe_event(event)
+                safe["seq"] = seq[0]
+                maybe = trace_store.append(ctx.run_id, seq[0], safe)
+                if maybe is not None and inspect.isawaitable(maybe):
+                    trace_tasks.append(asyncio.ensure_future(maybe))
+            seq[0] += 1
+            return event
+
+        async def _drain_trace() -> None:
+            """Await any in-flight async trace appends so the timeline is durable."""
+            if not trace_tasks:
+                return
+            pending = list(trace_tasks)
+            trace_tasks.clear()
+            await asyncio.gather(*pending, return_exceptions=True)
 
         try:
             # Registry gate (enforcing mode).
@@ -233,9 +307,27 @@ class Runner:
                 ctx.usage = Usage.model_validate(resume_state["usage"])
                 output_retries_left = resume_state.get("output_retries_left", output_retries_left)
                 start_step = int(resume_state["step"]) + 1
+                # Continue the trace sequence past the events recorded before the
+                # pause so a resume appends to the same timeline instead of
+                # overwriting it (the approval event and prior steps are kept).
+                seq[0] = int(resume_state.get("trace_seq", 0))
                 if _is_forcing_tool_choice(effective_tool_choice):
                     effective_tool_choice = "auto"
                 yield emit(EventType.USER_MESSAGE, content=scanned_prompt)
+
+                # Resume-from-pending-approval: a sensitive tool call parked this
+                # run awaiting human sign-off. The reviewer has now decided, so
+                # resolve the pending tool here — run it (approved) or feed the
+                # model a denial — then continue WITHOUT re-requesting any of the
+                # captured model turns. The model never re-decides.
+                pending = resume_state.get("pending_approval")
+                if pending is not None:
+                    tool_msg, call_ev, result_ev = await self._resume_pending(
+                        agent, ctx, pending, approval_decision, emit
+                    )
+                    yield call_ev
+                    yield result_ev
+                    messages.append(tool_msg)
             else:
                 messages = await self._build_messages(agent, ctx, scanned_prompt, original=prompt)
                 user_msg = messages[-1]
@@ -251,18 +343,27 @@ class Runner:
                 # Keep the conversation within the model's context window.
                 if context_strategy is not None:
                     messages = await context_strategy.apply(messages, model=agent.model)
+                _model_started = time.monotonic()
                 response = await self._call_model(
                     agent, ctx, messages, tool_schemas, output_schema, effective_tool_choice
                 )
+                _model_ms = (time.monotonic() - _model_started) * 1000.0
                 # Re-check usage now that this request's tokens are counted.
                 if usage_limits is not None:
                     usage_limits.check_usage(ctx.usage)
                 if response.reasoning:
                     yield emit(EventType.MODEL_DELTA, reasoning=response.reasoning)
+                # Enrich with the model name, finish reason, and this call's token
+                # delta so the trace console can render per-call cost and latency.
                 yield emit(
                     EventType.MODEL_RESPONSE,
+                    duration_ms=_model_ms,
                     content=response.content,
                     tool_calls=[tc.model_dump() for tc in response.tool_calls],
+                    model=response.model,
+                    finish_reason=response.finish_reason,
+                    usage=response.usage.model_dump(),
+                    reasoning=bool(response.reasoning),
                 )
 
                 if response.has_tool_calls:
@@ -288,10 +389,31 @@ class Runner:
                         # emit results (in order) so traces stay deterministic.
                         for tc in tcs:
                             yield emit(EventType.TOOL_CALL, name=tc.name, arguments=tc.arguments)
-                        results = await self._run_tools_parallel(agent, ctx, tcs)
+                        _tool_started = time.monotonic()
+                        try:
+                            results = await self._run_tools_parallel(agent, ctx, tcs)
+                        except ApprovalRequired as exc:
+                            paused = self._pause_for_approval(
+                                ctx,
+                                exc,
+                                _step,
+                                messages,
+                                tool_counts,
+                                output_retries_left,
+                                emit,
+                                seq,
+                            )
+                            if paused is None:
+                                raise
+                            yield paused
+                            return
+                        _tool_ms = (time.monotonic() - _tool_started) * 1000.0
                         for tc, result_value in zip(tcs, results, strict=False):
                             yield emit(
-                                EventType.TOOL_RESULT, name=tc.name, result=_safe(result_value)
+                                EventType.TOOL_RESULT,
+                                duration_ms=_tool_ms,
+                                name=tc.name,
+                                result=_safe(result_value),
                             )
                             messages.append(
                                 Message(
@@ -306,9 +428,34 @@ class Runner:
                             if cancellation is not None:
                                 cancellation.raise_if_cancelled()
                             yield emit(EventType.TOOL_CALL, name=tc.name, arguments=tc.arguments)
-                            result_value = await self._run_tool(agent, ctx, tc)
+                            _tool_started = time.monotonic()
+                            try:
+                                result_value = await self._run_tool(agent, ctx, tc)
+                            except ApprovalRequired as exc:
+                                # A sensitive tool needs out-of-band sign-off:
+                                # checkpoint a pending-approval marker and pause
+                                # the run durably (or re-raise without a
+                                # checkpointer — backward compatible).
+                                paused = self._pause_for_approval(
+                                    ctx,
+                                    exc,
+                                    _step,
+                                    messages,
+                                    tool_counts,
+                                    output_retries_left,
+                                    emit,
+                                    seq,
+                                )
+                                if paused is None:
+                                    raise
+                                yield paused
+                                return
+                            _tool_ms = (time.monotonic() - _tool_started) * 1000.0
                             yield emit(
-                                EventType.TOOL_RESULT, name=tc.name, result=_safe(result_value)
+                                EventType.TOOL_RESULT,
+                                duration_ms=_tool_ms,
+                                name=tc.name,
+                                result=_safe(result_value),
                             )
                             messages.append(
                                 Message(
@@ -356,8 +503,9 @@ class Runner:
 
                     # Tool round complete: checkpoint progress so a crash after
                     # this point resumes from here (the captured model+tool turn
-                    # is never re-requested).
-                    if ckpt_id is not None:
+                    # is never re-requested). In ``final`` mode only the terminal
+                    # marker is written, so per-step writes are skipped.
+                    if ckpt_id is not None and self.checkpoint_mode == "step":
                         self._save_step(
                             ckpt_id, _step, messages, tool_counts, ctx.usage, output_retries_left
                         )
@@ -387,7 +535,7 @@ class Runner:
                         )
                     )
                     # A validation retry is also a completed model step.
-                    if ckpt_id is not None:
+                    if ckpt_id is not None and self.checkpoint_mode == "step":
                         self._save_step(
                             ckpt_id, _step, messages, tool_counts, ctx.usage, output_retries_left
                         )
@@ -428,7 +576,11 @@ class Runner:
                 self._save_finished(
                     ckpt_id, agent.max_steps, messages, ctx.usage, final_output, ctx.run_id
                 )
-            yield emit(EventType.RUN_END, result=result)
+            yield emit(
+                EventType.RUN_END,
+                duration_ms=(time.monotonic() - run_started) * 1000.0,
+                result=result,
+            )
 
         except Exception as exc:  # noqa: BLE001 - surface as a terminal ERROR event
             if gov is not None:
@@ -439,6 +591,11 @@ class Runner:
                     error=str(exc),
                 )
             yield emit(EventType.ERROR, error=exc)
+        finally:
+            # Drain any scheduled trace appends so the durable timeline is fully
+            # written before the run returns — including on the approval-pause
+            # and error exits, not only the normal RUN_END path.
+            await _drain_trace()
 
     # ------------------------------------------------------------------
     # Resumable fast-path checkpoint helpers.
@@ -501,6 +658,158 @@ class Runner:
             run_id=result.run_id,
             payload={"result": result},
         )
+
+    # ------------------------------------------------------------------
+    # Durable human-in-the-loop: pause for approval, then resume on a decision.
+    # ------------------------------------------------------------------
+    def _pause_for_approval(
+        self,
+        ctx: RunContext,
+        exc: ApprovalRequired,
+        step: int,
+        messages: list[Message],
+        tool_counts: dict[str, int],
+        output_retries_left: int,
+        emit: Any,
+        seq: list[int],
+    ) -> Event | None:
+        """Park the run for out-of-band human sign-off, or signal a re-raise.
+
+        When a checkpointer + resume key are configured, this writes a
+        pending-approval checkpoint (so the run sleeps durably and can resume on
+        any replica) and returns the :attr:`EventType.APPROVAL_REQUIRED` event to
+        emit before the loop returns. Without a checkpointer it returns ``None``
+        so the caller re-raises — preserving the classic block behavior.
+
+        The APPROVAL_REQUIRED event is emitted *before* the checkpoint is written
+        so the saved ``trace_seq`` points past it; a later resume then continues
+        the trace after the approval event instead of overwriting it.
+        """
+        resume_key = ctx.state.get("__resume_id__")
+        if self.run_checkpointer is None or resume_key is None:
+            return None
+        approval_id = getattr(exc, "approval_id", "")
+        pending = {
+            "tool": exc.tool,
+            "arguments": dict(exc.arguments),
+            "approval_id": approval_id,
+        }
+        event = emit(
+            EventType.APPROVAL_REQUIRED,
+            approval_id=approval_id,
+            tool=exc.tool,
+            arguments=dict(exc.arguments),
+        )
+        self._save_pending(
+            resume_key,
+            step,
+            messages,
+            tool_counts,
+            ctx.usage,
+            output_retries_left,
+            pending,
+            trace_seq=seq[0],
+        )
+        return event
+
+    def _save_pending(
+        self,
+        resume_id: str,
+        step: int,
+        messages: list[Message],
+        tool_counts: dict[str, int],
+        usage: Usage,
+        output_retries_left: int,
+        pending: dict[str, Any],
+        *,
+        trace_seq: int = 0,
+    ) -> None:
+        """Checkpoint a parked run that is awaiting a human approval decision.
+
+        Reuses the per-step state shape plus a ``pending_approval`` marker so the
+        resume path knows to resolve the held tool before continuing — never
+        re-requesting the captured model turns. ``trace_seq`` records how far the
+        trace got so the resume appends after the approval event.
+        """
+        assert self.run_checkpointer is not None
+        state = {
+            "step": step,
+            "messages": [m.model_dump(mode="json") for m in messages],
+            "tool_counts": dict(tool_counts),
+            "usage": usage.model_dump(mode="json"),
+            "output_retries_left": output_retries_left,
+            "pending_approval": pending,
+            "trace_seq": trace_seq,
+        }
+        self.run_checkpointer.put(resume_id, step, state)
+
+    async def _resume_pending(
+        self,
+        agent: Any,
+        ctx: RunContext,
+        pending: dict[str, Any],
+        approval_decision: str | None,
+        emit: Any,
+    ) -> tuple[Message, Event, Event]:
+        """Resolve a parked approval, returning the tool message + its events.
+
+        On ``"approved"`` the held tool runs now (bypassing the approval gate,
+        since a human already signed off). On ``"denied"`` — or any non-approval
+        decision — the model is fed a denial message instead and the tool never
+        runs. The caller appends the returned :class:`Message` to the conversation
+        and yields the two events, then the loop continues from the next step.
+        """
+        tool_name = pending["tool"]
+        arguments = dict(pending.get("arguments", {}))
+        call_ev = emit(EventType.TOOL_CALL, name=tool_name, arguments=arguments)
+
+        approved = approval_decision == "approved"
+        if approved:
+            result_value = await self._execute_approved_tool(agent, ctx, tool_name, arguments)
+        else:
+            reviewer = approval_decision or "reviewer"
+            result_value = (
+                f"error: tool '{tool_name}' denied by reviewer ({reviewer}); do not retry it."
+            )
+        result_ev = emit(
+            EventType.TOOL_RESULT,
+            duration_ms=0.0,
+            name=tool_name,
+            result=_safe(result_value),
+        )
+        tool_msg = Message(role=Role.TOOL, name=tool_name, content=_to_text(result_value))
+        return tool_msg, call_ev, result_ev
+
+    async def _execute_approved_tool(
+        self, agent: Any, ctx: RunContext, tool_name: str, arguments: dict[str, Any]
+    ) -> Any:
+        """Run a now-approved tool directly, skipping the approval gate.
+
+        The human has already decided, so the approval plugin's ``before_tool``
+        must not park the run again. Other plugins' post-processing still applies.
+        """
+        import asyncio
+
+        tool = next((t for t in agent.tools if t.name == tool_name), None)
+        if tool is None:
+            return f"error: unknown tool '{tool_name}'"
+        timeout = self._tool_timeout(tool)
+        try:
+            if timeout is not None:
+                result = await asyncio.wait_for(tool.execute(ctx, **arguments), timeout)
+            else:
+                result = await tool.execute(ctx, **arguments)
+        except TimeoutError:
+            result = f"error: tool '{tool_name}' timed out after {timeout}s"
+        except ToolError as exc:
+            result = f"error: {exc}"
+        except Exception as exc:  # noqa: BLE001 - tools shouldn't crash the loop
+            result = f"error: tool '{tool_name}' raised {type(exc).__name__}: {exc}"
+        for plugin in self.plugins:
+            amended = await plugin.after_tool(ctx, agent.name, tool_name, result)
+            if amended is not None:
+                result = amended
+        return result
 
     # ------------------------------------------------------------------
     async def stream_run(
@@ -984,3 +1293,30 @@ def _safe(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump()
     return str(value)
+
+
+def _safe_event(event: Event) -> dict[str, Any]:
+    """Render an emitted event into a fully JSON-safe dict for the trace store.
+
+    The live payload may carry a :class:`RunResult` (under ``result``) or an
+    exception (under ``error``); both are coerced so the persisted timeline
+    survives the run and a restart. ``RunResult.usage`` is preserved so the
+    trace console can attribute tokens and cost per run.
+    """
+    payload: dict[str, Any] = {}
+    for key, value in event.payload.items():
+        if key == "result" and hasattr(value, "model_dump"):
+            payload[key] = value.model_dump(mode="json")
+        elif isinstance(value, BaseException):
+            payload[key] = str(value)
+        else:
+            payload[key] = _safe(value)
+    return {
+        "type": event.type.value,
+        "agent": event.agent,
+        "run_id": event.run_id,
+        "seq": None,
+        "timestamp": event.timestamp,
+        "duration_ms": event.duration_ms,
+        "payload": payload,
+    }

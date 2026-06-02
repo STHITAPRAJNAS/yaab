@@ -134,6 +134,10 @@ class EventType(str, Enum):
     #: becomes the parent run's output.
     AGENT_TRANSFER = "agent_transfer"
     GUARDRAIL = "guardrail"
+    #: A sensitive tool call has been parked for out-of-band human sign-off; the
+    #: run is durably paused and resumes once a reviewer decides. The payload
+    #: carries ``approval_id``, ``tool``, and ``arguments``.
+    APPROVAL_REQUIRED = "approval_required"
     FINAL_OUTPUT = "final_output"
     RUN_END = "run_end"
     ERROR = "error"
@@ -149,6 +153,10 @@ class Event(BaseModel):
     run_id: str
     payload: dict[str, Any] = Field(default_factory=dict)
     timestamp: float = Field(default_factory=time.time)
+    #: Wall-clock time this step took (model call, tool call, or whole run), in
+    #: milliseconds. Populated for timed steps so the trace UI need not infer it
+    #: from timestamps; ``None`` for events that don't measure a span.
+    duration_ms: float | None = None
 
 
 class RunResult(BaseModel, Generic[Output]):

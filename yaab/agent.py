@@ -210,12 +210,20 @@ class Agent(Generic[Deps, Output]):
         usage_limits: Any | None = None,
         cancellation: Any | None = None,
         timeout: float | None = None,
+        resume_id: str | None = None,
     ) -> RunResult[Output]:
         """Run the agent's model-driven loop and return a typed result.
 
         ``usage_limits`` (:class:`~yaab.limits.UsageLimits`) caps tokens/requests/
         tool calls; ``cancellation`` (:class:`~yaab.limits.CancellationToken`) and
         ``timeout`` (seconds) stop the run cooperatively between steps.
+
+        ``resume_id`` makes a run fault-tolerant: when the runner has a
+        checkpointer, loop progress is persisted under this key after every
+        completed step, so a crashed or paused run resumes from where it left
+        off if re-invoked with the same ``resume_id`` — without re-requesting the
+        model turns already captured. It is inert (zero overhead) when the runner
+        has no checkpointer.
         """
         return await self._get_runner().run(
             self,
@@ -226,6 +234,7 @@ class Agent(Generic[Deps, Output]):
             usage_limits=usage_limits,
             cancellation=cancellation,
             timeout=timeout,
+            resume_id=resume_id,
         )
 
     def stream(
@@ -312,6 +321,7 @@ class Agent(Generic[Deps, Output]):
         usage_limits: Any | None = None,
         cancellation: Any | None = None,
         timeout: float | None = None,
+        resume_id: str | None = None,
     ) -> RunResult[Output]:
         """Synchronous convenience wrapper around :meth:`run`."""
         return asyncio.run(
@@ -323,6 +333,7 @@ class Agent(Generic[Deps, Output]):
                 usage_limits=usage_limits,
                 cancellation=cancellation,
                 timeout=timeout,
+                resume_id=resume_id,
             )
         )
 

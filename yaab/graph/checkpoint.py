@@ -48,7 +48,10 @@ class SQLiteSaver:
     """Durable checkpointer backed by SQLite."""
 
     def __init__(self, path: str = "yaab_checkpoints.db") -> None:
-        self._conn = sqlite3.connect(path)
+        # check_same_thread=False: a served background run checkpoints from the
+        # worker thread while a resume reads from a request handler; sqlite3
+        # serialized mode (threadsafety 3) makes the shared connection safe.
+        self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS checkpoints ("
             "thread_id TEXT, step INTEGER, blob BLOB, PRIMARY KEY (thread_id, step))"
