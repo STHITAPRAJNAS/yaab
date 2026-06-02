@@ -7,7 +7,7 @@ semantic). The default backend is in-process; swap in object storage for prod.
 from __future__ import annotations
 
 import uuid
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -51,4 +51,58 @@ class InMemoryArtifactService:
         return self._meta.get(artifact_id)
 
 
-__all__ = ["Artifact", "ArtifactService", "InMemoryArtifactService"]
+__all__ = [
+    "Artifact",
+    "ArtifactService",
+    "InMemoryArtifactService",
+    "SQLiteArtifactService",
+    "PostgresArtifactService",
+    "RedisArtifactService",
+]
+
+
+def __getattr__(name: str) -> Any:
+    # Lazy imports so psycopg / redis are only needed when their backend is used.
+    if name == "SQLiteArtifactService":
+        from .sqlite import SQLiteArtifactService
+
+        return SQLiteArtifactService
+    if name == "PostgresArtifactService":
+        from .postgres import PostgresArtifactService
+
+        return PostgresArtifactService
+    if name == "RedisArtifactService":
+        from .redis import RedisArtifactService
+
+        return RedisArtifactService
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _register_backends() -> None:
+    """Register artifact backends as ``artifact`` components (discoverable by name)."""
+    from ..extensions import register
+
+    register("artifact", "memory", lambda **kw: InMemoryArtifactService())
+
+    def _sqlite(**kw: Any) -> Any:
+        from .sqlite import SQLiteArtifactService
+
+        return SQLiteArtifactService(**kw)
+
+    def _pg(**kw: Any) -> Any:
+        from .postgres import PostgresArtifactService
+
+        return PostgresArtifactService(**kw)
+
+    def _redis(**kw: Any) -> Any:
+        from .redis import RedisArtifactService
+
+        return RedisArtifactService(**kw)
+
+    register("artifact", "sqlite", _sqlite)
+    register("artifact", "postgres", _pg)
+    register("artifact", "aurora", _pg)  # Aurora PostgreSQL via the same driver
+    register("artifact", "redis", _redis)
+
+
+_register_backends()

@@ -23,14 +23,21 @@ Offline (no API key)::
 from __future__ import annotations
 
 from . import _core
+
+# Side-effect import: registers the in-process + shared (Redis) rate limiters
+# under the ``ratelimiter`` component kind so a global rate budget is selectable
+# by name. Cheap — the redis driver is only imported when that backend is built.
+from . import ratelimiters as _ratelimiters  # noqa: F401
 from .agent import Agent
 from .artifacts.manager import ArtifactManager
 from .batch import batch_embed, batch_map, batch_run
 from .config import agent_from_dict, agent_from_yaml, runner_from_dict
 from .content import Content, Part, PartKind
 from .context import KeepAll, SummarizeHistory, TruncateMessages
+from .deploy_backends import DurableBackends, durable_backends
 from .eval import available_metrics, get_metric, register_metric
 from .exceptions import (
+    ApprovalPending,
     ApprovalRequired,
     GovernanceError,
     MaxStepsExceeded,
@@ -45,6 +52,14 @@ from .exceptions import (
 from .extensions import available as available_components
 from .extensions import get as get_component
 from .extensions import register as register_component
+from .governance.approval import ToolApprovalPlugin
+from .governance.approvals import (
+    ApprovalDecision,
+    ApprovalRequest,
+    ApprovalStore,
+    InMemoryApprovalStore,
+    SQLiteApprovalStore,
+)
 from .governance.eval import ToolTrajectoryMatch
 from .governance.evalset import EvalCase, EvalSet
 from .graph.state import RetryPolicy
@@ -57,6 +72,20 @@ from .prompts import PromptRegistry
 from .rag import Document, KnowledgeBase
 from .rag.memory_service import KnowledgeBaseMemory
 from .runner import Runner
+from .runs import (
+    CronStore,
+    InMemoryRunStore,
+    InMemoryTraceStore,
+    RunRecord,
+    RunStatus,
+    RunStore,
+    RunWorker,
+    SQLiteRunStore,
+    SQLiteTraceStore,
+    StoreCancellationToken,
+    TraceStore,
+    warn_if_ephemeral,
+)
 from .sessions.manager import SessionManager
 from .skills import Skill
 from .state import State
@@ -124,6 +153,36 @@ __all__ = [
     # run controls
     "UsageLimits",
     "CancellationToken",
+    # durable background runs (survive restarts, span replicas)
+    "RunStore",
+    "RunRecord",
+    "RunStatus",
+    "InMemoryRunStore",
+    "SQLiteRunStore",
+    "RunWorker",
+    "CronStore",
+    "StoreCancellationToken",
+    # out-of-band human sign-off
+    "ToolApprovalPlugin",
+    "ApprovalStore",
+    "ApprovalRequest",
+    "ApprovalDecision",
+    "InMemoryApprovalStore",
+    "SQLiteApprovalStore",
+    # per-run trace store (replay a run with full per-step detail)
+    "TraceStore",
+    "InMemoryTraceStore",
+    "SQLiteTraceStore",
+    # multi-replica wiring + durability guardrail
+    "durable_backends",
+    "DurableBackends",
+    "warn_if_ephemeral",
+    # shared rate-limit budget across replicas (lazy: needs the redis driver)
+    "RedisRateLimiter",
+    # durable artifact backends (lazy: psycopg / redis only when used)
+    "SQLiteArtifactService",
+    "PostgresArtifactService",
+    "RedisArtifactService",
     # context-window management
     "TruncateMessages",
     "SummarizeHistory",
@@ -156,4 +215,20 @@ __all__ = [
     "GovernanceError",
     "PolicyViolation",
     "ApprovalRequired",
+    "ApprovalPending",
 ]
+
+
+def __getattr__(name: str) -> object:
+    # Lazy top-level exports for backends whose drivers are optional extras, so
+    # ``import yaab`` never needs psycopg / redis installed. The class is only
+    # imported on first attribute access (e.g. ``yaab.RedisRateLimiter``).
+    if name == "RedisRateLimiter":
+        from .models.distributed_ratelimit import RedisRateLimiter
+
+        return RedisRateLimiter
+    if name in ("SQLiteArtifactService", "PostgresArtifactService", "RedisArtifactService"):
+        from . import artifacts
+
+        return getattr(artifacts, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

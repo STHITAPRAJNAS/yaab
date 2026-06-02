@@ -46,6 +46,12 @@ _ENTRY_POINT_GROUPS: dict[str, str] = {
     "plugin": "yaab.plugins",
     "compliance": "yaab.compliance",
     "skill": "yaab.skills",
+    # Durable runs, out-of-band human sign-off, per-run traces, and a shared
+    # rate-limit budget are each a swappable backend kind too.
+    "run": "yaab.runs",
+    "approval": "yaab.approvals",
+    "trace": "yaab.traces",
+    "ratelimiter": "yaab.ratelimiters",
 }
 
 _discovered: set[str] = set()

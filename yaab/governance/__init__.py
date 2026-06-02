@@ -3,6 +3,13 @@
 from __future__ import annotations
 
 from .approval import ToolApprovalPlugin
+from .approvals import (
+    ApprovalDecision,
+    ApprovalRequest,
+    ApprovalStore,
+    InMemoryApprovalStore,
+    SQLiteApprovalStore,
+)
 from .audit import AuditEvent, AuditKind, AuditLog, AuditSink, SQLiteAuditSink
 from .authorization import (
     CallableAuthorizer,
@@ -110,6 +117,12 @@ __all__ = [
     "Decision",
     "IdempotencyPlugin",
     "ToolApprovalPlugin",
+    # out-of-band human sign-off (durable approval store + backends)
+    "ApprovalStore",
+    "ApprovalRequest",
+    "ApprovalDecision",
+    "InMemoryApprovalStore",
+    "SQLiteApprovalStore",
     # audit
     "AuditLog",
     "AuditEvent",

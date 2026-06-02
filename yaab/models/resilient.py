@@ -16,11 +16,24 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from ..exceptions import ModelError
 from ..types import Message
 from .base import ModelProvider, ModelResponse, StreamChunk
+
+
+@runtime_checkable
+class Limiter(Protocol):
+    """Anything that gates work by awaiting a permit.
+
+    The only requirement is an ``async def acquire()`` that returns once a permit
+    is available. Both the in-process :class:`RateLimiter` and the shared
+    cross-replica limiter satisfy this, so either is a drop-in for
+    :class:`ResilientModel`.
+    """
+
+    async def acquire(self) -> None: ...
 
 
 class RateLimiter:
@@ -83,13 +96,20 @@ class CircuitBreaker:
 
 
 class ResilientModel:
-    """Wrap a model with a rate limiter and/or circuit breaker."""
+    """Wrap a model with a rate limiter and/or circuit breaker.
+
+    ``rate_limiter`` accepts any object with an ``async def acquire()`` (see
+    :class:`Limiter`): the in-process :class:`RateLimiter` for a single process,
+    or a shared limiter that enforces one global budget across replicas. The
+    wrapper just awaits ``acquire()`` before each call, so swapping one for the
+    other is transparent.
+    """
 
     def __init__(
         self,
         inner: ModelProvider,
         *,
-        rate_limiter: RateLimiter | None = None,
+        rate_limiter: Limiter | None = None,
         circuit_breaker: CircuitBreaker | None = None,
     ) -> None:
         self.inner = inner
@@ -136,4 +156,4 @@ class ResilientModel:
         return self.inner.stream(messages, tools=tools, **kwargs)
 
 
-__all__ = ["ResilientModel", "RateLimiter", "CircuitBreaker"]
+__all__ = ["ResilientModel", "RateLimiter", "CircuitBreaker", "Limiter"]

@@ -82,6 +82,33 @@ class ApprovalRequired(GovernanceError):
         self.reason = reason
 
 
+class ApprovalPending(ApprovalRequired):
+    """Raised when a sensitive tool call has been parked for out-of-band sign-off.
+
+    Unlike a bare :class:`ApprovalRequired`, this carries the correlation ids the
+    run needs to durably park and later resume: the ``approval_id`` of the stored
+    request, the ``run_id`` it belongs to, and the ``resume_id`` (checkpoint key)
+    the loop resumes from once a reviewer decides. It subclasses
+    :class:`ApprovalRequired` so existing ``except ApprovalRequired`` handlers keep
+    working unchanged.
+    """
+
+    def __init__(
+        self,
+        tool: str,
+        arguments: dict,
+        *,
+        approval_id: str,
+        run_id: str,
+        resume_id: str,
+        reason: str = "approval required",
+    ) -> None:
+        super().__init__(tool, arguments, reason=reason)
+        self.approval_id = approval_id
+        self.run_id = run_id
+        self.resume_id = resume_id
+
+
 class LifecycleError(GovernanceError):
     """Raised on an illegal lifecycle state transition."""
 
