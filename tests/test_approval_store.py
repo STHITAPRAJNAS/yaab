@@ -353,3 +353,23 @@ def test_event_duration_ms_defaults_to_none():
     assert ev.duration_ms is None
     ev2 = Event(type=EventType.MODEL_RESPONSE, agent="svc", run_id="run1", duration_ms=12.5)
     assert ev2.duration_ms == 12.5
+
+
+async def test_decide_accepts_string_decision(tmp_path):
+    """Reviewers shouldn't need the enum import: 'approved' (str) must coerce."""
+    store = SQLiteApprovalStore(str(tmp_path / "a.db"))
+    req = ApprovalRequest(
+        approval_id="ap-str",
+        run_id="r1",
+        resume_id="r1",
+        agent="banker",
+        tool="wire_transfer",
+        arguments={"amount": 1},
+    )
+    await store.create(req)
+    decided = await store.decide("ap-str", decision="approved", reviewer="alice")
+    assert decided is not None
+    assert decided.decision is ApprovalDecision.APPROVED
+    # Idempotent second decide with a string is also fine.
+    again = await store.decide("ap-str", decision="denied", reviewer="bob")
+    assert again is not None and again.decision is ApprovalDecision.APPROVED

@@ -110,14 +110,19 @@ class ApprovalStore(Protocol):
 def _apply_decision(
     req: ApprovalRequest,
     *,
-    decision: ApprovalDecision,
+    decision: ApprovalDecision | str,
     reviewer: str,
     reason: str | None,
 ) -> ApprovalRequest:
-    """Return a copy of ``req`` with a reviewer's decision applied."""
+    """Return a copy of ``req`` with a reviewer's decision applied.
+
+    ``decision`` may be the enum or its string value (``"approved"`` /
+    ``"denied"`` / ``"expired"``) — reviewers calling over HTTP or from scripts
+    shouldn't need to import the enum to record a decision.
+    """
     return req.model_copy(
         update={
-            "decision": decision,
+            "decision": ApprovalDecision(decision),
             "reviewer": reviewer,
             "reason": reason,
             "decided_at": time.time(),
