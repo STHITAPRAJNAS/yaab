@@ -92,7 +92,9 @@ class PostgresRunStore:
     async def get(self, run_id: str) -> RunRecord | None:
         return self._read(self._conn, run_id)
 
-    async def update(self, run_id: str, **fields: Any) -> RunRecord | None:
+    async def update(
+        self, run_id: str, *, expect_status: RunStatus | None = None, **fields: Any
+    ) -> RunRecord | None:
         with self._conn.transaction():
             row = self._conn.execute(
                 f"SELECT data FROM {self._table} WHERE run_id = %s FOR UPDATE",
@@ -101,6 +103,8 @@ class PostgresRunStore:
             if row is None:
                 return None
             rec = self._to_record(row[0])
+            if expect_status is not None and rec.status is not expect_status:
+                return None
             fields.setdefault("updated_at", time.time())
             updated = rec.model_copy(update=fields)
             self._write(self._conn, updated)
@@ -143,6 +147,7 @@ class PostgresRunStore:
                     "lease_expires_at": now + lease_seconds,
                     "started_at": rec.started_at or now,
                     "updated_at": now,
+                    "lease_generation": rec.lease_generation + 1,
                 }
             )
             self._write(self._conn, claimed)
@@ -175,6 +180,9 @@ class PostgresRunStore:
                             "owner_pod": None,
                             "lease_expires_at": None,
                             "updated_at": now,
+                            # Fence: a reaped run gets a new generation so the
+                            # stale worker can no longer finalize over it.
+                            "lease_generation": rec.lease_generation + 1,
                         }
                     ),
                 )

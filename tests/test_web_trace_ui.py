@@ -150,12 +150,48 @@ def test_trace_tab_renders_span_token_cost_affordances():
     assert "total_tokens" in page  # rollup totals header
 
 
+def test_trace_tab_draws_latency_bars():
+    """Each span gets a proportional latency bar, not just a millisecond label.
+
+    The waterfall is only readable at a glance when slow steps are visibly wider
+    than fast ones, so the template must carry a bar element whose width is driven
+    by the span's ``duration_ms``.
+    """
+    page = _page()
+    assert "lat-bar" in page  # a dedicated latency-bar element class
+    # The bar width is computed from a span's duration relative to the slowest.
+    assert "maxDur" in page
+
+
+def test_state_tab_has_refresh_button():
+    """The State inspector can re-pull a session's state without retyping the id.
+
+    A reviewer watching state change between turns needs a one-click refresh, so
+    the template ships a refresh affordance wired to the same loader.
+    """
+    page = _page()
+    assert "refreshState" in page  # a one-click re-pull of the current session
+    assert "Refresh" in page
+
+
 def test_events_tab_has_usage_summary_header():
     """The Events tab gains a run-summary header (tokens/cost/latency on RUN_END)."""
     page = _page()
     # The summary parses the now-complete RUN_END payload.
     assert "usage" in page
     assert "run_end" in page
+
+
+def test_events_tab_shows_model_name_chips():
+    """Model-response events surface which model answered, as a chip on the row.
+
+    Scanning a timeline for *which* model handled a step is far faster with a
+    visible model-name chip than expanding every event, so the renderer pulls the
+    model name from the (possibly nested) event payload and renders a chip.
+    """
+    page = _page()
+    assert "chip" in page  # a per-event model-name chip
+    assert "model" in page  # the chip is keyed off the event's model field
 
 
 # --- web_app forwards durable stores to the serve app ------------------

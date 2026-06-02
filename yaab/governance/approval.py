@@ -116,12 +116,24 @@ class ToolApprovalPlugin(Plugin):
         — the runner threads it into ``ctx.state['__resume_id__']`` — so the
         record correlates to the exact checkpoint the loop will resume from once a
         reviewer decides. Falls back to the run id when no resume key is set.
+
+        The ``approval_id`` is *deterministic* — derived from the run, resume key,
+        and tool — and :meth:`ApprovalStore.create` is idempotent. So if the
+        process dies after this write but before the loop checkpoints the pending
+        marker, the resume re-runs to this same gate and re-creates the identical
+        record (never a duplicate, never clobbering a decision a reviewer already
+        made), which makes the run self-heal across that crash window.
         """
+        import hashlib
+
         from .approvals import ApprovalRequest
 
         assert self.store is not None  # guaranteed by the queue-mode caller
         resume_id = ctx.state.get("__resume_id__") or ctx.run_id
+        digest = hashlib.sha256(f"{ctx.run_id}|{resume_id}|{tool}".encode()).hexdigest()[:12]
+        approval_id = f"ap_{digest}"
         req = ApprovalRequest(
+            approval_id=approval_id,
             run_id=ctx.run_id,
             resume_id=resume_id,
             agent=agent,

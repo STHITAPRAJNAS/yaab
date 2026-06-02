@@ -78,6 +78,12 @@ class RunRecord(BaseModel):
     finished_at: float | None = None
     owner_pod: str | None = None
     lease_expires_at: float | None = None
+    #: Monotonic fencing token bumped on every (re)claim and every reap. A worker
+    #: only finalizes/heartbeats a run while the record's generation still matches
+    #: the one it claimed — so a stale worker whose lease was reaped and re-queued
+    #: cannot overwrite the result of the newer worker that re-claimed the run.
+    #: This is the standard fencing-token solution (cf. Chubby/Zookeeper).
+    lease_generation: int = 0
 
 
 @runtime_checkable
@@ -97,11 +103,19 @@ class RunStore(Protocol):
         """Return the record, or ``None`` if no such run exists."""
         ...
 
-    async def update(self, run_id: str, **fields: Any) -> RunRecord | None:
+    async def update(
+        self, run_id: str, *, expect_status: RunStatus | None = None, **fields: Any
+    ) -> RunRecord | None:
         """Atomically patch the given fields and return the updated record.
 
         Returns ``None`` if the run does not exist. ``updated_at`` is refreshed
         automatically.
+
+        When ``expect_status`` is given, the patch is a guarded compare-and-set:
+        it only applies (and returns the record) if the run is *currently* in
+        that status, and returns ``None`` otherwise. This lets a caller win a
+        race exactly once — e.g. only one replica flips a ``PAUSED`` run to
+        ``RUNNING`` to resume it after an approval decision.
         """
         ...
 

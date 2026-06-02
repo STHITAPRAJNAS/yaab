@@ -159,6 +159,98 @@ def _record_list_item(record: Any) -> dict[str, Any]:
     return {"id": record.run_id, "status": status, "started_at": record.created_at}
 
 
+def _validate_webhook(url: str | None) -> str | None:
+    """Reject webhook URLs that could drive a server-side request forgery.
+
+    A webhook is fetched server-side by the worker, so an attacker-controlled URL
+    is an SSRF vector: it could probe internal services or hit a cloud metadata
+    endpoint. We require ``https`` and refuse loopback, link-local (incl. the
+    169.254 metadata range), and RFC1918 private hosts. ``None``/empty passes
+    through (no webhook). Raises ``ValueError`` on a rejected URL.
+    """
+    if not url:
+        return url
+    import ipaddress
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError("webhook must use https")
+    host = parsed.hostname
+    if not host:
+        raise ValueError("webhook has no host")
+    lowered = host.lower()
+    if lowered in ("localhost", "localhost.localdomain") or lowered.endswith(".localhost"):
+        raise ValueError("webhook host is not allowed")
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip is not None and (
+        ip.is_loopback
+        or ip.is_link_local  # covers 169.254.0.0/16 (cloud metadata) and fe80::/10
+        or ip.is_private
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    ):
+        raise ValueError("webhook host is not allowed")
+    return url
+
+
+#: Substrings (case-insensitive) of argument names whose values are masked in a
+#: persisted trace before it is returned over HTTP. Secrets should never travel
+#: as tool arguments, but a trace that captured one must not leak it to a reader.
+_SENSITIVE_ARG_HINTS = (
+    "api_key",
+    "apikey",
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "auth",
+    "credential",
+    "private_key",
+    "access_key",
+    "session_key",
+)
+_REDACTED = "***redacted***"
+
+
+def _is_sensitive_arg(name: str) -> bool:
+    lowered = str(name).lower()
+    return any(hint in lowered for hint in _SENSITIVE_ARG_HINTS)
+
+
+def _redact_arguments(value: Any) -> Any:
+    """Recursively mask values of sensitive-looking keys in tool arguments.
+
+    Keys like ``api_key``/``password``/``token``/``secret`` have their values
+    replaced with a redaction marker; the structure is otherwise preserved so a
+    debugger still sees which arguments were passed, just not their secrets.
+    """
+    if isinstance(value, dict):
+        return {
+            k: (_REDACTED if _is_sensitive_arg(k) else _redact_arguments(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_arguments(v) for v in value]
+    return value
+
+
+def _redact_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return a copy of the trace with tool-call/approval arguments redacted."""
+    redacted: list[dict[str, Any]] = []
+    for ev in events:
+        payload = ev.get("payload")
+        if isinstance(payload, dict) and "arguments" in payload:
+            new_payload = {**payload, "arguments": _redact_arguments(payload["arguments"])}
+            ev = {**ev, "payload": new_payload}
+        redacted.append(ev)
+    return redacted
+
+
 def _compute_trace(events: list[dict[str, Any]]) -> dict[str, Any]:
     """Compute a span/waterfall + rollups from a run's persisted event trace.
 
@@ -365,8 +457,16 @@ def fastapi_server_app(
             store's backend; the bare in-memory path stays zero-overhead.
         cron_store: A durable schedule store enabling ``/crons`` and the worker's
             schedule ticks.
-        worker: An explicit pre-built :class:`~yaab.runs.worker.RunWorker`; one is
-            built from the agent/store when omitted and a ``run_store`` is set.
+        worker: Controls the in-process queue worker. ``None`` (default) builds
+            one from the agent/store when a ``run_store`` is set. An explicit
+            :class:`~yaab.runs.worker.RunWorker` is adopted as-is. **Pass
+            ``worker=False`` to disable the embedded worker** — required for
+            multi-replica deployments: run ONE external worker process (a
+            standalone ``RunWorker.run_forever()`` loop, not embedded in each API
+            replica) so several replicas don't each claim from the same queue.
+            When a ``run_store`` is configured and the embedded worker is left
+            enabled, this app is single-worker by design; scale the API tier
+            horizontally only with ``worker=False`` plus a dedicated worker.
     """
     try:
         from contextlib import asynccontextmanager
@@ -403,9 +503,11 @@ def fastapi_server_app(
         )
 
     # The in-process worker that drains the durable queue (background runs and
-    # resumed approvals). Started/stopped by the app lifespan.
-    served_worker = worker
-    if served_worker is None and run_store is not None:
+    # resumed approvals). Started/stopped by the app lifespan. ``worker=False``
+    # disables the embedded worker so a multi-replica deployment can run a single
+    # external worker instead of one per API replica.
+    served_worker = None if worker is False else worker
+    if served_worker is None and worker is not False and run_store is not None:
         from .runs.worker import RunWorker
 
         served_worker = RunWorker(
@@ -413,6 +515,7 @@ def fastapi_server_app(
             run_store,
             runner=served_runner,
             cron_store=cron_store,
+            approval_store=approval_store,
         )
 
     @asynccontextmanager
@@ -444,8 +547,16 @@ def fastapi_server_app(
                 import asyncio
                 import contextlib
 
+                # Give in-flight runs room to checkpoint/finalize on a clean
+                # shutdown rather than abandoning leases. The grace period scales
+                # with the lease/heartbeat cadence so an active run can drain
+                # within it; anything still running past the grace is left for the
+                # reaper to re-queue after its lease lapses.
+                lease = float(getattr(served_worker, "lease_seconds", 30.0))
+                heartbeat = float(getattr(served_worker, "heartbeat_interval", lease / 3.0))
+                grace = max(15.0, lease + heartbeat)
                 with contextlib.suppress(Exception):
-                    await asyncio.wait_for(task, timeout=5.0)
+                    await asyncio.wait_for(task, timeout=grace)
 
     app = FastAPI(
         title=f"YAAB · {agent.name}",
@@ -458,6 +569,33 @@ def fastapi_server_app(
             return auth_scheme.authenticate(dict(request.headers)) or "anonymous"
         except AuthError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    def _owns_record(record: Any, identity: str) -> bool:
+        """True if ``identity`` may access ``record`` (cross-tenant guard).
+
+        A run records the identity that submitted it. A caller may read a run
+        only when it carries no identity (legacy/anonymous, open by design) or it
+        matches the caller. This blocks identity A from reading identity B's run,
+        trace, events, or session state by guessing an id.
+        """
+        owner = getattr(record, "identity", None)
+        return owner is None or owner == identity
+
+    async def _authorized_record(run_id: str, identity: str) -> Any | None:
+        """Fetch a run record, enforcing the cross-tenant access guard.
+
+        Returns the record when the caller owns it, ``None`` when there is no such
+        run, and raises ``403`` when the run exists but belongs to someone else —
+        so a probe can't distinguish "not yours" by reading another's data.
+        """
+        if run_store is None:
+            return None
+        record = await run_store.get(run_id)
+        if record is None:
+            return None
+        if not _owns_record(record, identity):
+            raise HTTPException(status_code=403, detail="forbidden")
+        return record
 
     def _card() -> dict:
         from .governance.registry import AgentCard
@@ -560,6 +698,12 @@ def fastapi_server_app(
         # the worker drains (survives restart, visible across replicas); without
         # one, keep the classic in-process fire-and-poll task.
         if body.get("background"):
+            # SSRF guard: a webhook is fetched server-side by the worker, so a
+            # caller-supplied URL must be validated before it is stored/fired.
+            try:
+                webhook = _validate_webhook(body.get("webhook"))
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
             if run_store is not None:
                 # multitask_strategy guards a session with an already-active run.
                 strategy = body.get("multitask_strategy", "enqueue")
@@ -573,9 +717,7 @@ def fastapi_server_app(
                             )
                         # cancel: ask the active run to stop, then enqueue this one.
                         await run_store.request_cancel(active.run_id)
-                run_id = await _enqueue_background(
-                    prompt, session_id, identity, webhook=body.get("webhook")
-                )
+                run_id = await _enqueue_background(prompt, session_id, identity, webhook=webhook)
                 return JSONResponse({"run_id": run_id, "status": "queued"}, status_code=202)
 
             import asyncio
@@ -632,9 +774,9 @@ def fastapi_server_app(
     @app.get("/runs/{run_id}")
     async def get_run(run_id: str, request: Request) -> Any:
         """Status of a single run (+ output/usage or error once finished)."""
-        _identify(request)
+        identity = _identify(request)
         if run_store is not None:
-            record = await run_store.get(run_id)
+            record = await _authorized_record(run_id, identity)
             if record is not None:
                 return JSONResponse(_record_view(record))
             # Fall through to the in-process registry for sync runs not stored.
@@ -646,9 +788,9 @@ def fastapi_server_app(
     @app.post("/runs/{run_id}/cancel")
     async def cancel_run(run_id: str, request: Request) -> Any:
         """Remotely cancel an in-flight run. No-op for an already-finished run."""
-        _identify(request)
+        identity = _identify(request)
         if run_store is not None:
-            record = await run_store.get(run_id)
+            record = await _authorized_record(run_id, identity)
             if record is not None:
                 await run_store.request_cancel(run_id)
                 status = (
@@ -665,27 +807,56 @@ def fastapi_server_app(
         return JSONResponse({"run_id": run_id, "status": entry["status"]})
 
     # --- run history + trace + state inspector ---------------------------
+    def _trace_limit(request: Request) -> int | None:
+        """Parse an optional ``?limit=N`` bound on how many events to materialize."""
+        raw = request.query_params.get("limit")
+        if raw is None:
+            return None
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="limit must be an integer") from exc
+        if value < 0:
+            raise HTTPException(status_code=400, detail="limit must be >= 0")
+        return value
+
+    async def _trace_events(run_id: str, limit: int | None) -> list[dict[str, Any]]:
+        """Load a run's events, capping the in-memory payload when ``limit`` is set.
+
+        A trace can grow unbounded; loading every event into memory and computing
+        over it is O(events). The optional cap pages the store directly so a
+        single request's payload (and the work behind it) stays bounded — large
+        traces are paged, never materialized whole.
+        """
+        assert trace_store is not None  # callers guard on a configured store
+        return await trace_store.get(run_id, limit=limit)
+
     @app.get("/runs/{run_id}/events")
     async def run_events(run_id: str, request: Request) -> Any:
         """The full persisted event trace for a run (requires a trace store)."""
-        _identify(request)
+        identity = _identify(request)
         if trace_store is None:
             raise HTTPException(
                 status_code=404, detail="no trace store configured; enable one to persist runs"
             )
-        events = await trace_store.get(run_id)
-        return JSONResponse({"run_id": run_id, "events": events})
+        # Cross-tenant guard: when runs are durable, only the run's owner may read
+        # its trace (which carries tool arguments). 403 if it belongs to another.
+        await _authorized_record(run_id, identity)
+        events = await _trace_events(run_id, _trace_limit(request))
+        # Mask any secret-looking tool arguments before returning the raw events.
+        return JSONResponse({"run_id": run_id, "events": _redact_events(events)})
 
     @app.get("/runs/{run_id}/trace")
     async def run_trace(run_id: str, request: Request) -> Any:
         """A computed span/waterfall with token/cost/latency rollups for a run."""
-        _identify(request)
+        identity = _identify(request)
         if trace_store is None:
             raise HTTPException(
                 status_code=404, detail="no trace store configured; enable one to persist runs"
             )
-        events = await trace_store.get(run_id)
-        trace = _compute_trace(events)
+        await _authorized_record(run_id, identity)
+        events = await _trace_events(run_id, _trace_limit(request))
+        trace = _compute_trace(_redact_events(events))
         trace["run_id"] = run_id
         return JSONResponse(trace)
 
@@ -700,13 +871,32 @@ def fastapi_server_app(
             return None
         return dict(getattr(session, "state", {}) or {})
 
+    async def _session_owned_by(session_id: str, identity: str) -> bool:
+        """True if ``identity`` owns at least one run on ``session_id``.
+
+        With a durable run store we can map a session back to the identities that
+        ran on it and gate the state inspector accordingly. Sessions with only
+        anonymous/legacy runs (no identity) stay open, matching the run guard.
+        """
+        if run_store is None:
+            return True  # no run store to attribute the session; legacy-open
+        owner_seen = False
+        for rec in await run_store.list(limit=1000):
+            if rec.session_id != session_id:
+                continue
+            if getattr(rec, "identity", None) is None or rec.identity == identity:
+                return True
+            owner_seen = True
+        # The session has runs, but none owned by (or anonymous to) this caller.
+        return not owner_seen
+
     @app.get("/runs/{run_id}/state")
     async def run_state(run_id: str, request: Request) -> Any:
         """The session-state snapshot for the session a run belongs to."""
-        _identify(request)
+        identity = _identify(request)
         session_id: str | None = None
         if run_store is not None:
-            record = await run_store.get(run_id)
+            record = await _authorized_record(run_id, identity)
             if record is not None:
                 session_id = record.session_id
         if session_id is None:
@@ -719,7 +909,11 @@ def fastapi_server_app(
     @app.get("/sessions/{session_id}/state")
     async def session_state(session_id: str, request: Request) -> Any:
         """The KV state snapshot for a session (the state inspector)."""
-        _identify(request)
+        identity = _identify(request)
+        # Cross-tenant guard: only a caller who owns a run on this session may
+        # read its state, so a known session id can't be used to read another's.
+        if not await _session_owned_by(session_id, identity):
+            raise HTTPException(status_code=403, detail="forbidden")
         state = await _session_state(session_id)
         if state is None:
             raise HTTPException(status_code=404, detail=f"unknown session {session_id}")
@@ -736,6 +930,8 @@ def fastapi_server_app(
         and writes the terminal outcome back to the durable run store so any
         replica sees the completed run. Returns whether the run existed.
         """
+        import asyncio
+
         from .runs.base import RunStatus
 
         assert run_store is not None  # only called from a run_store-guarded path
@@ -749,12 +945,39 @@ def fastapi_server_app(
             await run_store.update(run_id, status=RunStatus.QUEUED)
             return True
 
-        await run_store.update(
-            run_id,
-            status=RunStatus.RUNNING,
-            cancel_requested=False,
-            started_at=record.started_at or time.time(),
-        )
+        # The decision may land while the worker is still evicting the run to
+        # PAUSED (the approval record is created a beat before the pause is
+        # durable). Briefly wait for PAUSED so we never flip a RUNNING run to
+        # RUNNING (which would resume from a half-written checkpoint), and never
+        # silently drop a decided approval. If it never pauses we leave the
+        # decision recorded; a later manual resume can still pick it up.
+        claimed = None
+        deadline = time.monotonic() + 5.0
+        while True:
+            # Guarded transition: only a run still PAUSED may be resumed, and only
+            # the caller whose compare-and-set wins flips it to RUNNING. A second
+            # concurrent approval/resume sees the run already RUNNING (or
+            # terminal) and returns without re-executing the held tool — closing
+            # the double-resume race two simultaneous decisions could open.
+            claimed = await run_store.update(
+                run_id,
+                expect_status=RunStatus.PAUSED,
+                status=RunStatus.RUNNING,
+                cancel_requested=False,
+                started_at=record.started_at or time.time(),
+            )
+            if claimed is not None:
+                break
+            current = await run_store.get(run_id)
+            if current is None:
+                return False
+            status = (
+                current.status.value if hasattr(current.status, "value") else str(current.status)
+            )
+            # Already resumed/terminal, or another resumer won — nothing to do.
+            if status != "running" or time.monotonic() > deadline:
+                return True
+            await asyncio.sleep(0.01)
         try:
             result = await engine.run(
                 agent,
@@ -783,6 +1006,13 @@ def fastapi_server_app(
         )
         return True
 
+    # Let the in-process worker reconcile a decided-but-unresumed PAUSED run by
+    # re-driving it through the same idempotent resume the HTTP path uses, so a
+    # decision recorded just before a crash never orphans its run (finding: a
+    # decision persisted but the resume never fired).
+    if served_worker is not None and approval_store is not None:
+        served_worker.resume_paused = _resume_run
+
     @app.get("/approvals")
     async def list_approvals(request: Request) -> Any:
         """List pending approval requests (optionally scoped by status/agent)."""
@@ -809,7 +1039,34 @@ def fastapi_server_app(
             raise HTTPException(status_code=404, detail=f"unknown approval {approval_id}")
         return JSONResponse(req.model_dump(mode="json"))
 
-    async def _decide(approval_id: str, decision_value: str, body: dict[str, Any]) -> Any:
+    def _authorize_reviewer(req: Any, identity: str, body: dict[str, Any]) -> str:
+        """Enforce intent-based access control on who may decide an approval.
+
+        When the request pins ``allowed_reviewers``, the authenticated identity
+        must be among them (or hold ``required_role`` as a capability passed in
+        the body's ``capabilities``). Otherwise any authenticated reviewer may
+        act (today's default). Returns the reviewer name to record — the
+        authenticated identity, so the audit trail can't be spoofed via the body.
+        """
+        allowed = list(getattr(req, "allowed_reviewers", []) or [])
+        required_role = getattr(req, "required_role", None)
+        if allowed or required_role is not None:
+            caps = set(body.get("capabilities") or [])
+            in_list = identity in allowed if allowed else False
+            has_role = required_role in caps if required_role is not None else False
+            if not (in_list or has_role):
+                raise HTTPException(
+                    status_code=403, detail="not authorized to review this approval"
+                )
+        # Record the authenticated identity as the reviewer when it is concrete;
+        # fall back to a body-provided label only for the open/anonymous case.
+        if identity and identity != "anonymous":
+            return identity
+        return body.get("reviewer") or "reviewer"
+
+    async def _decide(
+        approval_id: str, decision_value: str, body: dict[str, Any], identity: str
+    ) -> Any:
         """Record a decision and re-enqueue the parked run for the worker."""
         from .governance.approvals import ApprovalDecision
 
@@ -818,7 +1075,7 @@ def fastapi_server_app(
         req = await approval_store.get(approval_id)
         if req is None:
             raise HTTPException(status_code=404, detail=f"unknown approval {approval_id}")
-        reviewer = body.get("reviewer") or "reviewer"
+        reviewer = _authorize_reviewer(req, identity, body)
         reason = body.get("reason")
         decision = (
             ApprovalDecision.APPROVED if decision_value == "approved" else ApprovalDecision.DENIED
@@ -837,23 +1094,25 @@ def fastapi_server_app(
     @app.post("/approvals/{approval_id}/approve")
     async def approve(approval_id: str, request: Request) -> Any:
         """Approve a parked tool call; the run resumes and runs the tool."""
-        _identify(request)
+        identity = _identify(request)
         body = await _safe_body(request)
-        return await _decide(approval_id, "approved", body)
+        return await _decide(approval_id, "approved", body, identity)
 
     @app.post("/approvals/{approval_id}/deny")
     async def deny(approval_id: str, request: Request) -> Any:
         """Deny a parked tool call; the run resumes with the denial fed back."""
-        _identify(request)
+        identity = _identify(request)
         body = await _safe_body(request)
-        return await _decide(approval_id, "denied", body)
+        return await _decide(approval_id, "denied", body, identity)
 
     @app.post("/runs/{run_id}/resume")
     async def resume_run(run_id: str, request: Request) -> Any:
         """Idempotent manual resume of a paused run (re-enqueue for the worker)."""
-        _identify(request)
+        identity = _identify(request)
         if run_store is None:
             raise HTTPException(status_code=404, detail="no run store configured")
+        # Cross-tenant guard: only the run's owner may resume it (403 otherwise).
+        await _authorized_record(run_id, identity)
         body = await _safe_body(request)
         decision = body.get("decision")
         existed = await _resume_run(run_id, decision=decision)
@@ -871,11 +1130,13 @@ def fastapi_server_app(
         emitted (from the trace store) followed by a terminal marker once the run
         record reaches a terminal state. Requires a trace store.
         """
-        _identify(request)
+        identity = _identify(request)
         if trace_store is None:
             raise HTTPException(
                 status_code=404, detail="no trace store configured; enable one to join runs"
             )
+        # Cross-tenant guard: only the run's owner may tail its (redacted) trace.
+        await _authorized_record(run_id, identity)
 
         async def event_source():
             import asyncio
@@ -884,7 +1145,7 @@ def fastapi_server_app(
             seen = 0
             deadline = time.monotonic() + 30.0
             while True:
-                events = await trace_store.get(run_id)
+                events = _redact_events(await trace_store.get(run_id))
                 for ev in events[seen:]:
                     etype = ev.get("type", "message")
                     yield f"event: {etype}\ndata: {json.dumps(ev)}\n\n"
@@ -928,6 +1189,12 @@ def fastapi_server_app(
             interval = parse_schedule(schedule)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # SSRF guard: a cron's webhook is fetched server-side when the schedule
+        # fires, so validate it before persisting the schedule.
+        try:
+            webhook = _validate_webhook(body.get("webhook"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         now = time.time()
         cron_id = body.get("cron_id") or f"cron_{uuid.uuid4().hex[:12]}"
         record = CronRecord(
@@ -940,7 +1207,7 @@ def fastapi_server_app(
             created_at=now,
             session_id=body.get("session_id"),
             identity=body.get("identity"),
-            webhook=body.get("webhook"),
+            webhook=webhook,
         )
         await cron_store.create(record)
         return JSONResponse(record.model_dump(mode="json"), status_code=201)

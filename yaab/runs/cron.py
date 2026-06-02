@@ -203,8 +203,10 @@ class SQLiteCronStore:
 
     def __init__(self, path: str = "yaab_crons.db") -> None:
         # ``isolation_level=None`` gives explicit transaction control so a tick's
-        # claim-and-advance is an atomic read-modify-write.
-        self._conn = sqlite3.connect(path, isolation_level=None)
+        # claim-and-advance is an atomic read-modify-write. check_same_thread=False
+        # lets the served worker thread and request handlers share the store
+        # (sqlite3 serialized mode makes that safe).
+        self._conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.execute(_SCHEMA)

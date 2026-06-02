@@ -82,8 +82,16 @@ class TraceStore(Protocol):
         """
         ...
 
-    async def get(self, run_id: str) -> _List[dict[str, Any]]:
-        """Return the run's events ordered by ``seq`` (empty if unknown)."""
+    async def get(
+        self, run_id: str, *, limit: int | None = None, offset: int = 0
+    ) -> _List[dict[str, Any]]:
+        """Return the run's events ordered by ``seq`` (empty if unknown).
+
+        ``offset``/``limit`` page the result so a caller can bound how many
+        events it pulls into memory at once: a run with a very large trace need
+        not be materialized whole. ``limit=None`` returns all events from
+        ``offset`` onward (the historical behavior when unpaged).
+        """
         ...
 
     async def list_runs(self, limit: int = 100) -> _List[str]:
@@ -92,6 +100,16 @@ class TraceStore(Protocol):
 
     async def delete(self, run_id: str) -> None:
         """Drop a run's whole trace. A no-op if the run is unknown."""
+        ...
+
+    async def prune(self, *, older_than: float | None = None, keep_last: int | None = None) -> int:
+        """Reclaim trace storage; returns the number of events deleted.
+
+        Traces are not garbage-collected automatically — an operator must call
+        this (e.g. from a scheduled job). ``older_than`` drops events recorded
+        before that epoch timestamp; ``keep_last`` keeps only the most recent N
+        events per run. Both may be combined. With neither set it is a no-op.
+        """
         ...
 
 
@@ -110,28 +128,56 @@ class InMemoryTraceStore:
         self._traces: dict[str, dict[int, dict[str, Any]]] = {}
         # run_id -> first-seen monotonic counter, for newest-first listing.
         self._order: dict[str, int] = {}
+        # (run_id, seq) -> wall-clock time the event was recorded (for prune).
+        self._times: dict[tuple[str, int], float] = {}
         self._counter = 0
 
     async def append(self, run_id: str, seq: int, event: dict[str, Any]) -> None:
         run = self._traces.setdefault(run_id, {})
         run[int(seq)] = _safe_event(event)
+        self._times[(run_id, int(seq))] = time.time()
         if run_id not in self._order:
             self._order[run_id] = self._counter
             self._counter += 1
 
-    async def get(self, run_id: str) -> _List[dict[str, Any]]:
+    async def get(
+        self, run_id: str, *, limit: int | None = None, offset: int = 0
+    ) -> _List[dict[str, Any]]:
         run = self._traces.get(run_id)
         if not run:
             return []
-        return [run[s] for s in sorted(run)]
+        ordered = [run[s] for s in sorted(run)]
+        if limit is None:
+            return ordered[offset:]
+        return ordered[offset : offset + limit]
 
     async def list_runs(self, limit: int = 100) -> _List[str]:
         ordered = sorted(self._order, key=lambda r: self._order[r], reverse=True)
         return ordered[:limit]
 
     async def delete(self, run_id: str) -> None:
+        for seq in list(self._traces.get(run_id, {})):
+            self._times.pop((run_id, seq), None)
         self._traces.pop(run_id, None)
         self._order.pop(run_id, None)
+
+    async def prune(self, *, older_than: float | None = None, keep_last: int | None = None) -> int:
+        deleted = 0
+        for run_id, run in list(self._traces.items()):
+            seqs = sorted(run)
+            drop: set[int] = set()
+            if older_than is not None:
+                drop |= {s for s in seqs if self._times.get((run_id, s), 0.0) < older_than}
+            if keep_last is not None and len(seqs) > keep_last:
+                drop |= set(seqs[: len(seqs) - keep_last])
+            for s in drop:
+                run.pop(s, None)
+                self._times.pop((run_id, s), None)
+                deleted += 1
+            if not run:
+                self._traces.pop(run_id, None)
+                self._order.pop(run_id, None)
+        return deleted
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +204,10 @@ class SQLiteTraceStore:
     """
 
     def __init__(self, path: str = "yaab_trace.db") -> None:
-        self._conn = sqlite3.connect(path, isolation_level=None)
+        # check_same_thread=False: the served app appends from the worker thread
+        # while requests read; sqlite3 serialized mode (threadsafety 3) makes the
+        # shared connection safe.
+        self._conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.execute(_SCHEMA)
@@ -171,11 +220,16 @@ class SQLiteTraceStore:
             (run_id, int(seq), time.time(), json.dumps(_safe_event(event))),
         )
 
-    async def get(self, run_id: str) -> _List[dict[str, Any]]:
-        rows = self._conn.execute(
-            "SELECT payload FROM trace_events WHERE run_id = ? ORDER BY seq ASC",
-            (run_id,),
-        ).fetchall()
+    async def get(
+        self, run_id: str, *, limit: int | None = None, offset: int = 0
+    ) -> _List[dict[str, Any]]:
+        base = "SELECT payload FROM trace_events WHERE run_id = ? ORDER BY seq ASC"
+        if limit is None:
+            rows = self._conn.execute(f"{base} LIMIT -1 OFFSET ?", (run_id, offset)).fetchall()
+        else:
+            rows = self._conn.execute(
+                f"{base} LIMIT ? OFFSET ?", (run_id, limit, offset)
+            ).fetchall()
         return [json.loads(r[0]) for r in rows]
 
     async def list_runs(self, limit: int = 100) -> _List[str]:
@@ -188,6 +242,25 @@ class SQLiteTraceStore:
 
     async def delete(self, run_id: str) -> None:
         self._conn.execute("DELETE FROM trace_events WHERE run_id = ?", (run_id,))
+
+    async def prune(self, *, older_than: float | None = None, keep_last: int | None = None) -> int:
+        deleted = 0
+        if older_than is not None:
+            cur = self._conn.execute("DELETE FROM trace_events WHERE created_at < ?", (older_than,))
+            deleted += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+        if keep_last is not None:
+            # Keep only the most recent ``keep_last`` events per run.
+            cur = self._conn.execute(
+                "DELETE FROM trace_events WHERE (run_id, seq) IN ("
+                "  SELECT run_id, seq FROM ("
+                "    SELECT run_id, seq, ROW_NUMBER() OVER ("
+                "      PARTITION BY run_id ORDER BY seq DESC) AS rn FROM trace_events"
+                "  ) WHERE rn > ?"
+                ")",
+                (keep_last,),
+            )
+            deleted += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+        return deleted
 
 
 # ---------------------------------------------------------------------------
@@ -238,11 +311,20 @@ class PostgresTraceStore:
             (run_id, int(seq), time.time(), json.dumps(_safe_event(event))),
         )
 
-    async def get(self, run_id: str) -> _List[dict[str, Any]]:
-        rows = self._conn.execute(
-            f"SELECT payload FROM {self._table} WHERE run_id = %s ORDER BY seq ASC",
-            (run_id,),
-        ).fetchall()
+    async def get(
+        self, run_id: str, *, limit: int | None = None, offset: int = 0
+    ) -> _List[dict[str, Any]]:
+        if limit is None:
+            rows = self._conn.execute(
+                f"SELECT payload FROM {self._table} WHERE run_id = %s ORDER BY seq ASC OFFSET %s",
+                (run_id, offset),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                f"SELECT payload FROM {self._table} WHERE run_id = %s "
+                f"ORDER BY seq ASC LIMIT %s OFFSET %s",
+                (run_id, limit, offset),
+            ).fetchall()
         return [r[0] for r in rows]
 
     async def list_runs(self, limit: int = 100) -> _List[str]:
@@ -255,6 +337,26 @@ class PostgresTraceStore:
 
     async def delete(self, run_id: str) -> None:
         self._conn.execute(f"DELETE FROM {self._table} WHERE run_id = %s", (run_id,))
+
+    async def prune(self, *, older_than: float | None = None, keep_last: int | None = None) -> int:
+        deleted = 0
+        if older_than is not None:
+            cur = self._conn.execute(
+                f"DELETE FROM {self._table} WHERE created_at < %s", (older_than,)
+            )
+            deleted += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+        if keep_last is not None:
+            cur = self._conn.execute(
+                f"DELETE FROM {self._table} WHERE (run_id, seq) IN ("
+                f"  SELECT run_id, seq FROM ("
+                f"    SELECT run_id, seq, ROW_NUMBER() OVER ("
+                f"      PARTITION BY run_id ORDER BY seq DESC) AS rn FROM {self._table}"
+                f"  ) sub WHERE rn > %s"
+                f")",
+                (keep_last,),
+            )
+            deleted += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+        return deleted
 
 
 # ---------------------------------------------------------------------------
@@ -315,8 +417,13 @@ class RedisTraceStore:
         self._redis.zadd(self._seq_index_key(run_id), {str(seq): float(seq)})
         self._redis.zadd(self._runs_index_key, {run_id: time.time()})
 
-    async def get(self, run_id: str) -> _List[dict[str, Any]]:
-        seqs = self._redis.zrange(self._seq_index_key(run_id), 0, -1)
+    async def get(
+        self, run_id: str, *, limit: int | None = None, offset: int = 0
+    ) -> _List[dict[str, Any]]:
+        # ZRANGE is inclusive; bound it to ``[offset, offset+limit-1]`` so a large
+        # trace need not pull every seq into memory before slicing.
+        stop = -1 if limit is None else offset + limit - 1
+        seqs = self._redis.zrange(self._seq_index_key(run_id), offset, stop)
         events: list[dict[str, Any]] = []
         for s in seqs:
             if isinstance(s, bytes):
@@ -338,6 +445,37 @@ class RedisTraceStore:
             self._redis.delete(self._event_key(run_id, int(s)))
         self._redis.delete(self._seq_index_key(run_id))
         self._redis.zrem(self._runs_index_key, run_id)
+
+    async def prune(self, *, older_than: float | None = None, keep_last: int | None = None) -> int:
+        # ``older_than`` cannot be applied per-event without a stored timestamp;
+        # we use the per-run last-write time in the runs index to drop whole runs
+        # older than the cutoff, and ``keep_last`` trims each run's oldest events.
+        deleted = 0
+        runs = self._redis.zrange(self._runs_index_key, 0, -1, withscores=True)
+        for entry in runs:
+            run_id, score = entry
+            if isinstance(run_id, bytes):
+                run_id = run_id.decode("utf-8")
+            if older_than is not None and float(score) < older_than:
+                seqs = self._redis.zrange(self._seq_index_key(run_id), 0, -1)
+                for s in seqs:
+                    if isinstance(s, bytes):
+                        s = s.decode("utf-8")
+                    self._redis.delete(self._event_key(run_id, int(s)))
+                    deleted += 1
+                self._redis.delete(self._seq_index_key(run_id))
+                self._redis.zrem(self._runs_index_key, run_id)
+                continue
+            if keep_last is not None:
+                seqs = self._redis.zrange(self._seq_index_key(run_id), 0, -1)
+                excess = len(seqs) - keep_last
+                for s in seqs[:excess] if excess > 0 else []:
+                    if isinstance(s, bytes):
+                        s = s.decode("utf-8")
+                    self._redis.delete(self._event_key(run_id, int(s)))
+                    self._redis.zrem(self._seq_index_key(run_id), s)
+                    deleted += 1
+        return deleted
 
 
 # ---------------------------------------------------------------------------

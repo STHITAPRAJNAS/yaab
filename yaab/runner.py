@@ -12,6 +12,8 @@ layers.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import time
 from collections.abc import AsyncIterator
@@ -197,6 +199,11 @@ class Runner:
         # the loop will resume from.
         if ckpt_id is not None:
             ctx.state["__resume_id__"] = ckpt_id
+            # Key the run (and therefore its trace) by the durable resume id so the
+            # persisted timeline correlates with the run record and is retrievable
+            # via ``GET /runs/{id}/trace`` — and so a resume appends to the same
+            # trace rather than starting a disconnected one.
+            ctx.run_id = ckpt_id
         gov = self.governance
 
         # A timeout is just a deadline on the cancellation token.
@@ -217,6 +224,12 @@ class Runner:
 
         trace_store = self.trace_store
         seq = [0]
+        # Trace appends are async; ``emit`` is sync (called as ``yield emit(...)``)
+        # so it schedules each append as a task and we drain them at run end. This
+        # guarantees the timeline (including APPROVAL_REQUIRED) is actually
+        # persisted — previously the coroutine was created and dropped unawaited,
+        # so durable traces were silently never written.
+        trace_tasks: list[Any] = []
 
         def emit(etype: EventType, *, duration_ms: float | None = None, **payload: Any) -> Event:
             event = Event(
@@ -227,13 +240,25 @@ class Runner:
                 duration_ms=duration_ms,
             )
             # Persist the full timeline for the trace console, keyed by sequence,
-            # in a JSON-safe shape (so it survives the run and a restart).
+            # in a JSON-safe shape (so it survives the run and a restart). The
+            # append may be sync (duck-typed store) or async (the durable
+            # backends); a returned coroutine is scheduled and drained at run end.
             if trace_store is not None:
-                payload = _safe_event(event)
-                payload["seq"] = seq[0]
-                trace_store.append(ctx.run_id, seq[0], payload)
+                safe = _safe_event(event)
+                safe["seq"] = seq[0]
+                maybe = trace_store.append(ctx.run_id, seq[0], safe)
+                if maybe is not None and inspect.isawaitable(maybe):
+                    trace_tasks.append(asyncio.ensure_future(maybe))
             seq[0] += 1
             return event
+
+        async def _drain_trace() -> None:
+            """Await any in-flight async trace appends so the timeline is durable."""
+            if not trace_tasks:
+                return
+            pending = list(trace_tasks)
+            trace_tasks.clear()
+            await asyncio.gather(*pending, return_exceptions=True)
 
         try:
             # Registry gate (enforcing mode).
@@ -282,6 +307,10 @@ class Runner:
                 ctx.usage = Usage.model_validate(resume_state["usage"])
                 output_retries_left = resume_state.get("output_retries_left", output_retries_left)
                 start_step = int(resume_state["step"]) + 1
+                # Continue the trace sequence past the events recorded before the
+                # pause so a resume appends to the same timeline instead of
+                # overwriting it (the approval event and prior steps are kept).
+                seq[0] = int(resume_state.get("trace_seq", 0))
                 if _is_forcing_tool_choice(effective_tool_choice):
                     effective_tool_choice = "auto"
                 yield emit(EventType.USER_MESSAGE, content=scanned_prompt)
@@ -365,7 +394,14 @@ class Runner:
                             results = await self._run_tools_parallel(agent, ctx, tcs)
                         except ApprovalRequired as exc:
                             paused = self._pause_for_approval(
-                                ctx, exc, _step, messages, tool_counts, output_retries_left, emit
+                                ctx,
+                                exc,
+                                _step,
+                                messages,
+                                tool_counts,
+                                output_retries_left,
+                                emit,
+                                seq,
                             )
                             if paused is None:
                                 raise
@@ -408,6 +444,7 @@ class Runner:
                                     tool_counts,
                                     output_retries_left,
                                     emit,
+                                    seq,
                                 )
                                 if paused is None:
                                     raise
@@ -554,6 +591,11 @@ class Runner:
                     error=str(exc),
                 )
             yield emit(EventType.ERROR, error=exc)
+        finally:
+            # Drain any scheduled trace appends so the durable timeline is fully
+            # written before the run returns — including on the approval-pause
+            # and error exits, not only the normal RUN_END path.
+            await _drain_trace()
 
     # ------------------------------------------------------------------
     # Resumable fast-path checkpoint helpers.
@@ -629,6 +671,7 @@ class Runner:
         tool_counts: dict[str, int],
         output_retries_left: int,
         emit: Any,
+        seq: list[int],
     ) -> Event | None:
         """Park the run for out-of-band human sign-off, or signal a re-raise.
 
@@ -637,6 +680,10 @@ class Runner:
         any replica) and returns the :attr:`EventType.APPROVAL_REQUIRED` event to
         emit before the loop returns. Without a checkpointer it returns ``None``
         so the caller re-raises — preserving the classic block behavior.
+
+        The APPROVAL_REQUIRED event is emitted *before* the checkpoint is written
+        so the saved ``trace_seq`` points past it; a later resume then continues
+        the trace after the approval event instead of overwriting it.
         """
         resume_key = ctx.state.get("__resume_id__")
         if self.run_checkpointer is None or resume_key is None:
@@ -647,15 +694,23 @@ class Runner:
             "arguments": dict(exc.arguments),
             "approval_id": approval_id,
         }
-        self._save_pending(
-            resume_key, step, messages, tool_counts, ctx.usage, output_retries_left, pending
-        )
-        return emit(
+        event = emit(
             EventType.APPROVAL_REQUIRED,
             approval_id=approval_id,
             tool=exc.tool,
             arguments=dict(exc.arguments),
         )
+        self._save_pending(
+            resume_key,
+            step,
+            messages,
+            tool_counts,
+            ctx.usage,
+            output_retries_left,
+            pending,
+            trace_seq=seq[0],
+        )
+        return event
 
     def _save_pending(
         self,
@@ -666,12 +721,15 @@ class Runner:
         usage: Usage,
         output_retries_left: int,
         pending: dict[str, Any],
+        *,
+        trace_seq: int = 0,
     ) -> None:
         """Checkpoint a parked run that is awaiting a human approval decision.
 
         Reuses the per-step state shape plus a ``pending_approval`` marker so the
         resume path knows to resolve the held tool before continuing — never
-        re-requesting the captured model turns.
+        re-requesting the captured model turns. ``trace_seq`` records how far the
+        trace got so the resume appends after the approval event.
         """
         assert self.run_checkpointer is not None
         state = {
@@ -681,6 +739,7 @@ class Runner:
             "usage": usage.model_dump(mode="json"),
             "output_retries_left": output_retries_left,
             "pending_approval": pending,
+            "trace_seq": trace_seq,
         }
         self.run_checkpointer.put(resume_id, step, state)
 

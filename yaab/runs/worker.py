@@ -85,6 +85,9 @@ class RunWorker:
         cron_store: Any | None = None,
         reaper_interval: float | None = None,
         cron_interval: float = 1.0,
+        approval_store: Any | None = None,
+        resume_paused: Any | None = None,
+        reconcile_interval: float = 1.0,
     ) -> None:
         self.agent = agent
         self.store = store
@@ -104,6 +107,14 @@ class RunWorker:
         self.cron_store = cron_store
         self.reaper_interval = reaper_interval if reaper_interval is not None else lease_seconds
         self.cron_interval = cron_interval
+        #: Optional approval store + resume callback. When both are set, the loop
+        #: periodically reconciles PAUSED runs whose approval has been decided but
+        #: that were never resumed (e.g. the process died between recording the
+        #: decision and triggering the resume), re-driving them to completion so a
+        #: decided run never orphans in PAUSED forever.
+        self.approval_store = approval_store
+        self.resume_paused = resume_paused
+        self.reconcile_interval = reconcile_interval
 
         self._sem = asyncio.Semaphore(max_concurrency)
         self._tasks: set[asyncio.Task[Any]] = set()
@@ -132,6 +143,7 @@ class RunWorker:
         """
         last_reap = 0.0
         last_cron = 0.0
+        last_reconcile = 0.0
         while not self._stop.is_set():
             now = time.monotonic()
             if now - last_reap >= self.reaper_interval:
@@ -142,6 +154,14 @@ class RunWorker:
                 last_cron = now
                 with contextlib.suppress(Exception):
                     await self.cron_tick()
+            if (
+                self.approval_store is not None
+                and self.resume_paused is not None
+                and now - last_reconcile >= self.reconcile_interval
+            ):
+                last_reconcile = now
+                with contextlib.suppress(Exception):
+                    await self.reconcile_paused()
 
             # Acquire a slot up front so we never claim past the concurrency cap.
             await self._sem.acquire()
@@ -185,8 +205,12 @@ class RunWorker:
         slot (eviction-on-pause).
         """
         run_id = record.run_id
+        # The fencing token this worker claimed under. A reaper that re-queues an
+        # expired lease bumps the record's generation; this worker then refuses to
+        # heartbeat or finalize over the newer claimant (see ``_generation_current``).
+        generation = record.lease_generation
         token = StoreCancellationToken(run_id, self.store, poll_interval=0.0)
-        heartbeat = asyncio.create_task(self._heartbeat_loop(run_id))
+        heartbeat = asyncio.create_task(self._heartbeat_loop(run_id, generation))
 
         result_event: Event | None = None
         error: BaseException | None = None
@@ -224,6 +248,11 @@ class RunWorker:
                 await heartbeat
 
         if paused_payload is not None:
+            # Only park the run if our lease is still the live one. If the lease
+            # expired and a reaper re-queued (or another worker re-claimed) the
+            # run, our generation is stale and we must not clobber the newer state.
+            if not await self._generation_current(run_id, generation):
+                return
             # Eviction-on-pause: drop the lease so the slot frees and the run can
             # resume on any replica once a reviewer decides.
             await self.store.update(
@@ -234,14 +263,38 @@ class RunWorker:
             )
             return
 
-        await self._finalize(record, result_event, error)
+        await self._finalize(record, result_event, error, generation)
+
+    async def _generation_current(self, run_id: str, generation: int) -> bool:
+        """True if the record's fencing token still matches the one we claimed.
+
+        A reaper that re-queues an expired lease — or another worker that then
+        re-claims the run — bumps ``lease_generation``. When that has happened our
+        in-flight work is stale and must not be written back, so the newer
+        claimant's result is never overwritten (the fencing-token discipline).
+        """
+        current = await self.store.get(run_id)
+        if current is None:
+            return False
+        return current.lease_generation == generation
 
     async def _finalize(
-        self, record: RunRecord, result_event: Event | None, error: BaseException | None
+        self,
+        record: RunRecord,
+        result_event: Event | None,
+        error: BaseException | None,
+        generation: int,
     ) -> None:
-        """Write the terminal record and fire the completion webhook."""
+        """Write the terminal record and fire the completion webhook.
+
+        Guarded by the fencing token: a worker whose lease was reaped mid-run (so
+        the record was re-queued and possibly re-claimed) finds its generation
+        stale and skips the terminal write, leaving the newer claimant in charge.
+        """
         run_id = record.run_id
         now = time.time()
+        if not await self._generation_current(run_id, generation):
+            return
         if error is not None:
             status = RunStatus.CANCELLED if isinstance(error, RunCancelled) else RunStatus.FAILED
             fields: dict[str, Any] = {
@@ -278,11 +331,20 @@ class RunWorker:
         await self._maybe_webhook(record, updated, fields["status"])
 
     # ------------------------------------------------------------------
-    async def _heartbeat_loop(self, run_id: str) -> None:
-        """Refresh the lease on a cadence until the run finishes."""
+    async def _heartbeat_loop(self, run_id: str, generation: int) -> None:
+        """Refresh the lease on a cadence until the run finishes.
+
+        Stops refreshing the moment the record's fencing token advances past the
+        one we claimed under: that means a reaper already re-queued this run (or
+        another worker re-claimed it), so keeping the lease alive would fight the
+        newer owner. We let our heartbeat lapse and rely on ``_finalize``'s
+        generation guard to skip the terminal write.
+        """
         try:
             while True:
                 await asyncio.sleep(self.heartbeat_interval)
+                if not await self._generation_current(run_id, generation):
+                    return
                 await self.store.heartbeat(
                     run_id, pod_id=self.pod_id, lease_seconds=self.lease_seconds
                 )
@@ -293,6 +355,33 @@ class RunWorker:
     async def reap(self) -> list[str]:
         """Re-queue runs abandoned by a crashed replica (expired leases)."""
         return await self.store.reap_expired_leases()
+
+    # ------------------------------------------------------------------
+    async def reconcile_paused(self) -> list[str]:
+        """Resume PAUSED runs whose approval was decided but never re-driven.
+
+        Recovers the crash window where a reviewer's decision is recorded
+        durably but the process dies before the resume runs: a decided approval
+        leaves its run sleeping in PAUSED forever otherwise. Each such run is
+        handed to ``resume_paused`` (the same idempotent resume the HTTP path
+        uses), which guards the PAUSED -> RUNNING transition so a run is resumed
+        at most once. Returns the run ids it re-drove.
+        """
+        from .base import RunStatus
+
+        if self.approval_store is None or self.resume_paused is None:
+            return []
+        resumed: list[str] = []
+        for record in await self.store.list(status=RunStatus.PAUSED, limit=100):
+            approvals = await self.approval_store.for_run(record.run_id)
+            decided = next((a for a in approvals if a.decision.value != "pending"), None)
+            if decided is None:
+                continue
+            await self.resume_paused(
+                decided.resume_id or record.run_id, decision=decided.decision.value
+            )
+            resumed.append(record.run_id)
+        return resumed
 
     # ------------------------------------------------------------------
     async def cron_tick(self, *, now: float | None = None) -> list[str]:

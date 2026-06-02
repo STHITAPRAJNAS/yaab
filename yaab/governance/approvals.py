@@ -16,6 +16,7 @@ selected by name.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 import uuid
@@ -53,6 +54,13 @@ class ApprovalRequest(BaseModel):
     decision: ApprovalDecision = ApprovalDecision.PENDING
     reviewer: str | None = None
     reason: str | None = None
+    #: Optional intent-based access control on who may decide this request. When
+    #: ``allowed_reviewers`` is non-empty, only an authenticated identity in the
+    #: list may approve/deny it; ``required_role`` (when set) names a capability
+    #: the caller must hold. Empty/None means any authenticated reviewer may act
+    #: (today's behavior), so this is additive and opt-in.
+    allowed_reviewers: list[str] = Field(default_factory=list)
+    required_role: str | None = None
     created_at: float = Field(default_factory=time.time)
     decided_at: float | None = None
     expires_at: float | None = None
@@ -67,7 +75,12 @@ class ApprovalStore(Protocol):
     """
 
     async def create(self, req: ApprovalRequest) -> None:
-        """Persist a new pending approval request."""
+        """Persist a new pending approval request (idempotent on ``approval_id``).
+
+        A re-create with an existing id is a no-op — it must never clobber a
+        record a reviewer already decided — so a crash-window re-pause that
+        re-derives the same deterministic id self-heals instead of duplicating.
+        """
         ...
 
     async def get(self, approval_id: str) -> ApprovalRequest | None:
@@ -121,9 +134,14 @@ class InMemoryApprovalStore:
 
     def __init__(self) -> None:
         self._records: dict[str, ApprovalRequest] = {}
+        # Serializes decide() so a first decision is permanent within the process.
+        self._lock = asyncio.Lock()
 
     async def create(self, req: ApprovalRequest) -> None:
-        self._records[req.approval_id] = req
+        # Idempotent: a re-pause after a crash (same deterministic id) must not
+        # clobber an existing record — especially not one a reviewer already
+        # decided. First write wins; later ones are no-ops.
+        self._records.setdefault(req.approval_id, req)
 
     async def get(self, approval_id: str) -> ApprovalRequest | None:
         return self._records.get(approval_id)
@@ -143,12 +161,16 @@ class InMemoryApprovalStore:
         reviewer: str,
         reason: str | None = None,
     ) -> ApprovalRequest | None:
-        existing = self._records.get(approval_id)
-        if existing is None:
-            return None
-        updated = _apply_decision(existing, decision=decision, reviewer=reviewer, reason=reason)
-        self._records[approval_id] = updated
-        return updated
+        async with self._lock:
+            existing = self._records.get(approval_id)
+            if existing is None:
+                return None
+            if existing.decision is not ApprovalDecision.PENDING:
+                # First decision is permanent; a later decide is a no-op read.
+                return existing
+            updated = _apply_decision(existing, decision=decision, reviewer=reviewer, reason=reason)
+            self._records[approval_id] = updated
+            return updated
 
     async def for_run(self, run_id: str) -> list[ApprovalRequest]:
         return [r for r in self._records.values() if r.run_id == run_id]
@@ -166,7 +188,13 @@ class SQLiteApprovalStore:
     def __init__(self, path: str = "yaab_approvals.db") -> None:
         import sqlite3
 
-        self._conn = sqlite3.connect(path)
+        # ``isolation_level=None`` gives explicit transaction control so a decide
+        # can take a write lock with BEGIN IMMEDIATE for an atomic read-apply-write.
+        # ``check_same_thread=False`` lets the served app's worker thread and
+        # request handlers share one store safely (sqlite3 serialized mode).
+        self._conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS approvals ("
             "approval_id TEXT PRIMARY KEY, run_id TEXT, agent TEXT, "
@@ -176,7 +204,6 @@ class SQLiteApprovalStore:
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_approvals_pending ON approvals (decision, agent)"
         )
-        self._conn.commit()
 
     def _store(self, req: ApprovalRequest) -> None:
         self._conn.execute(
@@ -191,7 +218,6 @@ class SQLiteApprovalStore:
                 req.model_dump_json(),
             ),
         )
-        self._conn.commit()
 
     def _load(self, approval_id: str) -> ApprovalRequest | None:
         row = self._conn.execute(
@@ -200,7 +226,20 @@ class SQLiteApprovalStore:
         return ApprovalRequest.model_validate_json(row[0]) if row else None
 
     async def create(self, req: ApprovalRequest) -> None:
-        self._store(req)
+        # Idempotent insert: a crash-window re-pause with the same deterministic
+        # id must not clobber an existing (possibly already-decided) record.
+        self._conn.execute(
+            "INSERT OR IGNORE INTO approvals "
+            "(approval_id, run_id, agent, decision, created_at, data) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                req.approval_id,
+                req.run_id,
+                req.agent,
+                req.decision.value,
+                req.created_at,
+                req.model_dump_json(),
+            ),
+        )
 
     async def get(self, approval_id: str) -> ApprovalRequest | None:
         return self._load(approval_id)
@@ -226,12 +265,27 @@ class SQLiteApprovalStore:
         reviewer: str,
         reason: str | None = None,
     ) -> ApprovalRequest | None:
-        existing = self._load(approval_id)
-        if existing is None:
-            return None
-        updated = _apply_decision(existing, decision=decision, reviewer=reviewer, reason=reason)
-        self._store(updated)
-        return updated
+        # BEGIN IMMEDIATE takes the write lock up front, so a racing reviewer
+        # blocks here (busy_timeout) rather than reading the same PENDING record.
+        # The first decision is permanent: a second concurrent decide observes the
+        # already-decided record under the lock and returns it unchanged, so no
+        # decision is silently overwritten.
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            existing = self._load(approval_id)
+            if existing is None:
+                self._conn.execute("COMMIT")
+                return None
+            if existing.decision is not ApprovalDecision.PENDING:
+                self._conn.execute("COMMIT")
+                return existing
+            updated = _apply_decision(existing, decision=decision, reviewer=reviewer, reason=reason)
+            self._store(updated)
+            self._conn.execute("COMMIT")
+            return updated
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
 
     async def for_run(self, run_id: str) -> list[ApprovalRequest]:
         rows = self._conn.execute(
@@ -296,8 +350,31 @@ class PostgresApprovalStore:
         ).fetchone()
         return ApprovalRequest.model_validate(row[0]) if row else None
 
+    def _load_locked(self, approval_id: str) -> ApprovalRequest | None:
+        """Read the row taking a ``FOR UPDATE`` row lock (within a transaction)."""
+        row = self._conn.execute(
+            f"SELECT data FROM {self._table} WHERE approval_id = %s FOR UPDATE",
+            (approval_id,),
+        ).fetchone()
+        return ApprovalRequest.model_validate(row[0]) if row else None
+
     async def create(self, req: ApprovalRequest) -> None:
-        self._store(req)
+        # Idempotent insert: a crash-window re-pause with the same deterministic
+        # id must not clobber an existing (possibly already-decided) record.
+        self._conn.execute(
+            f"INSERT INTO {self._table} "
+            f"(approval_id, run_id, agent, decision, created_at, data) "
+            f"VALUES (%s, %s, %s, %s, %s, %s) "
+            f"ON CONFLICT (approval_id) DO NOTHING",
+            (
+                req.approval_id,
+                req.run_id,
+                req.agent,
+                req.decision.value,
+                req.created_at,
+                json.dumps(req.model_dump()),
+            ),
+        )
 
     async def get(self, approval_id: str) -> ApprovalRequest | None:
         return self._load(approval_id)
@@ -324,12 +401,19 @@ class PostgresApprovalStore:
         reviewer: str,
         reason: str | None = None,
     ) -> ApprovalRequest | None:
-        existing = self._load(approval_id)
-        if existing is None:
-            return None
-        updated = _apply_decision(existing, decision=decision, reviewer=reviewer, reason=reason)
-        self._store(updated)
-        return updated
+        # Take a row-level ``FOR UPDATE`` lock inside one transaction so two
+        # reviewers can't both read PENDING and both write a decision. The first
+        # decision is permanent: a second concurrent decide blocks on the lock,
+        # then observes the already-decided row and returns it unchanged.
+        with self._conn.transaction():
+            existing = self._load_locked(approval_id)
+            if existing is None:
+                return None
+            if existing.decision is not ApprovalDecision.PENDING:
+                return existing
+            updated = _apply_decision(existing, decision=decision, reviewer=reviewer, reason=reason)
+            self._store(updated)
+            return updated
 
     async def for_run(self, run_id: str) -> list[ApprovalRequest]:
         rows = self._conn.execute(
@@ -388,7 +472,13 @@ class RedisApprovalStore:
         return ApprovalRequest.model_validate_json(raw) if raw else None
 
     async def create(self, req: ApprovalRequest) -> None:
-        self._store(req)
+        # Idempotent: HSETNX only writes the record when its field is absent, so a
+        # crash-window re-pause with the same deterministic id never clobbers an
+        # existing (possibly already-decided) record. The index sets are additive.
+        created = self._redis.hsetnx(self._data_key(), req.approval_id, req.model_dump_json())
+        self._redis.sadd(self._run_key(req.run_id), req.approval_id)
+        if created and req.decision == ApprovalDecision.PENDING:
+            self._redis.sadd(self._pending_key(), req.approval_id)
 
     async def get(self, approval_id: str) -> ApprovalRequest | None:
         return self._load(approval_id)
@@ -406,6 +496,21 @@ class RedisApprovalStore:
         out.sort(key=lambda r: r.created_at)
         return out
 
+    #: Atomic compare-and-set: only flip the record (and drop it from the pending
+    #: set) when it is still PENDING. A racing second reviewer's HSET is rejected
+    #: server-side, so the first decision is permanent. Returns the stored JSON.
+    _DECIDE_LUA = """
+    local raw = redis.call('HGET', KEYS[1], ARGV[1])
+    if not raw then return nil end
+    local rec = cjson.decode(raw)
+    if rec['decision'] == 'pending' then
+        redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+        redis.call('SREM', KEYS[2], ARGV[1])
+        return ARGV[2]
+    end
+    return raw
+    """
+
     async def decide(
         self,
         approval_id: str,
@@ -417,11 +522,22 @@ class RedisApprovalStore:
         existing = self._load(approval_id)
         if existing is None:
             return None
-        updated = _apply_decision(existing, decision=decision, reviewer=reviewer, reason=reason)
-        self._redis.hset(self._data_key(), updated.approval_id, updated.model_dump_json())
-        if updated.decision != ApprovalDecision.PENDING:
-            self._redis.srem(self._pending_key(), updated.approval_id)
-        return updated
+        candidate = _apply_decision(existing, decision=decision, reviewer=reviewer, reason=reason)
+        stored = self._redis.eval(
+            self._DECIDE_LUA,
+            2,
+            self._data_key(),
+            self._pending_key(),
+            approval_id,
+            candidate.model_dump_json(),
+        )
+        if stored is None:  # pragma: no cover - load already proved it exists
+            return None
+        if isinstance(stored, bytes):
+            stored = stored.decode("utf-8")
+        # The script returns the now-authoritative record: our decision if we won
+        # the race, or the pre-existing decision if another reviewer got there first.
+        return ApprovalRequest.model_validate_json(stored)
 
     async def for_run(self, run_id: str) -> list[ApprovalRequest]:
         ids = self._redis.smembers(self._run_key(run_id))

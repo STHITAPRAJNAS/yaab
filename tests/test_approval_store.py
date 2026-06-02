@@ -193,6 +193,13 @@ class _FakeRedis:
         if field is not None:
             h[field] = value
 
+    def hsetnx(self, key, field, value):
+        h = self.hashes.setdefault(key, {})
+        if field in h:
+            return 0
+        h[field] = value
+        return 1
+
     def hget(self, key, field):
         return self.hashes.get(key, {}).get(field)
 
@@ -209,6 +216,28 @@ class _FakeRedis:
 
     def smembers(self, key):
         return set(self.sets.get(key, set()))
+
+    def eval(self, script, numkeys, *args):
+        """Interpret the store's compare-and-set decide script (PENDING-guard).
+
+        Only the small Lua used by ``RedisApprovalStore.decide`` is supported:
+        HGET the record, and if it is still pending, HSET the candidate and SREM
+        it from the pending set; otherwise return the existing raw record.
+        """
+        import json
+
+        keys = args[:numkeys]
+        argv = args[numkeys:]
+        data_key, pending_key = keys[0], keys[1]
+        approval_id, candidate = argv[0], argv[1]
+        raw = self.hashes.get(data_key, {}).get(approval_id)
+        if raw is None:
+            return None
+        if json.loads(raw).get("decision") == "pending":
+            self.hashes.setdefault(data_key, {})[approval_id] = candidate
+            self.srem(pending_key, approval_id)
+            return candidate
+        return raw
 
 
 async def test_redis_backend_with_fake_client_roundtrips():

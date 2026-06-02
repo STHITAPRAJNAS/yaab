@@ -39,7 +39,11 @@ class SQLiteRunStore:
     def __init__(self, path: str = "yaab_runs.db") -> None:
         # ``isolation_level=None`` gives us explicit transaction control so the
         # claim can use BEGIN IMMEDIATE for an atomic read-modify-write.
-        self._conn = sqlite3.connect(path, isolation_level=None)
+        # ``check_same_thread=False`` lets the served app's worker thread and its
+        # request handlers share one store (sqlite3 ``threadsafety == 3`` =>
+        # serialized mode makes a shared connection safe); WAL + BEGIN IMMEDIATE
+        # still serialize writes.
+        self._conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.execute(_SCHEMA)
@@ -75,11 +79,16 @@ class SQLiteRunStore:
     async def get(self, run_id: str) -> RunRecord | None:
         return self._read(run_id)
 
-    async def update(self, run_id: str, **fields: Any) -> RunRecord | None:
+    async def update(
+        self, run_id: str, *, expect_status: RunStatus | None = None, **fields: Any
+    ) -> RunRecord | None:
         self._conn.execute("BEGIN IMMEDIATE")
         try:
             rec = self._read(run_id)
             if rec is None:
+                self._conn.execute("COMMIT")
+                return None
+            if expect_status is not None and rec.status is not expect_status:
                 self._conn.execute("COMMIT")
                 return None
             fields.setdefault("updated_at", time.time())
@@ -142,6 +151,7 @@ class SQLiteRunStore:
                     "lease_expires_at": now + lease_seconds,
                     "started_at": rec.started_at or now,
                     "updated_at": now,
+                    "lease_generation": rec.lease_generation + 1,
                 }
             )
             self._write(claimed)
@@ -179,6 +189,9 @@ class SQLiteRunStore:
                             "owner_pod": None,
                             "lease_expires_at": None,
                             "updated_at": now,
+                            # Fence: a reaped run gets a new generation so the
+                            # stale worker can no longer finalize over it.
+                            "lease_generation": rec.lease_generation + 1,
                         }
                     )
                 )

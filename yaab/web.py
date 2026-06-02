@@ -83,6 +83,14 @@ _PAGE = """<!doctype html>
   .ev summary { cursor: pointer; font-weight: 600; list-style: none; }
   .ev pre { margin: .4rem 0 0; white-space: pre-wrap; word-break: break-word;
         font-size: .8rem; opacity: .9; }
+  /* latency waterfall bar: width is proportional to the span's share of the
+     slowest span, so slow steps read as visibly wider at a glance. */
+  .lat-bar { height: 6px; border-radius: 3px; margin: .3rem 0 0;
+        background: var(--accent); opacity: .55; min-width: 2px; }
+  /* a small inline chip (e.g. the model name on a model_response row). */
+  .chip { display: inline-block; padding: .05rem .45rem; margin-left: .4rem;
+        border-radius: 999px; font-size: .7rem; border: 1px solid var(--line);
+        opacity: .8; vertical-align: middle; font-weight: 400; }
   .ev-run_start   { border-left-color: #7a7; }
   .ev-text_delta  { border-left-color: #888; }
   .ev-tool_call   { border-left-color: #d90; }
@@ -157,8 +165,10 @@ _PAGE = """<!doctype html>
 <!-- STATE: session KV inspector -->
 <section class="pane" data-pane="state">
   <form id="stateForm"><input id="stateSession" placeholder="session id" autocomplete="off"/>
-  <button class="send">Inspect</button></form>
-  <div id="state"><p class="muted">Enter a session id to inspect its stored state.</p></div>
+  <button class="send">Inspect</button>
+  <button type="button" class="act" onclick="refreshState()">Refresh</button></form>
+  <div id="state"><p class="muted">Enter a session id to inspect its stored state.
+  Configure a session service to persist state.</p></div>
 </section>
 
 <!-- APPROVALS: out-of-band human sign-off -->
@@ -250,12 +260,28 @@ function renderUsageSummary(payload) {
   evSummary.textContent = 'run_end · total_tokens=' + total + ' · cost_usd=' + cost +
     (dur ? ' · ' + dur : '');
 }
+// The model name lives flat on a live SSE event (_safe_event_payload) but nested
+// under .payload on a replayed event (_safe_event); look in both so the chip
+// shows for live runs and replays alike.
+function eventModel(payload) {
+  if (!payload) return null;
+  if (payload.model) return payload.model;
+  if (payload.payload && payload.payload.model) return payload.payload.model;
+  return null;
+}
 function renderEvent(type, payload) {
   const el = document.createElement('details');
   el.className = 'ev ev-' + (EV_KNOWN.includes(type) ? type : 'run_start');
   const sum = document.createElement('summary');
   const dur = payload && payload.duration_ms != null ? ' (' + payload.duration_ms + ' ms)' : '';
   sum.textContent = type + dur;
+  // Model-name chip: which model answered this step, visible without expanding.
+  const model = eventModel(payload);
+  if (model) {
+    const chip = document.createElement('span');
+    chip.className = 'chip'; chip.textContent = model;
+    sum.appendChild(chip);
+  }
   const pre = document.createElement('pre');
   pre.textContent = JSON.stringify(payload, null, 2);
   el.appendChild(sum); el.appendChild(pre);
@@ -345,10 +371,11 @@ function openTrace(id) {
 // spans show token + cost_usd badges. Run totals (total_tokens, cost) head it.
 const traceEl = document.getElementById('trace');
 const traceTotals = document.getElementById('traceTotals');
-function renderSpan(s) {
+function renderSpan(s, maxDur) {
   const el = document.createElement('details');
   el.className = 'ev ev-' + (s.type === 'model_call' ? 'final_output'
     : s.type === 'tool_call' ? 'tool_call'
+    : s.type === 'transfer' ? 'agent_transfer'
     : s.type === 'approval' ? 'agent_transfer' : 'run_start');
   const sum = document.createElement('summary');
   const dur = s.duration_ms != null ? s.duration_ms + ' ms' : '';
@@ -361,9 +388,25 @@ function renderSpan(s) {
   }
   sum.textContent = (s.type || 'span') + (s.name ? ' ' + s.name : '') +
     (dur ? ' · ' + dur : '') + badge;
+  // Model spans carry which model answered — surface it as a chip.
+  if (s.type === 'model_call' && s.model) {
+    const chip = document.createElement('span');
+    chip.className = 'chip'; chip.textContent = s.model;
+    sum.appendChild(chip);
+  }
+  el.appendChild(sum);
+  // Proportional latency bar: this span's share of the slowest span, so the
+  // waterfall reads as a waterfall (wide = slow) without expanding each row.
+  const d = s.duration_ms != null ? Number(s.duration_ms) : 0;
+  if (maxDur > 0) {
+    const bar = document.createElement('div');
+    bar.className = 'lat-bar';
+    bar.style.width = Math.max(2, Math.round((d / maxDur) * 100)) + '%';
+    el.appendChild(bar);
+  }
   const pre = document.createElement('pre');
   pre.textContent = JSON.stringify(s, null, 2);
-  el.appendChild(sum); el.appendChild(pre);
+  el.appendChild(pre);
   return el;
 }
 async function loadTrace(runId) {
@@ -386,7 +429,14 @@ async function loadTrace(runId) {
   traceTotals.textContent =
     'totals · total_tokens=' + tokens + ' · cost_usd=' + cost + ' · duration_ms=' + dur;
   traceEl.innerHTML = '';
-  for (const s of (body.spans || [])) traceEl.appendChild(renderSpan(s));
+  const spans = body.spans || [];
+  // The slowest span anchors the latency bars (every other bar is its share).
+  let maxDur = 0;
+  for (const s of spans) {
+    const d = s.duration_ms != null ? Number(s.duration_ms) : 0;
+    if (d > maxDur) maxDur = d;
+  }
+  for (const s of spans) traceEl.appendChild(renderSpan(s, maxDur));
 }
 document.getElementById('traceForm').addEventListener('submit', (e) => {
   e.preventDefault(); loadTrace();
@@ -427,6 +477,9 @@ async function loadState(sid) {
 document.getElementById('stateForm').addEventListener('submit', (e) => {
   e.preventDefault(); loadState();
 });
+// One-click re-pull of the session already in the box (state changes between
+// turns) — no need to retype the id.
+function refreshState() { loadState(); }
 
 // ---- APPROVALS tab: list pending + approve/deny ---------------------
 const approvalsEl = document.getElementById('approvals');
