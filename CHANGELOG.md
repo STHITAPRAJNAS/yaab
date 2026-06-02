@@ -6,6 +6,52 @@ All notable changes to YAAB are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Durable background runs that survive restarts and span replicas** — a run is
+  now a durable record in a swappable `RunStore` (in-memory, SQLite, Postgres,
+  Redis) instead of an in-process task: poll it, cancel it from any replica, and
+  resume it from its last completed step after a crash. `RunWorker` drains the
+  queue with bounded concurrency, heartbeat leases, and crash recovery (an
+  abandoned run is re-queued and picked up by another replica), so background
+  work no longer dies on restart or a rolling deploy. Cross-replica cancel flows
+  through `StoreCancellationToken`: a cancel issued anywhere stops the run on the
+  replica executing it.
+- **Out-of-band human sign-off for sensitive actions** — `ToolApprovalPlugin`
+  gains a `queue` mode backed by a durable `ApprovalStore` (in-memory, SQLite,
+  Postgres, Redis). A guarded tool call parks the run as a pending approval +
+  checkpoint and pauses it — consuming zero compute while it waits — instead of
+  blocking a thread. A reviewer approves or denies from any replica (HTTP
+  `GET /approvals`, `POST /approvals/{id}/approve|deny`, `POST /runs/{id}/resume`)
+  and the run resumes from exactly where it stopped, running the approved tool or
+  feeding the denial back to the model. Pauses survive a restart.
+- **Run any number of replicas behind a load balancer, safely** — `durable_backends(dsn=…, redis_url=…)`
+  builds one coherent set of shared backends (sessions, artifacts, run store,
+  approval store, trace store, checkpointer, audit sink, registry, rate limiter)
+  all pointed at the same database, so making a deployment replica-safe is a
+  single call you splat into `Runner` and the server. A startup guardrail
+  (`warn_if_ephemeral`, wired into the server via `YAAB_REPLICAS`) shouts at boot
+  if any backend is still in-memory while running more than one replica, turning
+  silent data loss into a loud warning. A shared `RedisRateLimiter` keeps a
+  `rate=N` budget *global* across replicas instead of per-replica.
+- **A debugger that replays a run with per-step model/tool/token/cost/latency
+  detail** — an opt-in `TraceStore` (in-memory, SQLite, Postgres, Redis) persists
+  each run's timeline so it survives the run and a restart. New endpoints expose
+  the full event trace (`GET /runs/{id}/events`), a computed span waterfall with
+  durations, tokens, and cost (`GET /runs/{id}/trace`), and a session/run state
+  inspector (`GET /runs/{id}/state`, `GET /sessions/{id}/state`). The web console
+  gains Trace and State tabs and surfaces total tokens/cost/latency per run.
+- **Durable schedules and join-on-the-fly** — a durable `CronStore` materializes
+  due schedules into queued runs (`POST/GET/DELETE /crons`), per-run completion
+  webhooks notify callers without polling, `GET /runs/{id}/stream` re-attaches to
+  an in-flight or finished run (replay then tail), and `multitask_strategy`
+  (`reject|enqueue|cancel`) controls overlapping runs on the same session.
+- **Durable artifacts and `resume_id` on the public API** — `SQLiteArtifactService`
+  / `PostgresArtifactService` / `RedisArtifactService` persist artifact bytes and
+  version history across replicas, and `Agent.run`/`Agent.run_sync` now accept
+  `resume_id` so a fault-tolerant run is resumable straight from the agent
+  surface. `Runner(checkpoint_mode="step"|"final")` tunes how often progress is
+  checkpointed.
+
 ## [0.1.0] — 2026-06-01
 
 First public release: `pip install yaab-sdk` → `import yaab` / `$ yaab`.
