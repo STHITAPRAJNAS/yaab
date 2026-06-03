@@ -26,11 +26,12 @@ MODEL = os.environ.get("YAAB_LIVE_MODEL", "gemini/gemini-2.5-flash")
 
 async def check_approval_pause_resume_live() -> str:
     """Guarded tool pauses the run durably; approval resumes it; model turns not re-requested."""
+    import tempfile
+
     from yaab import Agent, Runner, tool
     from yaab.governance.approval import ToolApprovalPlugin
     from yaab.governance.approvals import SQLiteApprovalStore
     from yaab.graph.checkpoint import SQLiteSaver
-    import tempfile
 
     tmp = tempfile.mkdtemp()
     approval_db = f"{tmp}/approvals.db"
@@ -82,9 +83,10 @@ async def check_approval_pause_resume_live() -> str:
 
 async def check_trace_capture_live() -> str:
     """A traced run records model/tool spans with durations, tokens, and cost."""
+    import tempfile
+
     from yaab import Agent, Runner, tool
     from yaab.runs.trace import SQLiteTraceStore
-    import tempfile
 
     tmp = tempfile.mkdtemp()
 
