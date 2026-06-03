@@ -237,6 +237,22 @@ def test_run_result_paused_defaults_false():
     assert r.pause_value is None
 
 
+def test_run_result_pending_defaults_empty():
+    """A normal (non-paused) result carries an empty ``pending`` list."""
+    r: RunResult = RunResult(output="x")
+    assert r.pending == []
+    # The list is per-instance (default_factory), never a shared class-level list.
+    r.pending.append("sentinel")
+    assert RunResult(output="y").pending == []
+
+
+def test_run_result_pending_is_typed_field():
+    """``pending`` is a real, settable field describing parked human decisions."""
+    r: RunResult = RunResult(output=None, paused=True, pending=[{"kind": "approval"}])
+    assert r.paused is True
+    assert r.pending == [{"kind": "approval"}]
+
+
 # --------------------------------------------------------------------------
 # Resume rehydration: committed state survives a resume.
 # --------------------------------------------------------------------------

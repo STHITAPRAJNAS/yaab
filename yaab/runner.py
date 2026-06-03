@@ -397,9 +397,17 @@ class Runner:
                     yield result_ev
                     messages.append(tool_msg)
             else:
-                messages = await self._build_messages(agent, ctx, scanned_prompt, original=prompt)
+                messages, templated_keys = await self._build_messages(
+                    agent, ctx, scanned_prompt, original=prompt
+                )
                 user_msg = messages[-1]
                 yield emit(EventType.USER_MESSAGE, content=scanned_prompt)
+                # Make the state-shaped instruction visible in the trace: which
+                # shared-state fields fed this run's prompt (the read side of the
+                # writes=/{key} handoff). Emitted only when something resolved, so
+                # plain instructions stay byte-for-byte as before.
+                if templated_keys:
+                    yield emit(EventType.STATE_TEMPLATE, keys=list(templated_keys))
                 for plugin in self.plugins:
                     await plugin.on_user_message(ctx, agent.name, user_msg)
                 start_step = 0
@@ -637,6 +645,13 @@ class Runner:
                     final_output = scanned
 
             yield emit(EventType.FINAL_OUTPUT, output=_safe(final_output))
+
+            # writes= capture: land this run's typed output into shared state
+            # under its declared key (before persistence, so the value is folded
+            # into the durable subset) and surface the handoff in the trace.
+            captured = _capture_writes(agent, ctx, final_output)
+            if captured is not None:
+                yield emit(EventType.STATE_WRITE, key=captured[0], scope=captured[1])
 
             for plugin in self.plugins:
                 await plugin.after_run(ctx, agent.name, final_output)
@@ -976,8 +991,12 @@ class Runner:
                 scanned_prompt = gov.scan(
                     prompt_text, Stage.INPUT, agent_id=agent.registry_id, identity=identity
                 )
-            messages = await self._build_messages(agent, ctx, scanned_prompt, original=prompt)
+            messages, templated_keys = await self._build_messages(
+                agent, ctx, scanned_prompt, original=prompt
+            )
             yield emit(EventType.USER_MESSAGE, content=scanned_prompt)
+            if templated_keys:
+                yield emit(EventType.STATE_TEMPLATE, keys=list(templated_keys))
 
             tool_schemas = [t.schema() for t in agent.tools] or None
             output_adapter, _ = _output_spec(agent.output_type)
@@ -1093,6 +1112,9 @@ class Runner:
                 if scanned != text_out and isinstance(final_output, str):
                     final_output = scanned
             yield emit(EventType.FINAL_OUTPUT, output=_safe(final_output))
+            captured = _capture_writes(agent, ctx, final_output)
+            if captured is not None:
+                yield emit(EventType.STATE_WRITE, key=captured[0], scope=captured[1])
             for plugin in self.plugins:
                 await plugin.after_run(ctx, agent.name, final_output)
             await self._persist(agent, ctx, scanned_prompt, final_output)
@@ -1143,7 +1165,7 @@ class Runner:
             prompt_text = self.governance.scan(
                 prompt_text, Stage.INPUT, agent_id=agent.registry_id, identity=identity
             )
-        messages = await self._build_messages(agent, ctx, prompt_text, original=prompt)
+        messages, _ = await self._build_messages(agent, ctx, prompt_text, original=prompt)
         async for chunk in agent.model.stream(messages, **getattr(agent, "model_settings", {})):
             if chunk.delta:
                 yield chunk.delta
@@ -1151,8 +1173,16 @@ class Runner:
     # ------------------------------------------------------------------
     async def _build_messages(
         self, agent: Any, ctx: RunContext, prompt: str, *, original: Any = None
-    ) -> list[Message]:
+    ) -> tuple[list[Message], list[str]]:
+        """Assemble the model messages, returning ``(messages, templated_keys)``.
+
+        ``templated_keys`` lists the state field names a string instruction's
+        ``{key}`` placeholders resolved to (empty for callable/plain
+        instructions), so the caller can emit a :attr:`EventType.STATE_TEMPLATE`
+        event making the state-shaped prompt visible in the trace.
+        """
         messages: list[Message] = []
+        templated_keys: list[str] = []
         instructions = agent.instructions
         if callable(instructions):
             # The function form gets a read-only context so rendering can never
@@ -1160,7 +1190,7 @@ class Runner:
             instructions = instructions(ctx.readonly())
         elif isinstance(instructions, str) and instructions:
             # The string form gets {key} injection from the same read-only view.
-            instructions = _inject_state(instructions, ReadonlyState(ctx.state))
+            instructions, templated_keys = _inject_state(instructions, ReadonlyState(ctx.state))
         if instructions:
             messages.append(Message(role=Role.SYSTEM, content=str(instructions)))
 
@@ -1182,7 +1212,7 @@ class Runner:
                 messages.append(Message(role=Role.SYSTEM, content=f"Relevant memory:\n{recalled}"))
 
         messages.append(_user_message(prompt, original))
-        return messages
+        return messages, templated_keys
 
     async def _memory_search(self, prompt: str, ctx: RunContext) -> Any:
         """Search long-term memory, threading identity/app into namespace-aware
@@ -1405,19 +1435,24 @@ def _output_spec(output_type: type) -> tuple[TypeAdapter | None, dict[str, Any] 
     return adapter, schema
 
 
-def _inject_state(template: str, state: ReadonlyState) -> str:
+def _inject_state(template: str, state: ReadonlyState) -> tuple[str, list[str]]:
     """Substitute ``{key}`` / ``{key?}`` placeholders from shared state.
+
+    Returns ``(rendered, resolved_keys)`` where ``resolved_keys`` is the ordered,
+    de-duplicated list of fields actually pulled from state (so the runner can
+    surface them as a :attr:`~yaab.types.EventType.STATE_TEMPLATE` trace event).
 
     Only identifier-style fields (``{name}``, ``{user:name}``) are treated as
     state — JSON braces, numeric placeholders, and CSS braces pass through. A
     missing **required** key raises :class:`~yaab.state.StateKeyError`; a trailing
     ``?`` makes the field optional and substitutes empty string when absent.
     """
+    resolved: list[str] = []
 
     def sub(m: re.Match) -> str:
         key, optional = m.group(1), m.group(2)
         try:
-            return _to_text(state[key])
+            value = _to_text(state[key])
         except KeyError as exc:
             if optional:
                 return ""
@@ -1425,8 +1460,30 @@ def _inject_state(template: str, state: ReadonlyState) -> str:
                 f"instruction references {{{key}}} but it is not in state; "
                 f"mark it optional as {{{key}?}} or ensure an upstream step writes it"
             ) from exc
+        if key not in resolved:
+            resolved.append(key)
+        return value
 
-    return _STATE_FIELD.sub(sub, template)
+    return _STATE_FIELD.sub(sub, template), resolved
+
+
+def _capture_writes(agent: Any, ctx: RunContext, output: Any) -> tuple[str, str] | None:
+    """Land an agent's validated output into shared state under its ``writes=`` key.
+
+    Returns ``(key, scope)`` when a capture happened (so the caller can emit a
+    :attr:`~yaab.types.EventType.STATE_WRITE` trace event), or ``None`` when the
+    agent declares no ``writes=`` key. The *typed* ``output`` is stored exactly as
+    produced — it never round-trips through text — and the key's prefix
+    (``temp:``/``user:``/``app:``) selects the scope for free. Idempotent: a
+    workflow that also captures the same child writes the identical value.
+    """
+    from .state import scope_of
+
+    key = getattr(agent, "writes", None)
+    if not key:
+        return None
+    ctx.state[key] = output
+    return key, scope_of(key)
 
 
 def _persisted_state(ctx: RunContext | None) -> dict[str, Any]:

@@ -216,6 +216,15 @@ class EventType(str, Enum):
     #: becomes the parent run's output.
     AGENT_TRANSFER = "agent_transfer"
     GUARDRAIL = "guardrail"
+    #: An agent (or workflow step) captured its validated output into shared state
+    #: under its ``writes=`` key. The payload carries ``key`` (the state key,
+    #: including any ``temp:``/``user:``/``app:`` scope prefix) and ``scope`` (the
+    #: resolved scope name) so the inter-agent handoff is visible in the trace.
+    STATE_WRITE = "state_write"
+    #: An instruction's ``{key}`` placeholders were substituted from shared state
+    #: before the model call. The payload carries ``keys`` (the resolved field
+    #: names) so a reader can see exactly which state values shaped the prompt.
+    STATE_TEMPLATE = "state_template"
     #: A sensitive tool call has been parked for out-of-band human sign-off; the
     #: run is durably paused and resumes once a reviewer decides. The payload
     #: carries ``approval_id``, ``tool``, and ``arguments``.
@@ -246,11 +255,13 @@ class RunResult(BaseModel, Generic[Output]):
 
     ``output`` is defined and meaningful **iff** ``not paused``. When a run pauses
     for human sign-off (an approval gate, a question, or an explicit step pause)
-    it returns with ``paused=True`` and ``pause_value`` carrying what the human
-    must decide; ``output`` is then a placeholder (``None`` for the common case)
-    and should not be read. Resume the same run to get a final, non-paused
-    result. Keeping one result type with this documented invariant avoids
-    fragmenting result shapes or weakening ``output``'s type for the common case.
+    it returns with ``paused=True``; ``pause_value`` carries what the single
+    blocking human decision is, and ``pending`` lists *every* parked decision when
+    more than one is outstanding at once (e.g. concurrent branches each awaiting a
+    reviewer). ``output`` is then a placeholder (``None`` for the common case) and
+    should not be read. Resume the same run to get a final, non-paused result.
+    Keeping one result type with this documented invariant avoids fragmenting
+    result shapes or weakening ``output``'s type for the common case.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -266,6 +277,12 @@ class RunResult(BaseModel, Generic[Output]):
     #: When ``paused``, the payload describing what a human must decide (e.g. the
     #: parked tool call and its arguments). ``None`` on a normal completion.
     pause_value: Any = None
+    #: When ``paused``, the list of all outstanding human decisions for this run.
+    #: A run may pause on more than one at once (concurrent branches each parking
+    #: an approval/question), so this is the complete set a caller iterates to
+    #: resolve them; ``pause_value`` is the single/primary one for the common
+    #: case. Empty on a normal completion.
+    pending: list[Any] = Field(default_factory=list)
 
     @property
     def all_messages(self) -> list[Message]:
