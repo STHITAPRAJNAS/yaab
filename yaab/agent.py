@@ -14,11 +14,14 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from typing import Any, Generic
+from typing import TYPE_CHECKING, Any, Generic
 
 from .models import ModelProvider, resolve_model
 from .tools.base import Tool, coerce_tools
 from .types import Deps, Output, RunContext, RunResult
+
+if TYPE_CHECKING:
+    from .state import State
 
 _NoneType = type(None)  # module-level singleton (avoids a call in arg defaults)
 
@@ -51,9 +54,14 @@ class Agent(Generic[Deps, Output]):
         model_settings: dict[str, Any] | None = None,
         runner: Any | None = None,
         instrument: bool = True,
+        writes: str | None = None,
     ) -> None:
         self.name = name
         self._model_spec = model
+        #: Capture this run's final (typed) output into shared state under this
+        #: key after it completes, so a downstream step reads it by name. A prefix
+        #: on the key (``temp:``/``user:``/``app:``) selects the scope.
+        self.writes = writes
         self.deps_type = deps_type
         self.output_type = output_type
         self.guardrails = guardrails or []
@@ -124,7 +132,7 @@ class Agent(Generic[Deps, Output]):
         """Build the built-in ``transfer_to_agent`` tool from ``sub_agents``.
 
         The tool itself only *records* the requested handoff into
-        ``ctx.state['__transfer_to__']``; the Runner inspects that flag after the
+        ``ctx.state['temp:__transfer_to__']``; the Runner inspects that flag after the
         turn's tools run and performs the actual delegation. Keeping the tool a
         pure state-setter means the model-facing contract (pick a name) is
         decoupled from the orchestration (run the sub-agent), which is what lets
@@ -141,7 +149,7 @@ class Agent(Generic[Deps, Output]):
             # rewrite tool results. Only a *valid* name arms the delegation flag.
             if agent_name not in valid_names:
                 return f"error: unknown agent {agent_name}; available: {', '.join(valid_names)}"
-            ctx.state["__transfer_to__"] = agent_name
+            ctx.state["temp:__transfer_to__"] = agent_name
             return f"transferring to {agent_name}"
 
         # The docstring is the model-facing description: it must enumerate the
@@ -207,6 +215,7 @@ class Agent(Generic[Deps, Output]):
         deps: Deps = None,  # type: ignore[assignment]
         session_id: str | None = None,
         identity: str | None = None,
+        state: State | None = None,
         usage_limits: Any | None = None,
         cancellation: Any | None = None,
         timeout: float | None = None,
@@ -217,6 +226,11 @@ class Agent(Generic[Deps, Output]):
         ``usage_limits`` (:class:`~yaab.limits.UsageLimits`) caps tokens/requests/
         tool calls; ``cancellation`` (:class:`~yaab.limits.CancellationToken`) and
         ``timeout`` (seconds) stop the run cooperatively between steps.
+
+        ``state`` is the run's shared :class:`~yaab.state.State`. Leave it ``None``
+        for a standalone run (the runner builds one over the session); a workflow
+        agent or a delegation passes its own State so every participant shares one
+        object — values written in one step are read in the next by key.
 
         ``resume_id`` makes a run fault-tolerant: when the runner has a
         checkpointer, loop progress is persisted under this key after every
@@ -231,6 +245,7 @@ class Agent(Generic[Deps, Output]):
             deps=deps,
             session_id=session_id,
             identity=identity,
+            state=state,
             usage_limits=usage_limits,
             cancellation=cancellation,
             timeout=timeout,
@@ -284,6 +299,7 @@ class Agent(Generic[Deps, Output]):
         deps: Deps = None,  # type: ignore[assignment]
         session_id: str | None = None,
         identity: str | None = None,
+        state: State | None = None,
         usage_limits: Any | None = None,
         cancellation: Any | None = None,
         timeout: float | None = None,
@@ -306,6 +322,7 @@ class Agent(Generic[Deps, Output]):
             deps=deps,
             session_id=session_id,
             identity=identity,
+            state=state,
             usage_limits=usage_limits,
             cancellation=cancellation,
             timeout=timeout,
@@ -318,6 +335,7 @@ class Agent(Generic[Deps, Output]):
         deps: Deps = None,  # type: ignore[assignment]
         session_id: str | None = None,
         identity: str | None = None,
+        state: State | None = None,
         usage_limits: Any | None = None,
         cancellation: Any | None = None,
         timeout: float | None = None,
@@ -330,6 +348,7 @@ class Agent(Generic[Deps, Output]):
                 deps=deps,
                 session_id=session_id,
                 identity=identity,
+                state=state,
                 usage_limits=usage_limits,
                 cancellation=cancellation,
                 timeout=timeout,

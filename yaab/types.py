@@ -9,9 +9,12 @@ from __future__ import annotations
 import time
 import uuid
 from enum import Enum
-from typing import Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from .state import ReadonlyState, State  # noqa: F401
 
 Deps = TypeVar("Deps")
 Output = TypeVar("Output")
@@ -96,11 +99,33 @@ class RunContext(Generic[Deps]):
     """Typed, dependency-injected context handed to tools and instructions.
 
     Holds the caller-supplied ``deps`` (the DI payload), identity, the live
-    usage counter, and a scratch ``state`` dict. Passing context explicitly
-    keeps tools testable and free of global state.
+    usage counter, and the run's shared ``state``. ``state`` is a prefix-scoped
+    :class:`~yaab.state.State` — one object per run, shared by every agent,
+    sub-agent, workflow child, tool, and plugin, so a value written in one place
+    is read in another by key. Passing context explicitly keeps tools testable
+    and free of global state.
+
+    For backward compatibility ``state`` still behaves exactly like a dict
+    (``ctx.state["k"]``, ``.get``, ``.setdefault``, ``in``, iteration); the only
+    addition is that ``temp:``/``user:``/``app:`` prefixed keys route to their
+    own scope. A bare ``dict`` passed in is adopted as the session scope.
     """
 
-    __slots__ = ("deps", "session_id", "identity", "usage", "state", "run_id")
+    __slots__ = (
+        "deps",
+        "session_id",
+        "identity",
+        "usage",
+        "state",
+        "run_id",
+        # Reserved for the human-in-the-loop pause surface (set by the runner to
+        # a callable during a run; ``None`` outside one). Reserved here so later
+        # pillars need not reopen ``__slots__`` — adding a slot later is a
+        # breaking change to every RunContext constructor.
+        "pause_for",
+        # Resume value injected on a resumed run (set by the runner).
+        "_resume",
+    )
 
     def __init__(
         self,
@@ -109,14 +134,71 @@ class RunContext(Generic[Deps]):
         session_id: str | None = None,
         identity: str | None = None,
         usage: Usage | None = None,
-        state: dict[str, Any] | None = None,
+        state: State | dict[str, Any] | None = None,
     ) -> None:
+        from .state import State
+
         self.deps = deps
         self.session_id = session_id
         self.identity = identity
         self.usage = usage or Usage()
-        self.state = state if state is not None else {}
+        # Accept a shared State, wrap a bare dict as the session scope
+        # (back-compat), or build a fresh run-local State.
+        if isinstance(state, State):
+            self.state: State = state
+        elif isinstance(state, dict):
+            self.state = State(session=state)
+        else:
+            self.state = State()
         self.run_id = f"run_{uuid.uuid4().hex[:12]}"
+        self.pause_for: Any = None
+        self._resume: Any = None
+
+    def readonly(self) -> RunContextView:
+        """A read-only projection for instruction rendering and routing.
+
+        Same ``deps``/``identity``/``usage``, but ``.state`` is a
+        :class:`~yaab.state.ReadonlyState` so rendering and routing predicates
+        physically cannot mutate shared state.
+        """
+        return RunContextView(self)
+
+
+class RunContextView(Generic[Deps]):
+    """A read-only projection of a :class:`RunContext`.
+
+    Exposes the same fields, but ``state`` is an immutable
+    :class:`~yaab.state.ReadonlyState`. Handed to instruction providers and
+    routing predicates — the surfaces where a write would be a bug.
+    """
+
+    __slots__ = ("_ctx", "state")
+
+    def __init__(self, ctx: RunContext[Deps]) -> None:
+        from .state import ReadonlyState
+
+        self._ctx = ctx
+        self.state = ReadonlyState(ctx.state)
+
+    @property
+    def deps(self) -> Deps:
+        return self._ctx.deps
+
+    @property
+    def session_id(self) -> str | None:
+        return self._ctx.session_id
+
+    @property
+    def identity(self) -> str | None:
+        return self._ctx.identity
+
+    @property
+    def usage(self) -> Usage:
+        return self._ctx.usage
+
+    @property
+    def run_id(self) -> str:
+        return self._ctx.run_id
 
 
 class EventType(str, Enum):
@@ -160,7 +242,16 @@ class Event(BaseModel):
 
 
 class RunResult(BaseModel, Generic[Output]):
-    """The result of an agent run."""
+    """The result of an agent run.
+
+    ``output`` is defined and meaningful **iff** ``not paused``. When a run pauses
+    for human sign-off (an approval gate, a question, or an explicit step pause)
+    it returns with ``paused=True`` and ``pause_value`` carrying what the human
+    must decide; ``output`` is then a placeholder (``None`` for the common case)
+    and should not be read. Resume the same run to get a final, non-paused
+    result. Keeping one result type with this documented invariant avoids
+    fragmenting result shapes or weakening ``output``'s type for the common case.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -169,6 +260,12 @@ class RunResult(BaseModel, Generic[Output]):
     usage: Usage = Field(default_factory=Usage)
     events: list[Event] = Field(default_factory=list)
     run_id: str = ""
+    #: ``True`` when the run is durably paused awaiting a human decision. Read
+    #: ``output`` only when this is ``False``.
+    paused: bool = False
+    #: When ``paused``, the payload describing what a human must decide (e.g. the
+    #: parked tool call and its arguments). ``None`` on a normal completion.
+    pause_value: Any = None
 
     @property
     def all_messages(self) -> list[Message]:

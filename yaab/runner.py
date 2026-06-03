@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import re
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -28,8 +29,9 @@ from .governance.service import GovernanceService
 from .limits import CancellationToken, UsageLimits
 from .models.base import ModelResponse
 from .plugins import Plugin
-from .sessions.base import SessionService
+from .sessions.base import Session, SessionService
 from .sessions.memory import InMemorySessionService
+from .state import ReadonlyState, State, StateKeyError
 from .types import (
     Event,
     EventType,
@@ -40,6 +42,11 @@ from .types import (
     ToolCall,
     Usage,
 )
+
+#: Identifier-start required so JSON braces (``{"role": ...}``), numeric
+#: placeholders (``{0}``), and CSS braces are left untouched — only
+#: ``{name}`` / ``{user:name}`` / ``{name?}`` are treated as state fields.
+_STATE_FIELD = re.compile(r"\{([a-zA-Z_][\w]*(?::[a-zA-Z_][\w]*)?)(\?)?\}")
 
 
 class Runner:
@@ -88,10 +95,35 @@ class Runner:
         #: Code against the duck-typed ``append(run_id, seq, event_dict)`` so any
         #: compatible backend can be dropped in. ``None`` keeps today's behavior.
         self.trace_store = trace_store
+        #: Process-local backing stores for the cross-session/cross-app state
+        #: scopes (``user:`` / ``app:`` prefixes). Session-scoped state lives on
+        #: the session itself; these hold the wider scopes so a run's State can
+        #: route them. A durable backend swap (the persistence layer) replaces
+        #: these without touching the build seam.
+        self._app_state: dict[str, dict[str, Any]] = {}
+        self._user_state: dict[tuple[str, str], dict[str, Any]] = {}
 
     def add_plugin(self, plugin: Plugin) -> Runner:
         self.plugins.append(plugin)
         return self
+
+    # ------------------------------------------------------------------
+    async def _build_state(self, session: Session | None, identity: str | None) -> State:
+        """Build the one shared :class:`State` for a run.
+
+        With a durable session, the State's session scope **is** ``session.state``
+        (the same dict object, so unprefixed writes land in the session and
+        persist for free); ``user:``/``app:`` keys route to the runner's scoped
+        stores so they survive across the session/app as scoped. Without a
+        session, a run-local State (still routes ``temp:``/``user:``/``app:``).
+        """
+        if session is None:
+            return State()
+        app = self._app_state.setdefault(self.memory_app_name or "default", {})
+        user = self._user_state.setdefault(
+            (self.memory_app_name or "default", identity or "default"), {}
+        )
+        return State(session=session.state, user=user, app=app)
 
     # ------------------------------------------------------------------
     async def run(
@@ -102,6 +134,7 @@ class Runner:
         deps: Any = None,
         session_id: str | None = None,
         identity: str | None = None,
+        state: State | None = None,
         usage_limits: UsageLimits | None = None,
         cancellation: CancellationToken | None = None,
         timeout: float | None = None,
@@ -115,6 +148,7 @@ class Runner:
             deps=deps,
             session_id=session_id,
             identity=identity,
+            state=state,
             usage_limits=usage_limits,
             cancellation=cancellation,
             timeout=timeout,
@@ -125,6 +159,17 @@ class Runner:
         final = events[-1]
         if final.type is EventType.ERROR:
             raise final.payload["error"]
+        # A run that durably paused for human sign-off ends on APPROVAL_REQUIRED
+        # (no RUN_END). Surface that as a paused RunResult per the documented
+        # invariant (read ``output`` only when ``not paused``) instead of raising.
+        if final.type is EventType.APPROVAL_REQUIRED:
+            return RunResult(
+                output=None,
+                events=events,
+                run_id=final.run_id,
+                paused=True,
+                pause_value=dict(final.payload),
+            )
         result: RunResult = final.payload["result"]
         result.events = events
         return result
@@ -143,6 +188,7 @@ class Runner:
         deps: Any = None,
         session_id: str | None = None,
         identity: str | None = None,
+        state: State | None = None,
         usage_limits: UsageLimits | None = None,
         cancellation: CancellationToken | None = None,
         timeout: float | None = None,
@@ -184,21 +230,37 @@ class Runner:
         if self.run_checkpointer is not None and ckpt_id is not None:
             saved = self.run_checkpointer.get(ckpt_id)
             if saved is not None:
-                _, state = saved
-                if state.get("finished"):
+                _, saved_state = saved
+                if saved_state.get("finished"):
                     # Idempotent re-invoke: rebuild the final result, no model calls.
-                    yield self._replay_finished(agent, state)
+                    yield self._replay_finished(agent, saved_state)
                     return
-                resume_state = state
+                resume_state = saved_state
 
+        # Build-once / inherit-always: a child invoked by a workflow agent or by
+        # a model-driven transfer is handed the parent's State; only the
+        # outermost entity builds one (over the session, the source of truth).
+        if state is not None:
+            shared_state = state
+        else:
+            session = (
+                await self.session_service.get_or_create(session_id)
+                if session_id is not None
+                else None
+            )
+            shared_state = await self._build_state(session, identity)
         ctx: RunContext = RunContext(
-            deps=deps, session_id=session_id, identity=identity, usage=Usage()
+            deps=deps,
+            session_id=session_id,
+            identity=identity,
+            usage=Usage(),
+            state=shared_state,
         )
         # Thread the checkpoint key into the run context so a queue-mode approval
         # plugin can correlate its durable pending record to the exact checkpoint
-        # the loop will resume from.
+        # the loop will resume from. Run-local (temp:) so it never persists.
         if ckpt_id is not None:
-            ctx.state["__resume_id__"] = ckpt_id
+            ctx.state["temp:__resume_id__"] = ckpt_id
             # Key the run (and therefore its trace) by the durable resume id so the
             # persisted timeline correlates with the run record and is retrievable
             # via ``GET /runs/{id}/trace`` — and so a resume appends to the same
@@ -307,6 +369,12 @@ class Runner:
                 ctx.usage = Usage.model_validate(resume_state["usage"])
                 output_retries_left = resume_state.get("output_retries_left", output_retries_left)
                 start_step = int(resume_state["step"]) + 1
+                # Restore the committed (durable) state the crashed/paused run had
+                # written, so a resumed tool/step sees exactly what prior steps
+                # produced — never an empty dict, never a lost temp: scratch value.
+                committed = resume_state.get("state")
+                if committed:
+                    ctx.state.session.update(committed)
                 # Continue the trace sequence past the events recorded before the
                 # pause so a resume appends to the same timeline instead of
                 # overwriting it (the approval event and prior steps are kept).
@@ -485,6 +553,7 @@ class Runner:
                             deps=deps,
                             session_id=session_id,
                             identity=identity,
+                            state=ctx.state,
                             usage_limits=usage_limits,
                             cancellation=cancellation,
                             _transfer_depth=_transfer_depth + 1,
@@ -507,7 +576,13 @@ class Runner:
                     # marker is written, so per-step writes are skipped.
                     if ckpt_id is not None and self.checkpoint_mode == "step":
                         self._save_step(
-                            ckpt_id, _step, messages, tool_counts, ctx.usage, output_retries_left
+                            ckpt_id,
+                            _step,
+                            messages,
+                            tool_counts,
+                            ctx.usage,
+                            output_retries_left,
+                            ctx,
                         )
                     # Forcing choice has done its job; let the next turn finalize.
                     if _is_forcing_tool_choice(effective_tool_choice):
@@ -537,7 +612,13 @@ class Runner:
                     # A validation retry is also a completed model step.
                     if ckpt_id is not None and self.checkpoint_mode == "step":
                         self._save_step(
-                            ckpt_id, _step, messages, tool_counts, ctx.usage, output_retries_left
+                            ckpt_id,
+                            _step,
+                            messages,
+                            tool_counts,
+                            ctx.usage,
+                            output_retries_left,
+                            ctx,
                         )
                     continue
 
@@ -608,6 +689,7 @@ class Runner:
         tool_counts: dict[str, int],
         usage: Usage,
         output_retries_left: int,
+        ctx: RunContext | None = None,
     ) -> None:
         """Persist loop progress after a completed step (model turn + tools)."""
         assert self.run_checkpointer is not None
@@ -617,6 +699,9 @@ class Runner:
             "tool_counts": dict(tool_counts),
             "usage": usage.model_dump(mode="json"),
             "output_retries_left": output_retries_left,
+            # The durable subset only (temp: excluded) — identical to what session
+            # write-back persists, so resume and scoping agree on one durable view.
+            "state": _persisted_state(ctx),
         }
         self.run_checkpointer.put(resume_id, step, state)
 
@@ -685,7 +770,7 @@ class Runner:
         so the saved ``trace_seq`` points past it; a later resume then continues
         the trace after the approval event instead of overwriting it.
         """
-        resume_key = ctx.state.get("__resume_id__")
+        resume_key = ctx.state.get("temp:__resume_id__")
         if self.run_checkpointer is None or resume_key is None:
             return None
         approval_id = getattr(exc, "approval_id", "")
@@ -709,6 +794,7 @@ class Runner:
             output_retries_left,
             pending,
             trace_seq=seq[0],
+            ctx=ctx,
         )
         return event
 
@@ -723,13 +809,16 @@ class Runner:
         pending: dict[str, Any],
         *,
         trace_seq: int = 0,
+        ctx: RunContext | None = None,
     ) -> None:
         """Checkpoint a parked run that is awaiting a human approval decision.
 
         Reuses the per-step state shape plus a ``pending_approval`` marker so the
         resume path knows to resolve the held tool before continuing — never
         re-requesting the captured model turns. ``trace_seq`` records how far the
-        trace got so the resume appends after the approval event.
+        trace got so the resume appends after the approval event. The committed
+        state is carried so a run that pauses on one pod and resumes on another
+        restores exactly what it had written.
         """
         assert self.run_checkpointer is not None
         state = {
@@ -740,6 +829,7 @@ class Runner:
             "output_retries_left": output_retries_left,
             "pending_approval": pending,
             "trace_seq": trace_seq,
+            "state": _persisted_state(ctx),
         }
         self.run_checkpointer.put(resume_id, step, state)
 
@@ -820,6 +910,7 @@ class Runner:
         deps: Any = None,
         session_id: str | None = None,
         identity: str | None = None,
+        state: State | None = None,
         usage_limits: UsageLimits | None = None,
         cancellation: CancellationToken | None = None,
         timeout: float | None = None,
@@ -838,8 +929,23 @@ class Runner:
         ``_transfer_depth``/``_transfer_cap`` are internal handoff-loop guards
         (see :meth:`run_stream`).
         """
+        # Build-once / inherit-always (see run_stream): a child inherits the
+        # parent's State; only the outermost entity builds one.
+        if state is not None:
+            shared_state = state
+        else:
+            session = (
+                await self.session_service.get_or_create(session_id)
+                if session_id is not None
+                else None
+            )
+            shared_state = await self._build_state(session, identity)
         ctx: RunContext = RunContext(
-            deps=deps, session_id=session_id, identity=identity, usage=Usage()
+            deps=deps,
+            session_id=session_id,
+            identity=identity,
+            usage=Usage(),
+            state=shared_state,
         )
         gov = self.governance
         if timeout is not None:
@@ -948,6 +1054,7 @@ class Runner:
                             deps=deps,
                             session_id=session_id,
                             identity=identity,
+                            state=ctx.state,
                             usage_limits=usage_limits,
                             cancellation=cancellation,
                             _transfer_depth=_transfer_depth + 1,
@@ -1024,7 +1131,13 @@ class Runner:
         """
         from .content import Content
 
-        ctx: RunContext = RunContext(deps=deps, session_id=session_id, identity=identity)
+        session = (
+            await self.session_service.get_or_create(session_id) if session_id is not None else None
+        )
+        shared_state = await self._build_state(session, identity)
+        ctx: RunContext = RunContext(
+            deps=deps, session_id=session_id, identity=identity, state=shared_state
+        )
         prompt_text = prompt.text if isinstance(prompt, Content) else str(prompt)
         if self.governance is not None:
             prompt_text = self.governance.scan(
@@ -1042,7 +1155,12 @@ class Runner:
         messages: list[Message] = []
         instructions = agent.instructions
         if callable(instructions):
-            instructions = instructions(ctx)
+            # The function form gets a read-only context so rendering can never
+            # mutate shared state; the author has full control (no auto-injection).
+            instructions = instructions(ctx.readonly())
+        elif isinstance(instructions, str) and instructions:
+            # The string form gets {key} injection from the same read-only view.
+            instructions = _inject_state(instructions, ReadonlyState(ctx.state))
         if instructions:
             messages.append(Message(role=Role.SYSTEM, content=str(instructions)))
 
@@ -1148,7 +1266,7 @@ class Runner:
         no transfer was requested. Always clears the flag so it never leaks into
         the next turn or the sub-agent's run.
         """
-        name = ctx.state.pop("__transfer_to__", None)
+        name = ctx.state.pop("temp:__transfer_to__", None)
         if name is None:
             return None, None
         sub = next((a for a in getattr(agent, "sub_agents", []) if a.name == name), None)
@@ -1208,6 +1326,18 @@ class Runner:
         await self.session_service.append(
             ctx.session_id, Message(role=Role.ASSISTANT, content=_to_text(output))
         )
+        # Write back the durable subset of shared state (temp: excluded). Because
+        # the State's session scope *is* session.state, unprefixed writes are
+        # already there; this also folds user:/app: writes (separate stores) back
+        # and saves the session so it survives to the next run. A child run that
+        # inherited the parent's State already shares session.state, so this is a
+        # cheap no-op for them; only the root that owns the session saves.
+        if isinstance(ctx.state, State):
+            persisted = ctx.state.persisted()
+            session = await self.session_service.get(ctx.session_id)
+            if session is not None:
+                session.state.update(persisted)
+                await self.session_service.save(session)
 
 
 def _resolve_cap(agent: Any, cap: int | None) -> int:
@@ -1273,6 +1403,37 @@ def _output_spec(output_type: type) -> tuple[TypeAdapter | None, dict[str, Any] 
     except Exception:  # noqa: BLE001
         schema = None
     return adapter, schema
+
+
+def _inject_state(template: str, state: ReadonlyState) -> str:
+    """Substitute ``{key}`` / ``{key?}`` placeholders from shared state.
+
+    Only identifier-style fields (``{name}``, ``{user:name}``) are treated as
+    state — JSON braces, numeric placeholders, and CSS braces pass through. A
+    missing **required** key raises :class:`~yaab.state.StateKeyError`; a trailing
+    ``?`` makes the field optional and substitutes empty string when absent.
+    """
+
+    def sub(m: re.Match) -> str:
+        key, optional = m.group(1), m.group(2)
+        try:
+            return _to_text(state[key])
+        except KeyError as exc:
+            if optional:
+                return ""
+            raise StateKeyError(
+                f"instruction references {{{key}}} but it is not in state; "
+                f"mark it optional as {{{key}?}} or ensure an upstream step writes it"
+            ) from exc
+
+    return _STATE_FIELD.sub(sub, template)
+
+
+def _persisted_state(ctx: RunContext | None) -> dict[str, Any]:
+    """JSON-safe durable subset of a run's shared state (temp: excluded)."""
+    if ctx is None or not isinstance(ctx.state, State):
+        return {}
+    return {k: _safe(v) for k, v in ctx.state.persisted().items()}
 
 
 def _to_text(value: Any) -> str:

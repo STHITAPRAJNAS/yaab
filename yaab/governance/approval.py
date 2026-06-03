@@ -113,7 +113,7 @@ class ToolApprovalPlugin(Plugin):
         """Persist a durable pending approval and raise :class:`ApprovalPending`.
 
         The run's checkpoint key (its ``resume_id``) is read from the run context
-        — the runner threads it into ``ctx.state['__resume_id__']`` — so the
+        — the runner threads it into ``ctx.state['temp:__resume_id__']`` — so the
         record correlates to the exact checkpoint the loop will resume from once a
         reviewer decides. Falls back to the run id when no resume key is set.
 
@@ -129,7 +129,7 @@ class ToolApprovalPlugin(Plugin):
         from .approvals import ApprovalRequest
 
         assert self.store is not None  # guaranteed by the queue-mode caller
-        resume_id = ctx.state.get("__resume_id__") or ctx.run_id
+        resume_id = ctx.state.get("temp:__resume_id__") or ctx.run_id
         digest = hashlib.sha256(f"{ctx.run_id}|{resume_id}|{tool}".encode()).hexdigest()[:12]
         approval_id = f"ap_{digest}"
         req = ApprovalRequest(

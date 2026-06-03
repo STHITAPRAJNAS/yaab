@@ -193,7 +193,7 @@ async def test_credential_stashed_on_ctx_state_when_no_param():
     ctx = RunContext()
     out = await t.execute(ctx)
     assert out == "ran"
-    stashed = ctx.state["__tool_credential__"]
+    stashed = ctx.state["temp:__tool_credential__"]
     assert isinstance(stashed, ToolCredential)
     assert stashed.token == "tok"
 
