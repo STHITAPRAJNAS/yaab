@@ -236,7 +236,7 @@ def test_deterministic_approval_id_from_plugin():
         store = InMemoryApprovalStore()
         plugin = ToolApprovalPlugin(tools=["wire"], mode="queue", store=store)
         ctx = RunContext(deps=None, session_id=None, identity="alice")
-        ctx.state["__resume_id__"] = "resume-key"
+        ctx.state["temp:__resume_id__"] = "resume-key"
 
         expected_digest = hashlib.sha256(f"{ctx.run_id}|resume-key|wire".encode()).hexdigest()[:12]
         expected_id = f"ap_{expected_digest}"

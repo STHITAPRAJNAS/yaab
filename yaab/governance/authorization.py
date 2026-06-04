@@ -81,7 +81,10 @@ class RBACAuthorizer:
             return Decision.deny(f"tool '{tool}' is not on the allow list")
         needed = self.require_capability.get(tool)
         if needed is not None:
-            held = set(ctx.state.get("capabilities", []) or [])
+            # The caller declares held capabilities on the run's shared state.
+            # Accept a run-local (``temp:``) declaration as well as a plain one so
+            # the scope is the caller's choice.
+            held = set(ctx.state.get("temp:capabilities") or ctx.state.get("capabilities") or [])
             if needed not in held:
                 return Decision.deny(f"missing capability '{needed}' for tool '{tool}'")
         return Decision.allow()
@@ -184,7 +187,9 @@ class IdempotencyPlugin(Plugin):
 
     def _store(self, ctx: RunContext) -> dict[str, Any]:
         if self.per_run:
-            return ctx.state.setdefault("_idempotency", {})
+            # Run-local (temp:) so the dedupe cache never persists into the
+            # durable session/checkpoint.
+            return ctx.state.setdefault("temp:_idempotency", {})
         return self._cache
 
     async def before_tool(
@@ -198,13 +203,13 @@ class IdempotencyPlugin(Plugin):
             # Cache hit: short-circuit; the tool is NOT re-executed.
             return cached["value"]
         # Cache miss: leave a breadcrumb so after_tool can store the result.
-        ctx.state.setdefault("_idempotency_pending", []).append(key)
+        ctx.state.setdefault("temp:_idempotency_pending", []).append(key)
         return None
 
     async def after_tool(self, ctx: RunContext, agent: str, tool: str, result: Any) -> Any:
         if not self._applies(tool):
             return None
-        pending = ctx.state.get("_idempotency_pending")
+        pending = ctx.state.get("temp:_idempotency_pending")
         if pending:
             key = pending.pop()
             # Don't cache error strings — let the model retry a genuine failure.

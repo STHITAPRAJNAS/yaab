@@ -137,8 +137,9 @@ class FunctionTool:
                 call_kwargs[_CREDENTIAL_PARAM] = cred
             else:
                 # No injection param on the signature: stash it on ctx.state so a
-                # function that reads its own credential can pick it up.
-                ctx.state["__tool_credential__"] = cred
+                # function that reads its own credential can pick it up. Run-local
+                # (temp:) so the credential never leaks into durable session state.
+                ctx.state["temp:__tool_credential__"] = cred
         result = self.fn(**call_kwargs)
         if inspect.isawaitable(result):
             result = await result

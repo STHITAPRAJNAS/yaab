@@ -115,7 +115,7 @@ async def stream_structured(
 
     runner = agent._get_runner()
     # Build the same messages the runner would, asking for JSON.
-    ctx_messages = await runner._build_messages(
+    ctx_messages, _ = await runner._build_messages(
         agent,
         _mk_ctx(deps, identity),
         prompt,

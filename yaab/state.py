@@ -19,12 +19,30 @@ returns everything except ``temp:`` for durable storage.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, MutableMapping
+from collections.abc import Iterator, Mapping, MutableMapping
 from typing import Any
 
 APP_PREFIX = "app:"
 USER_PREFIX = "user:"
 TEMP_PREFIX = "temp:"
+
+
+class StateKeyError(KeyError):
+    """An instruction referenced a state key that is not present.
+
+    Raised when a required ``{key}`` placeholder cannot be resolved from shared
+    state. Mark the field optional as ``{key?}`` (substitutes empty string) or
+    ensure an upstream step writes it.
+    """
+
+
+class StateConflictError(ValueError):
+    """Two concurrent branches wrote the same session-scoped key.
+
+    Parallel/Map branches must each capture into a *distinct* key so fan-in is
+    deterministic and inspectable. Writing the same unprefixed key from two
+    branches is a declared error rather than a silent last-writer-wins clobber.
+    """
 
 
 def scope_of(key: str) -> str:
@@ -119,4 +137,43 @@ class State(MutableMapping):
         return dict(self)
 
 
-__all__ = ["State", "scope_of", "APP_PREFIX", "USER_PREFIX", "TEMP_PREFIX"]
+class ReadonlyState(Mapping):
+    """An immutable view over a :class:`State`: reads only.
+
+    ``__getitem__``/``__iter__``/``__len__`` delegate to the live ``State``, so a
+    read-only view always reflects the latest writes — it forbids mutation, it
+    does not snapshot. Because it is a :class:`~collections.abc.Mapping` (not a
+    ``MutableMapping``), any attempt to write — ``ro[k] = v``, ``ro.pop(...)``,
+    ``ro.update(...)`` — is a ``TypeError``. This is the surface handed to the
+    two places that must never mutate state: instruction rendering and routing
+    predicates.
+    """
+
+    __slots__ = ("_state",)
+
+    def __init__(self, state: State) -> None:
+        self._state = state
+
+    def __getitem__(self, key: str) -> Any:
+        return self._state[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._state)
+
+    def __len__(self) -> int:
+        return len(self._state)
+
+    def __repr__(self) -> str:
+        return f"ReadonlyState({dict(self._state)!r})"
+
+
+__all__ = [
+    "State",
+    "ReadonlyState",
+    "StateKeyError",
+    "StateConflictError",
+    "scope_of",
+    "APP_PREFIX",
+    "USER_PREFIX",
+    "TEMP_PREFIX",
+]

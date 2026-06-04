@@ -44,8 +44,14 @@ class AgentTool:
         }
 
     async def execute(self, ctx: RunContext, *, prompt: str) -> Any:
+        # Share the caller's one state object so the delegated agent reads/writes
+        # the same shared state as its parent (S0: one State per run).
         result = await self.agent.run(
-            prompt, deps=ctx.deps, session_id=ctx.session_id, identity=ctx.identity
+            prompt,
+            deps=ctx.deps,
+            session_id=ctx.session_id,
+            identity=ctx.identity,
+            state=getattr(ctx, "state", None),
         )
         # Roll the sub-agent's usage up into the parent run.
         ctx.usage.add(result.usage)
