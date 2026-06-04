@@ -343,7 +343,7 @@ class Runner:
                     prompt_text, Stage.INPUT, agent_id=agent.registry_id, identity=identity
                 )
 
-            tool_schemas = [t.schema() for t in agent.tools] or None
+            tool_schemas = [t.schema() for t in _available_tools(agent, ctx)] or None
             output_adapter, output_schema = _output_spec(agent.output_type)
             tool_choice = _normalize_tool_choice(getattr(agent, "tool_choice", None), tool_schemas)
             # A forcing tool_choice ("required" or a pinned function) must apply to
@@ -998,7 +998,7 @@ class Runner:
             if templated_keys:
                 yield emit(EventType.STATE_TEMPLATE, keys=list(templated_keys))
 
-            tool_schemas = [t.schema() for t in agent.tools] or None
+            tool_schemas = [t.schema() for t in _available_tools(agent, ctx)] or None
             output_adapter, _ = _output_spec(agent.output_type)
             effective_tool_choice = _normalize_tool_choice(
                 getattr(agent, "tool_choice", None), tool_schemas
@@ -1299,10 +1299,32 @@ class Runner:
         name = ctx.state.pop("temp:__transfer_to__", None)
         if name is None:
             return None, None
-        sub = next((a for a in getattr(agent, "sub_agents", []) if a.name == name), None)
-        if sub is None:
+        sub_step = next((s for s in _sub_steps(agent) if _sub_agent_of(s).name == name), None)
+        if sub_step is None:
             # The tool already validated the name; defensively ignore unknowns.
             return None, None
+        sub = _sub_agent_of(sub_step)
+        # A when= guard on the sub-agent gates a model-driven transfer to it. If
+        # the guard is false, refuse with a model-visible error so the model can
+        # answer itself or pick another target — it does not crash the run. A
+        # plain (un-wrapped) sub-agent has no guard.
+        from .conditions import Step as _Step
+
+        guard_spec = sub_step.when if isinstance(sub_step, _Step) else None
+        if guard_spec is not None:
+            from .conditions import Guard, Phase, as_condition
+
+            cond = as_condition(guard_spec, phase=Phase.INPUT)
+            g = Guard(
+                value=None,
+                state=ctx.readonly().state,
+                ctx=ctx,
+                phase=Phase.INPUT,
+            )
+            if not cond.check(g):
+                return None, (
+                    f"error: transfer to '{name}' is not permitted (guard '{cond.label}' is false)"
+                )
         effective_cap = cap if cap is not None else getattr(agent, "transfer_depth", 3)
         if depth + 1 > effective_cap:
             return None, (
@@ -1323,8 +1345,12 @@ class Runner:
             short = await plugin.before_tool(ctx, agent.name, tc.name, tc.arguments)
             if short is not None:
                 return short
-        tool = next((t for t in agent.tools if t.name == tc.name), None)
+        tool = next((t for t in _available_tools(agent, ctx) if t.name == tc.name), None)
         if tool is None:
+            # The tool is either unknown or currently gated off by a when= guard;
+            # tell the model so it can recover rather than crashing the loop.
+            if any(t.name == tc.name for t in _all_tools(agent)):
+                return f"error: tool '{tc.name}' is not available right now"
             return f"error: unknown tool '{tc.name}'"
         timeout = self._tool_timeout(tool)
         try:
@@ -1502,6 +1528,54 @@ def _to_text(value: Any) -> str:
         return json.dumps(value)
     except (TypeError, ValueError):
         return str(value)
+
+
+def _all_tools(agent: Any) -> list[Any]:
+    """Every tool on an agent, unwrapping any conditional ``Step`` wrappers."""
+    from .conditions import Step
+
+    out: list[Any] = []
+    for entry in getattr(agent, "tools", []):
+        out.append(entry.unit if isinstance(entry, Step) else entry)
+    return out
+
+
+def _available_tools(agent: Any, ctx: RunContext) -> list[Any]:
+    """The tools currently exposed to the model, honoring each tool's ``when=``.
+
+    A bare tool is always available. A ``Step(tool, when=...)`` is available only
+    when its input guard is true against the current state; otherwise it is
+    omitted from the model-facing schema (no sentinel, no map mutation), so the
+    model simply cannot call it this step.
+    """
+    from .conditions import Guard, Phase, Step, as_condition
+
+    out: list[Any] = []
+    ro = ctx.readonly().state
+    for entry in getattr(agent, "tools", []):
+        if not isinstance(entry, Step):
+            out.append(entry)
+            continue
+        if entry.when is None:
+            out.append(entry.unit)
+            continue
+        cond = as_condition(entry.when, phase=Phase.INPUT)
+        guard = Guard(value=None, state=ro, ctx=ctx, phase=Phase.INPUT)
+        if cond.check(guard):
+            out.append(entry.unit)
+    return out
+
+
+def _sub_steps(agent: Any) -> list[Any]:
+    """The sub-agent entries on an agent (each a plain agent or a ``Step``)."""
+    return list(getattr(agent, "sub_agents", []))
+
+
+def _sub_agent_of(entry: Any) -> Any:
+    """Unwrap a sub-agent entry: a ``Step`` yields its wrapped agent."""
+    from .conditions import Step
+
+    return entry.unit if isinstance(entry, Step) else entry
 
 
 def _safe(value: Any) -> Any:

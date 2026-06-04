@@ -31,6 +31,24 @@ from . import ratelimiters as _ratelimiters  # noqa: F401
 from .agent import Agent
 from .artifacts.manager import ArtifactManager
 from .batch import batch_embed, batch_map, batch_run
+from .conditions import (
+    Branch,
+    Condition,
+    Guard,
+    Step,
+    and_,
+    failed,
+    loop_exhausted,
+    not_,
+    ok,
+    or_,
+    output_contains,
+    skipped,
+    state_eq,
+    state_ge,
+    timed_out,
+    when,
+)
 from .config import agent_from_dict, agent_from_yaml, runner_from_dict
 from .content import Content, Part, PartKind
 from .context import KeepAll, SummarizeHistory, TruncateMessages
@@ -67,7 +85,14 @@ from .limits import CancellationToken, UsageLimits
 from .memory.extraction import MemoryExtractor
 from .memory.manager import MemoryManager
 from .models.router import ModelRouter
-from .multiagent import LoopAgent, MapAgent, ParallelAgent, SequentialAgent, Swarm
+from .multiagent import (
+    LoopAgent,
+    MapAgent,
+    ParallelAgent,
+    RouterAgent,
+    SequentialAgent,
+    Swarm,
+)
 from .prompts import PromptRegistry
 from .rag import Document, KnowledgeBase
 from .rag.memory_service import KnowledgeBaseMemory
@@ -113,6 +138,24 @@ __all__ = [
     "MapAgent",
     "LoopAgent",
     "Swarm",
+    "RouterAgent",
+    # conditional execution + routing
+    "Step",
+    "Branch",
+    "Condition",
+    "Guard",
+    "when",
+    "and_",
+    "or_",
+    "not_",
+    "failed",
+    "timed_out",
+    "ok",
+    "skipped",
+    "loop_exhausted",
+    "output_contains",
+    "state_eq",
+    "state_ge",
     # managers
     "SessionManager",
     "MemoryManager",

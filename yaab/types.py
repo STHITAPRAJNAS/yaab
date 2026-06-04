@@ -229,6 +229,23 @@ class EventType(str, Enum):
     #: run is durably paused and resumes once a reviewer decides. The payload
     #: carries ``approval_id``, ``tool``, and ``arguments``.
     APPROVAL_REQUIRED = "approval_required"
+    #: A ``when=`` input guard was false, so a unit was skipped. The payload
+    #: carries the condition label, the boolean result, and the resolved operand
+    #: values (``operands``) so a reader can answer *why* it was skipped without
+    #: re-running.
+    CONDITION_SKIP = "condition_skip"
+    #: A ``stop=`` output guard fired, so the enclosing pattern stopped. Same
+    #: payload shape (label/result/operands) as the skip event.
+    CONDITION_STOP = "condition_stop"
+    #: An ``else=`` fallback unit ran in place of a unit that was skipped, failed,
+    #: or timed out. The payload's ``status`` distinguishes the three triggers.
+    CONDITION_FALLBACK = "condition_fallback"
+    #: A :class:`~yaab.multiagent.RouterAgent` is about to evaluate its branches;
+    #: the payload carries the static branch set and the no-match policy.
+    ROUTER_EVALUATED = "router_evaluated"
+    #: A router chose a branch (or the default, or matched nothing). The payload
+    #: carries the chosen branch name, its index, and the resolved operands.
+    ROUTER_MATCHED = "router_matched"
     FINAL_OUTPUT = "final_output"
     RUN_END = "run_end"
     ERROR = "error"
@@ -267,6 +284,15 @@ class RunResult(BaseModel, Generic[Output]):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     output: Output
+    #: The terminal status of the unit that produced this result: ``"ok"`` |
+    #: ``"skipped"`` | ``"failed"`` | ``"timeout"``. ``output`` is meaningful
+    #: only when this is ``"ok"`` (and ``not paused``). A unit skipped by a
+    #: ``when=`` guard returns its pass-through input with status ``"skipped"``;
+    #: the status channel is orthogonal to the output value. Stored as a plain
+    #: string (the :class:`~yaab.conditions.Status` enum is a ``str`` subclass,
+    #: so ``result.status == Status.SKIPPED`` compares cleanly) to keep this core
+    #: type free of an import cycle.
+    status: str = "ok"
     messages: list[Message] = Field(default_factory=list)
     usage: Usage = Field(default_factory=Usage)
     events: list[Event] = Field(default_factory=list)

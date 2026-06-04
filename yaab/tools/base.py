@@ -175,13 +175,30 @@ def tool(
 
 
 def coerce_tools(items: list[Any]) -> list[Tool]:
-    """Coerce a mixed list of callables/tools into :class:`Tool` instances."""
+    """Coerce a mixed list of callables/tools into :class:`Tool` instances.
+
+    A :class:`~yaab.conditions.Step` (a conditional tool, ``Step(tool,
+    when=...)``) passes through unchanged: it carries a guard the runner checks
+    when building the model-facing schema, and its wrapped tool is unwrapped at
+    call time. Everything else must be a tool or a plain callable.
+    """
     out: list[Tool] = []
     for item in items:
-        if isinstance(item, FunctionTool) or (hasattr(item, "schema") and hasattr(item, "execute")):
+        if _is_step(item):
+            out.append(item)
+        elif isinstance(item, FunctionTool) or (
+            hasattr(item, "schema") and hasattr(item, "execute")
+        ):
             out.append(item)
         elif callable(item):
             out.append(FunctionTool(item))
         else:
             raise ToolError(f"cannot use {item!r} as a tool")
     return out
+
+
+def _is_step(item: Any) -> bool:
+    """True if ``item`` is a conditional :class:`~yaab.conditions.Step`."""
+    from ..conditions import Step
+
+    return isinstance(item, Step)

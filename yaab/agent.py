@@ -26,6 +26,18 @@ if TYPE_CHECKING:
 _NoneType = type(None)  # module-level singleton (avoids a call in arg defaults)
 
 
+def _sub_unit(entry: Any) -> Any:
+    """Unwrap a sub-agent entry: a :class:`~yaab.conditions.Step` yields its unit.
+
+    A sub-agent may be wrapped in a ``Step(sub_agent, when=...)`` to gate a
+    model-driven transfer to it; the underlying agent (for the roster and the
+    transfer roster names) is its ``.unit``.
+    """
+    from .conditions import Step
+
+    return entry.unit if isinstance(entry, Step) else entry
+
+
 class Agent(Generic[Deps, Output]):
     """A type-safe agent: a model + instructions + tools + an output contract."""
 
@@ -140,8 +152,9 @@ class Agent(Generic[Deps, Output]):
         """
         from .tools.base import FunctionTool
 
-        roster = "\n".join(f"- {a.name}: {a.description}" for a in self.sub_agents)
-        valid_names = [a.name for a in self.sub_agents]
+        agents = [_sub_unit(a) for a in self.sub_agents]
+        roster = "\n".join(f"- {a.name}: {a.description}" for a in agents)
+        valid_names = [a.name for a in agents]
 
         async def transfer_to_agent(ctx: RunContext, agent_name: str) -> str:
             # Validate here so the model sees a useful error and can recover

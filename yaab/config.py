@@ -58,7 +58,22 @@ logger = logging.getLogger(__name__)
 # Composition / meta keys handled explicitly by the builder; everything else is
 # forwarded to Agent(**kwargs) (filtered by the constructor's real signature).
 _COMPOSITION_KEYS = frozenset(
-    {"kind", "name", "tools", "skills", "guardrails", "output_type", "agents", "sub_agents"}
+    {
+        "kind",
+        "name",
+        "tools",
+        "skills",
+        "guardrails",
+        "output_type",
+        "agents",
+        "sub_agents",
+        "branches",
+        "default_agent",
+        "on_no_match",
+        "when",
+        "stop",
+        "writes",
+    }
 )
 
 
@@ -288,9 +303,71 @@ def _build_leaf_agent(cfg: dict[str, Any]) -> Agent:
     )
 
 
-def _build_workflow(kind: str, cfg: dict[str, Any]) -> Any:
-    """Build a multiagent workflow (sequential/parallel/loop/swarm)."""
+def _resolve_condition(spec: Any) -> Any:
+    """Resolve a YAML ``when:``/``stop:`` guard spec into a condition value.
+
+    Three forms, with a clear trust boundary:
+
+    * a ``str`` that parses as the safe expression grammar — compiled to a
+      sandboxed condition (**pure data**, safe for untrusted specs);
+    * a ``bool`` — a constant guard;
+    * a one-key ``{name: {kwargs}}`` / dotted-path mapping — resolved through the
+      same callable trust boundary as pickers/calls; this is **executable code**,
+      not pure data, and only trusted specs should use it.
+
+    A string that is not valid grammar fails loudly rather than being silently
+    treated as a callable path.
+    """
+    from .conditions import as_condition
+
+    if isinstance(spec, bool):
+        return spec
+    if isinstance(spec, str):
+        # Validate it compiles under the safe grammar (input phase is the common
+        # case for branch/step guards); a bad/unsafe expression raises here.
+        from .conditions import Phase
+
+        as_condition(spec, phase=Phase.INPUT)
+        return spec
+    if isinstance(spec, dict):
+        # A dotted-path / registered callable: executable, gated like a picker.
+        return _resolve_named("condition", spec)
+    raise ValueError(f"unsupported when:/stop: spec in config: {spec!r}")
+
+
+def _build_router(cfg: dict[str, Any]) -> Any:
+    """Build a :class:`~yaab.multiagent.RouterAgent` from a ``kind: router`` spec."""
+    from .conditions import Branch
+    from .multiagent import RouterAgent
+
     name = cfg["name"]
+    branch_specs = cfg.get("branches") or []
+    default_spec = cfg.get("default_agent")
+    if not branch_specs and default_spec is None:
+        raise ValueError("router requires a non-empty 'branches:' list or a 'default_agent:'")
+    branches = []
+    for bspec in branch_specs:
+        if "when" not in bspec or "agent" not in bspec:
+            raise ValueError("each router branch requires 'when:' and 'agent:'")
+        when = _resolve_condition(bspec["when"])
+        branch_agent = agent_from_dict(bspec["agent"])
+        branches.append(Branch(when=when, agent=branch_agent, name=bspec.get("name")))
+    default = agent_from_dict(default_spec) if default_spec is not None else None
+    return RouterAgent(
+        name,
+        branches,
+        default=default,
+        on_no_match=cfg.get("on_no_match", "default"),
+        writes=cfg.get("writes"),
+    )
+
+
+def _build_workflow(kind: str, cfg: dict[str, Any]) -> Any:
+    """Build a multiagent workflow (sequential/parallel/loop/swarm/router)."""
+    name = cfg["name"]
+    if kind == "router":
+        return _build_router(cfg)
+
     agent_specs = cfg.get("agents")
     if not agent_specs:
         raise ValueError(f"workflow kind {kind!r} requires a non-empty 'agents:' list")
@@ -323,7 +400,7 @@ def _build_workflow(kind: str, cfg: dict[str, Any]) -> Any:
     )
 
 
-_WORKFLOW_KINDS = frozenset({"sequential", "parallel", "loop", "swarm"})
+_WORKFLOW_KINDS = frozenset({"sequential", "parallel", "loop", "swarm", "router"})
 
 
 def agent_from_dict(config: dict[str, Any]) -> Any:
