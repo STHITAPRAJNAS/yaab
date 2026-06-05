@@ -78,6 +78,7 @@ from .governance.approvals import (
     InMemoryApprovalStore,
     SQLiteApprovalStore,
 )
+from .governance.approvals_decide import Decision, ResumeBundle
 from .governance.eval import ToolTrajectoryMatch
 from .governance.evalset import EvalCase, EvalSet
 from .graph.state import RetryPolicy
@@ -116,8 +117,9 @@ from .skills import Skill
 from .state import State
 from .tools import AgentTool, FunctionTool, tool
 from .tools.auth import ToolAuth, ToolAuthRequired, ToolCredential
+from .tools.builtin.ask_user import ask_user
 from .tools.openapi import OpenAPITool, openapi_toolset
-from .types import Event, EventType, Message, RunContext, RunResult, Usage
+from .types import Event, EventType, Message, Pending, RunContext, RunResult, Usage
 
 __version__ = "0.1.0"
 
@@ -212,6 +214,11 @@ __all__ = [
     "ApprovalDecision",
     "InMemoryApprovalStore",
     "SQLiteApprovalStore",
+    # unified human-in-the-loop surface (pause -> decide -> resume)
+    "Pending",
+    "Decision",
+    "ResumeBundle",
+    "ask_user",
     # per-run trace store (replay a run with full per-step detail)
     "TraceStore",
     "InMemoryTraceStore",

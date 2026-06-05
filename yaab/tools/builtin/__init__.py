@@ -25,6 +25,7 @@ buildable via ``yaab.get_component("tool", "calculator")``.
 from __future__ import annotations
 
 from ...extensions import register
+from .ask_user import ask_user
 from .calculator import calculator
 from .code import python_exec
 from .datetime_tool import current_time
@@ -53,6 +54,7 @@ def _register_builtin_tools() -> None:
         web_search,
         python_exec,
         fetch_url,
+        ask_user,
     ):
         register("tool", t.name, lambda _t=t, **_kw: _t)
     register("tool", "file_read", lambda *, root=".", **_kw: make_file_tools(root=root)[0])
@@ -76,5 +78,6 @@ __all__ = [
     "grounding_settings",
     "make_file_tools",
     "file_toolset",
+    "ask_user",
     "default_toolset",
 ]

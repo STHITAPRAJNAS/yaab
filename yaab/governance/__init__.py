@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+from . import approvals_decide as approvals
 from .approval import ToolApprovalPlugin
 from .approvals import (
     ApprovalDecision,
     ApprovalRequest,
     ApprovalStore,
     InMemoryApprovalStore,
+    PostgresApprovalStore,
+    RedisApprovalStore,
     SQLiteApprovalStore,
+)
+from .approvals_decide import Decision as ReviewDecision
+from .approvals_decide import (
+    DecisionValidationError,
+    ResumeBundle,
 )
 from .audit import AuditEvent, AuditKind, AuditLog, AuditSink, SQLiteAuditSink
 from .authorization import (
@@ -123,6 +131,13 @@ __all__ = [
     "ApprovalDecision",
     "InMemoryApprovalStore",
     "SQLiteApprovalStore",
+    "PostgresApprovalStore",
+    "RedisApprovalStore",
+    # the unified human decision surface (pause -> decide -> resume)
+    "approvals",
+    "ReviewDecision",
+    "ResumeBundle",
+    "DecisionValidationError",
     # audit
     "AuditLog",
     "AuditEvent",

@@ -67,6 +67,7 @@ class Agent(Generic[Deps, Output]):
         runner: Any | None = None,
         instrument: bool = True,
         writes: str | None = None,
+        hitl: Any | None = None,
     ) -> None:
         self.name = name
         self._model_spec = model
@@ -139,6 +140,43 @@ class Agent(Generic[Deps, Output]):
 
         self._model: ModelProvider | None = None
         self._runner = runner
+        if hitl is not None:
+            self._apply_hitl(hitl)
+
+    def _apply_hitl(self, plugin: Any) -> None:
+        """Wire the convenience ``hitl=plugin`` form to a durable-by-default Runner.
+
+        ``Agent(..., hitl=plugin)`` is *exact sugar* for::
+
+            runner = Runner(
+                plugins=[plugin],
+                run_checkpointer=MemorySaver(),   # pauses are durable by default
+            )
+            agent = Agent(..., runner=runner)
+
+        When no ``runner`` was passed we build that Runner: register the plugin,
+        default ``run_checkpointer`` to :class:`MemorySaver` (so a pause survives in
+        memory and resume works out of the box) and the plugin's ``store`` to an
+        :class:`InMemoryApprovalStore` if absent. When a ``runner`` *was* passed
+        (the power form), we register the plugin on *that* runner so a fully
+        configured durable backend (SQLite/Postgres/Redis store + SQLiteSaver) is
+        honored — one mechanism, two spellings, identical wired object.
+        """
+        from .governance.approvals import InMemoryApprovalStore
+
+        if getattr(plugin, "store", None) is None and getattr(plugin, "mode", "") == "queue":
+            plugin.store = InMemoryApprovalStore()
+        if self._runner is None:
+            from .graph.checkpoint import MemorySaver
+            from .runner import Runner
+
+            self._runner = Runner(plugins=[plugin], run_checkpointer=MemorySaver())
+        else:
+            self._runner.add_plugin(plugin)
+            if getattr(self._runner, "run_checkpointer", None) is None:
+                from .graph.checkpoint import MemorySaver
+
+                self._runner.run_checkpointer = MemorySaver()
 
     def _build_transfer_tool(self) -> Tool:
         """Build the built-in ``transfer_to_agent`` tool from ``sub_agents``.
@@ -223,8 +261,9 @@ class Agent(Generic[Deps, Output]):
 
     async def run(
         self,
-        prompt: str,
+        prompt: str = "",
         *,
+        resume: Any | None = None,
         deps: Deps = None,  # type: ignore[assignment]
         session_id: str | None = None,
         identity: str | None = None,
@@ -251,7 +290,18 @@ class Agent(Generic[Deps, Output]):
         off if re-invoked with the same ``resume_id`` — without re-requesting the
         model turns already captured. It is inert (zero overhead) when the runner
         has no checkpointer.
+
+        ``resume`` is the one way to continue a paused run: pass the
+        :class:`~yaab.governance.approvals_decide.Decision` (or
+        :class:`~yaab.governance.approvals_decide.ResumeBundle`) a human produced.
+        It carries the ``approval_id`` and the ``resume_id`` (the checkpoint key),
+        so ``prompt`` and ``session_id`` are not needed on resume — correlation is
+        by the decision, never by session. The decided value flows back to the held
+        tool as a typed value (an edit's corrected args, a denial's reason, an
+        ``ask_user`` answer).
         """
+        if resume is not None:
+            return await self._resume(resume, session_id=session_id, identity=identity, deps=deps)
         return await self._get_runner().run(
             self,
             prompt,
@@ -263,6 +313,54 @@ class Agent(Generic[Deps, Output]):
             cancellation=cancellation,
             timeout=timeout,
             resume_id=resume_id,
+        )
+
+    async def _resume(
+        self,
+        resume: Any,
+        *,
+        session_id: str | None = None,
+        identity: str | None = None,
+        deps: Deps = None,  # type: ignore[assignment]
+    ) -> RunResult[Output]:
+        """Desugar a ``Decision``/``ResumeBundle`` into the runner's wired params.
+
+        A single ``Decision`` threads its ``resume_id`` (the checkpoint key),
+        ``verdict`` (``approval_decision``), and typed payload (``arguments``/
+        ``answer``/``reason`` via ``resume_payload``) into the runner's
+        resume-from-pending branch. A ``ResumeBundle`` (several decisions from one
+        multi-pending turn) resolves each by ``approval_id`` against the saved
+        pending; here we resume from the bundle's first decision's checkpoint and
+        carry the full map so each held tool runs with its own decision.
+        """
+        decisions = getattr(resume, "decisions", None)
+        if decisions is not None:  # a ResumeBundle
+            first = next(iter(decisions.values()))
+            resume_id = first.resume_id
+            verdict = first.verdict
+            payload: dict[str, Any] = {
+                "arguments": first.arguments,
+                "answer": first.answer,
+                "reason": first.reason,
+                "bundle": {k: d.model_dump() for k, d in decisions.items()},
+            }
+        else:  # a single Decision
+            resume_id = resume.resume_id
+            verdict = resume.verdict
+            payload = {
+                "arguments": resume.arguments,
+                "answer": resume.answer,
+                "reason": resume.reason,
+            }
+        return await self._get_runner().run(
+            self,
+            "",
+            deps=deps,
+            session_id=session_id,
+            identity=identity,
+            resume_id=resume_id,
+            approval_decision=verdict,
+            resume_payload=payload,
         )
 
     def stream(
@@ -343,8 +441,9 @@ class Agent(Generic[Deps, Output]):
 
     def run_sync(
         self,
-        prompt: str,
+        prompt: str = "",
         *,
+        resume: Any | None = None,
         deps: Deps = None,  # type: ignore[assignment]
         session_id: str | None = None,
         identity: str | None = None,
@@ -358,6 +457,7 @@ class Agent(Generic[Deps, Output]):
         return asyncio.run(
             self.run(
                 prompt,
+                resume=resume,
                 deps=deps,
                 session_id=session_id,
                 identity=identity,

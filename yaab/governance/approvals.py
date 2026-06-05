@@ -64,6 +64,33 @@ class ApprovalRequest(BaseModel):
     created_at: float = Field(default_factory=time.time)
     decided_at: float | None = None
     expires_at: float | None = None
+    #: Which pause source this record represents: ``"approval"`` (a guarded tool
+    #: awaiting sign-off), ``"question"`` (an ``ask_user`` prompt), or
+    #: ``"flow_pause"`` (a graph/flow step pause). One store, one mechanism, one
+    #: review surface for all three (so a flow pause is visible in GET /approvals
+    #: and ``respond`` works on it identically).
+    kind: str = "approval"
+    #: The question text for a ``"question"`` record (the ``ask_user`` prompt).
+    prompt: str | None = None
+    #: A JSON Schema the human's typed answer is validated against, if declared.
+    answer_schema: dict[str, Any] | None = None
+    #: Reviewer-edited tool arguments captured by ``edit`` — the held tool runs
+    #: with these on resume instead of the model's originally-proposed args.
+    override_arguments: dict[str, Any] | None = None
+    #: The human's typed answer for a ``"question"`` record (set by ``respond``);
+    #: becomes the ``ask_user`` tool's return value on resume.
+    answer: Any = None
+    #: An optional business key (e.g. ``"customer:ACME"``) so a reviewer who knows
+    #: only the business identity can find the right pending record via
+    #: :meth:`ApprovalStore.list_by_key`.
+    correlation_key: str | None = None
+    #: Timeout policy applied by the worker's approval reaper when ``expires_at``
+    #: elapses: ``"deny"`` | ``"approve"`` | ``"escalate"``.
+    on_timeout: str | None = None
+    #: When ``on_timeout == "escalate"``, the next reviewer/agent to route to.
+    escalate_to: str | None = None
+    #: The configured timeout window in seconds (used to re-arm an escalation).
+    timeout_seconds: float | None = None
 
 
 @runtime_checkable
@@ -98,12 +125,26 @@ class ApprovalStore(Protocol):
         decision: ApprovalDecision,
         reviewer: str,
         reason: str | None = None,
+        override_arguments: dict[str, Any] | None = None,
+        answer: Any = None,
     ) -> ApprovalRequest | None:
-        """Record a reviewer's decision; returns the updated record or ``None``."""
+        """Record a reviewer's decision; returns the updated record or ``None``.
+
+        ``override_arguments`` (reviewer-edited tool args) and ``answer`` (a typed
+        ``ask_user`` answer) are persisted alongside the verdict so the resume
+        path can flow the decided value back to the held tool. First-write-wins:
+        a decide on an already-decided record is a no-op returning it unchanged.
+        """
         ...
 
     async def for_run(self, run_id: str) -> list[ApprovalRequest]:
         """All approval records (pending or decided) belonging to a run."""
+        ...
+
+    async def list_by_key(
+        self, correlation_key: str, *, pending_only: bool = True
+    ) -> list[ApprovalRequest]:
+        """All records carrying ``correlation_key`` (a business key lookup)."""
         ...
 
 
@@ -113,21 +154,28 @@ def _apply_decision(
     decision: ApprovalDecision | str,
     reviewer: str,
     reason: str | None,
+    override_arguments: dict[str, Any] | None = None,
+    answer: Any = None,
 ) -> ApprovalRequest:
     """Return a copy of ``req`` with a reviewer's decision applied.
 
     ``decision`` may be the enum or its string value (``"approved"`` /
     ``"denied"`` / ``"expired"``) — reviewers calling over HTTP or from scripts
-    shouldn't need to import the enum to record a decision.
+    shouldn't need to import the enum to record a decision. ``override_arguments``
+    (reviewer-edited tool args) and ``answer`` (a typed ``ask_user`` answer) are
+    persisted so the resume seam can flow the decided value back to the held tool.
     """
-    return req.model_copy(
-        update={
-            "decision": ApprovalDecision(decision),
-            "reviewer": reviewer,
-            "reason": reason,
-            "decided_at": time.time(),
-        }
-    )
+    update: dict[str, Any] = {
+        "decision": ApprovalDecision(decision),
+        "reviewer": reviewer,
+        "reason": reason,
+        "decided_at": time.time(),
+    }
+    if override_arguments is not None:
+        update["override_arguments"] = override_arguments
+    if answer is not None:
+        update["answer"] = answer
+    return req.model_copy(update=update)
 
 
 class InMemoryApprovalStore:
@@ -165,6 +213,8 @@ class InMemoryApprovalStore:
         decision: ApprovalDecision,
         reviewer: str,
         reason: str | None = None,
+        override_arguments: dict[str, Any] | None = None,
+        answer: Any = None,
     ) -> ApprovalRequest | None:
         async with self._lock:
             existing = self._records.get(approval_id)
@@ -173,12 +223,28 @@ class InMemoryApprovalStore:
             if existing.decision is not ApprovalDecision.PENDING:
                 # First decision is permanent; a later decide is a no-op read.
                 return existing
-            updated = _apply_decision(existing, decision=decision, reviewer=reviewer, reason=reason)
+            updated = _apply_decision(
+                existing,
+                decision=decision,
+                reviewer=reviewer,
+                reason=reason,
+                override_arguments=override_arguments,
+                answer=answer,
+            )
             self._records[approval_id] = updated
             return updated
 
     async def for_run(self, run_id: str) -> list[ApprovalRequest]:
         return [r for r in self._records.values() if r.run_id == run_id]
+
+    async def list_by_key(
+        self, correlation_key: str, *, pending_only: bool = True
+    ) -> list[ApprovalRequest]:
+        out = [r for r in self._records.values() if r.correlation_key == correlation_key]
+        if pending_only:
+            out = [r for r in out if r.decision == ApprovalDecision.PENDING]
+        out.sort(key=lambda r: r.created_at)
+        return out
 
 
 class SQLiteApprovalStore:
@@ -203,23 +269,32 @@ class SQLiteApprovalStore:
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS approvals ("
             "approval_id TEXT PRIMARY KEY, run_id TEXT, agent TEXT, "
-            "decision TEXT, created_at REAL, data TEXT NOT NULL)"
+            "decision TEXT, created_at REAL, correlation_key TEXT, data TEXT NOT NULL)"
         )
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_approvals_run ON approvals (run_id)")
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_approvals_pending ON approvals (decision, agent)"
         )
+        # Additive migration: an older DB may predate the correlation_key column.
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(approvals)").fetchall()}
+        if "correlation_key" not in cols:
+            self._conn.execute("ALTER TABLE approvals ADD COLUMN correlation_key TEXT")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_approvals_key ON approvals (correlation_key)"
+        )
 
     def _store(self, req: ApprovalRequest) -> None:
         self._conn.execute(
             "INSERT OR REPLACE INTO approvals "
-            "(approval_id, run_id, agent, decision, created_at, data) VALUES (?, ?, ?, ?, ?, ?)",
+            "(approval_id, run_id, agent, decision, created_at, correlation_key, data) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 req.approval_id,
                 req.run_id,
                 req.agent,
                 req.decision.value,
                 req.created_at,
+                req.correlation_key,
                 req.model_dump_json(),
             ),
         )
@@ -235,13 +310,15 @@ class SQLiteApprovalStore:
         # id must not clobber an existing (possibly already-decided) record.
         self._conn.execute(
             "INSERT OR IGNORE INTO approvals "
-            "(approval_id, run_id, agent, decision, created_at, data) VALUES (?, ?, ?, ?, ?, ?)",
+            "(approval_id, run_id, agent, decision, created_at, correlation_key, data) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 req.approval_id,
                 req.run_id,
                 req.agent,
                 req.decision.value,
                 req.created_at,
+                req.correlation_key,
                 req.model_dump_json(),
             ),
         )
@@ -269,6 +346,8 @@ class SQLiteApprovalStore:
         decision: ApprovalDecision,
         reviewer: str,
         reason: str | None = None,
+        override_arguments: dict[str, Any] | None = None,
+        answer: Any = None,
     ) -> ApprovalRequest | None:
         # BEGIN IMMEDIATE takes the write lock up front, so a racing reviewer
         # blocks here (busy_timeout) rather than reading the same PENDING record.
@@ -284,7 +363,14 @@ class SQLiteApprovalStore:
             if existing.decision is not ApprovalDecision.PENDING:
                 self._conn.execute("COMMIT")
                 return existing
-            updated = _apply_decision(existing, decision=decision, reviewer=reviewer, reason=reason)
+            updated = _apply_decision(
+                existing,
+                decision=decision,
+                reviewer=reviewer,
+                reason=reason,
+                override_arguments=override_arguments,
+                answer=answer,
+            )
             self._store(updated)
             self._conn.execute("COMMIT")
             return updated
@@ -296,6 +382,22 @@ class SQLiteApprovalStore:
         rows = self._conn.execute(
             "SELECT data FROM approvals WHERE run_id = ? ORDER BY created_at", (run_id,)
         ).fetchall()
+        return [ApprovalRequest.model_validate_json(r[0]) for r in rows]
+
+    async def list_by_key(
+        self, correlation_key: str, *, pending_only: bool = True
+    ) -> list[ApprovalRequest]:
+        if pending_only:
+            rows = self._conn.execute(
+                "SELECT data FROM approvals WHERE correlation_key = ? AND decision = ? "
+                "ORDER BY created_at",
+                (correlation_key, ApprovalDecision.PENDING.value),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT data FROM approvals WHERE correlation_key = ? ORDER BY created_at",
+                (correlation_key,),
+            ).fetchall()
         return [ApprovalRequest.model_validate_json(r[0]) for r in rows]
 
 
@@ -325,18 +427,24 @@ class PostgresApprovalStore:
         self._conn.execute(
             f"CREATE TABLE IF NOT EXISTS {table} ("
             f"approval_id TEXT PRIMARY KEY, run_id TEXT, agent TEXT, "
-            f"decision TEXT, created_at DOUBLE PRECISION, data JSONB NOT NULL)"
+            f"decision TEXT, created_at DOUBLE PRECISION, correlation_key TEXT, "
+            f"data JSONB NOT NULL)"
         )
         self._conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_run ON {table} (run_id)")
         self._conn.execute(
             f"CREATE INDEX IF NOT EXISTS idx_{table}_pending ON {table} (decision, agent)"
         )
+        # Additive migration for a table created before correlation_key existed.
+        self._conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS correlation_key TEXT")
+        self._conn.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_{table}_key ON {table} (correlation_key)"
+        )
 
     def _store(self, req: ApprovalRequest) -> None:
         self._conn.execute(
             f"INSERT INTO {self._table} "
-            f"(approval_id, run_id, agent, decision, created_at, data) "
-            f"VALUES (%s, %s, %s, %s, %s, %s) "
+            f"(approval_id, run_id, agent, decision, created_at, correlation_key, data) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s) "
             f"ON CONFLICT (approval_id) DO UPDATE SET decision = EXCLUDED.decision, "
             f"data = EXCLUDED.data",
             (
@@ -345,6 +453,7 @@ class PostgresApprovalStore:
                 req.agent,
                 req.decision.value,
                 req.created_at,
+                req.correlation_key,
                 json.dumps(req.model_dump()),
             ),
         )
@@ -368,8 +477,8 @@ class PostgresApprovalStore:
         # id must not clobber an existing (possibly already-decided) record.
         self._conn.execute(
             f"INSERT INTO {self._table} "
-            f"(approval_id, run_id, agent, decision, created_at, data) "
-            f"VALUES (%s, %s, %s, %s, %s, %s) "
+            f"(approval_id, run_id, agent, decision, created_at, correlation_key, data) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s) "
             f"ON CONFLICT (approval_id) DO NOTHING",
             (
                 req.approval_id,
@@ -377,6 +486,7 @@ class PostgresApprovalStore:
                 req.agent,
                 req.decision.value,
                 req.created_at,
+                req.correlation_key,
                 json.dumps(req.model_dump()),
             ),
         )
@@ -405,6 +515,8 @@ class PostgresApprovalStore:
         decision: ApprovalDecision,
         reviewer: str,
         reason: str | None = None,
+        override_arguments: dict[str, Any] | None = None,
+        answer: Any = None,
     ) -> ApprovalRequest | None:
         # Take a row-level ``FOR UPDATE`` lock inside one transaction so two
         # reviewers can't both read PENDING and both write a decision. The first
@@ -416,7 +528,14 @@ class PostgresApprovalStore:
                 return None
             if existing.decision is not ApprovalDecision.PENDING:
                 return existing
-            updated = _apply_decision(existing, decision=decision, reviewer=reviewer, reason=reason)
+            updated = _apply_decision(
+                existing,
+                decision=decision,
+                reviewer=reviewer,
+                reason=reason,
+                override_arguments=override_arguments,
+                answer=answer,
+            )
             self._store(updated)
             return updated
 
@@ -424,6 +543,22 @@ class PostgresApprovalStore:
         rows = self._conn.execute(
             f"SELECT data FROM {self._table} WHERE run_id = %s ORDER BY created_at", (run_id,)
         ).fetchall()
+        return [ApprovalRequest.model_validate(r[0]) for r in rows]
+
+    async def list_by_key(
+        self, correlation_key: str, *, pending_only: bool = True
+    ) -> list[ApprovalRequest]:
+        if pending_only:
+            rows = self._conn.execute(
+                f"SELECT data FROM {self._table} WHERE correlation_key = %s AND decision = %s "
+                f"ORDER BY created_at",
+                (correlation_key, ApprovalDecision.PENDING.value),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                f"SELECT data FROM {self._table} WHERE correlation_key = %s ORDER BY created_at",
+                (correlation_key,),
+            ).fetchall()
         return [ApprovalRequest.model_validate(r[0]) for r in rows]
 
 
@@ -466,9 +601,14 @@ class RedisApprovalStore:
     def _run_key(self, run_id: str) -> str:
         return f"{self._prefix}:run:{run_id}"
 
+    def _key_set(self, correlation_key: str) -> str:
+        return f"{self._prefix}:key:{correlation_key}"
+
     def _store(self, req: ApprovalRequest) -> None:
         self._redis.hset(self._data_key(), req.approval_id, req.model_dump_json())
         self._redis.sadd(self._run_key(req.run_id), req.approval_id)
+        if req.correlation_key:
+            self._redis.sadd(self._key_set(req.correlation_key), req.approval_id)
         if req.decision == ApprovalDecision.PENDING:
             self._redis.sadd(self._pending_key(), req.approval_id)
 
@@ -482,6 +622,8 @@ class RedisApprovalStore:
         # existing (possibly already-decided) record. The index sets are additive.
         created = self._redis.hsetnx(self._data_key(), req.approval_id, req.model_dump_json())
         self._redis.sadd(self._run_key(req.run_id), req.approval_id)
+        if req.correlation_key:
+            self._redis.sadd(self._key_set(req.correlation_key), req.approval_id)
         if created and req.decision == ApprovalDecision.PENDING:
             self._redis.sadd(self._pending_key(), req.approval_id)
 
@@ -523,11 +665,20 @@ class RedisApprovalStore:
         decision: ApprovalDecision,
         reviewer: str,
         reason: str | None = None,
+        override_arguments: dict[str, Any] | None = None,
+        answer: Any = None,
     ) -> ApprovalRequest | None:
         existing = self._load(approval_id)
         if existing is None:
             return None
-        candidate = _apply_decision(existing, decision=decision, reviewer=reviewer, reason=reason)
+        candidate = _apply_decision(
+            existing,
+            decision=decision,
+            reviewer=reviewer,
+            reason=reason,
+            override_arguments=override_arguments,
+            answer=answer,
+        )
         stored = self._redis.eval(
             self._DECIDE_LUA,
             2,
@@ -551,6 +702,21 @@ class RedisApprovalStore:
             req = self._load(approval_id)
             if req is not None:
                 out.append(req)
+        out.sort(key=lambda r: r.created_at)
+        return out
+
+    async def list_by_key(
+        self, correlation_key: str, *, pending_only: bool = True
+    ) -> list[ApprovalRequest]:
+        ids = self._redis.smembers(self._key_set(correlation_key))
+        out: list[ApprovalRequest] = []
+        for approval_id in ids:
+            req = self._load(approval_id)
+            if req is None:
+                continue
+            if pending_only and req.decision != ApprovalDecision.PENDING:
+                continue
+            out.append(req)
         out.sort(key=lambda r: r.created_at)
         return out
 

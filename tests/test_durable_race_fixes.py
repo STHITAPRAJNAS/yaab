@@ -233,17 +233,32 @@ def test_deterministic_approval_id_from_plugin():
     from yaab.types import RunContext
 
     async def go() -> None:
+        import json
+
         store = InMemoryApprovalStore()
         plugin = ToolApprovalPlugin(tools=["wire"], mode="queue", store=store)
         ctx = RunContext(deps=None, session_id=None, identity="alice")
         ctx.state["temp:__resume_id__"] = "resume-key"
 
-        expected_digest = hashlib.sha256(f"{ctx.run_id}|resume-key|wire".encode()).hexdigest()[:12]
+        # The id includes an arg signature so concurrent calls to the SAME tool in
+        # one parallel turn get distinct records (a pure tool-name digest would
+        # collapse them, last-write-wins).
+        args = {"amount": 1}
+        arg_sig = json.dumps(args, sort_keys=True, default=str)
+        expected_digest = hashlib.sha256(
+            f"{ctx.run_id}|resume-key|wire|{arg_sig}".encode()
+        ).hexdigest()[:12]
         expected_id = f"ap_{expected_digest}"
 
         with pytest.raises(Exception):  # noqa: B017 - ApprovalPending
-            await plugin._queue_and_pause(ctx, "svc", "wire", {"amount": 1})
+            await plugin._queue_and_pause(ctx, "svc", "wire", args)
         got = await store.get(expected_id)
         assert got is not None and got.tool == "wire"
+
+        # A re-pause with the same run + resume key + tool + args reuses the id
+        # (idempotent create), so a crash-then-resume doesn't duplicate the record.
+        with pytest.raises(Exception):  # noqa: B017
+            await plugin._queue_and_pause(ctx, "svc", "wire", dict(args))
+        assert len(await store.list_pending()) == 1
 
     asyncio.run(go())

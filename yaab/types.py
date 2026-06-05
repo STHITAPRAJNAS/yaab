@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 import uuid
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -267,6 +267,45 @@ class Event(BaseModel):
     duration_ms: float | None = None
 
 
+class Pending(BaseModel):
+    """One thing a human must decide before a paused run continues.
+
+    A paused :class:`RunResult` carries a *list* of these (one element for the
+    common single-approval case, several when one model turn guarded two tools).
+    One shape covers all three pause kinds: a guarded tool (``"approval"``), an
+    :func:`~yaab.tools.builtin.ask_user` question (``"question"``), or a graph
+    ``interrupt()`` (``"flow_pause"``). Every kind carries the same correlation
+    keys (``approval_id``/``run_id``/``resume_id``) so resume is uniform, with
+    kind-specific fields left nullable.
+    """
+
+    kind: Literal["approval", "question", "flow_pause"]
+    # --- correlation (every kind) ---
+    #: == ``ApprovalRequest.approval_id`` — the durable resume key a human cites.
+    approval_id: str = ""
+    run_id: str = ""
+    #: The checkpoint key the loop resumes from.
+    resume_id: str = ""
+    # --- approval kind ---
+    #: The guarded tool awaiting sign-off.
+    tool: str | None = None
+    #: The proposed (editable) tool arguments.
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    # --- question kind (ask_user) ---
+    #: The question text shown to the human.
+    prompt: str | None = None
+    #: A JSON Schema the typed answer is validated against (if declared).
+    answer_schema: dict[str, Any] | None = None
+    # --- flow_pause kind (graph interrupt) ---
+    #: The value passed to ``interrupt()``.
+    payload: Any = None
+    # --- lifecycle (any kind) ---
+    #: An optional business key (e.g. ``"customer:42"``) for key-based lookup.
+    correlation_key: str | None = None
+    #: A timeout deadline (epoch seconds), if one was set.
+    expires_at: float | None = None
+
+
 class RunResult(BaseModel, Generic[Output]):
     """The result of an agent run.
 
@@ -307,8 +346,8 @@ class RunResult(BaseModel, Generic[Output]):
     #: A run may pause on more than one at once (concurrent branches each parking
     #: an approval/question), so this is the complete set a caller iterates to
     #: resolve them; ``pause_value`` is the single/primary one for the common
-    #: case. Empty on a normal completion.
-    pending: list[Any] = Field(default_factory=list)
+    #: case. Empty on a normal completion. ``result.paused == bool(pending)``.
+    pending: list[Pending] = Field(default_factory=list)
 
     @property
     def all_messages(self) -> list[Message]:
