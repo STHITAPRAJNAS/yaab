@@ -102,11 +102,28 @@ class ApprovalPending(ApprovalRequired):
         run_id: str,
         resume_id: str,
         reason: str = "approval required",
+        kind: str = "approval",
+        prompt: str | None = None,
+        answer_schema: dict | None = None,
+        correlation_key: str | None = None,
+        expires_at: float | None = None,
     ) -> None:
         super().__init__(tool, arguments, reason=reason)
         self.approval_id = approval_id
         self.run_id = run_id
         self.resume_id = resume_id
+        #: Which pause source this is: ``"approval"`` | ``"question"`` |
+        #: ``"flow_pause"`` — so the resume seam flows the decided value back the
+        #: right way (run the tool, or return a typed answer).
+        self.kind = kind
+        #: The ``ask_user`` question text (``"question"`` kind only).
+        self.prompt = prompt
+        #: A JSON Schema the typed answer is validated against, if declared.
+        self.answer_schema = answer_schema
+        #: An optional business key for key-based lookup.
+        self.correlation_key = correlation_key
+        #: An optional timeout deadline (epoch seconds).
+        self.expires_at = expires_at
 
 
 class LifecycleError(GovernanceError):

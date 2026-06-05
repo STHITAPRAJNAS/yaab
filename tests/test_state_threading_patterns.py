@@ -247,10 +247,16 @@ def test_run_result_pending_defaults_empty():
 
 
 def test_run_result_pending_is_typed_field():
-    """``pending`` is a real, settable field describing parked human decisions."""
-    r: RunResult = RunResult(output=None, paused=True, pending=[{"kind": "approval"}])
+    """``pending`` is a real, settable field of typed ``Pending`` parked decisions."""
+    from yaab.types import Pending
+
+    r: RunResult = RunResult(
+        output=None, paused=True, pending=[Pending(kind="approval", tool="wire")]
+    )
     assert r.paused is True
-    assert r.pending == [{"kind": "approval"}]
+    assert len(r.pending) == 1
+    assert r.pending[0].kind == "approval"
+    assert r.pending[0].tool == "wire"
 
 
 # --------------------------------------------------------------------------

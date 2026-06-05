@@ -36,6 +36,7 @@ from .types import (
     Event,
     EventType,
     Message,
+    Pending,
     Role,
     RunContext,
     RunResult,
@@ -47,6 +48,20 @@ from .types import (
 #: placeholders (``{0}``), and CSS braces are left untouched — only
 #: ``{name}`` / ``{user:name}`` / ``{name?}`` are treated as state fields.
 _STATE_FIELD = re.compile(r"\{([a-zA-Z_][\w]*(?::[a-zA-Z_][\w]*)?)(\?)?\}")
+
+
+class _Paused:
+    """A captured tool pause carried as a value through ``asyncio.gather``.
+
+    Lets a guarded call in a parallel turn surface its
+    :class:`~yaab.exceptions.ApprovalRequired` without cancelling its siblings, so
+    every pending in the turn is collected before the run pauses on all of them.
+    """
+
+    __slots__ = ("exc",)
+
+    def __init__(self, exc: ApprovalRequired) -> None:
+        self.exc = exc
 
 
 class Runner:
@@ -140,6 +155,7 @@ class Runner:
         timeout: float | None = None,
         resume_id: str | None = None,
         approval_decision: str | None = None,
+        resume_payload: dict[str, Any] | None = None,
     ) -> RunResult[Any]:
         events: list[Event] = []
         async for event in self.run_stream(
@@ -154,6 +170,7 @@ class Runner:
             timeout=timeout,
             resume_id=resume_id,
             approval_decision=approval_decision,
+            resume_payload=resume_payload,
         ):
             events.append(event)
         final = events[-1]
@@ -162,13 +179,18 @@ class Runner:
         # A run that durably paused for human sign-off ends on APPROVAL_REQUIRED
         # (no RUN_END). Surface that as a paused RunResult per the documented
         # invariant (read ``output`` only when ``not paused``) instead of raising.
+        # Every terminal APPROVAL_REQUIRED maps to one typed Pending; a turn that
+        # guarded several tools emits several such events, so collect them ALL.
+        approval_events = [e for e in events if e.type is EventType.APPROVAL_REQUIRED]
         if final.type is EventType.APPROVAL_REQUIRED:
+            pendings = [_pending_from_event(e) for e in approval_events]
             return RunResult(
                 output=None,
                 events=events,
                 run_id=final.run_id,
                 paused=True,
                 pause_value=dict(final.payload),
+                pending=pendings,
             )
         result: RunResult = final.payload["result"]
         result.events = events
@@ -194,6 +216,7 @@ class Runner:
         timeout: float | None = None,
         resume_id: str | None = None,
         approval_decision: str | None = None,
+        resume_payload: dict[str, Any] | None = None,
         _transfer_depth: int = 0,
         _transfer_cap: int | None = None,
     ) -> AsyncIterator[Event]:
@@ -391,11 +414,30 @@ class Runner:
                 pending = resume_state.get("pending_approval")
                 if pending is not None:
                     tool_msg, call_ev, result_ev = await self._resume_pending(
-                        agent, ctx, pending, approval_decision, emit
+                        agent, ctx, pending, approval_decision, emit, resume_payload
                     )
                     yield call_ev
                     yield result_ev
                     messages.append(tool_msg)
+                # Several guarded tools paused together (the parallel path). Resolve
+                # each with its own decision, keyed by approval_id from the bundle.
+                pending_many = resume_state.get("pending_approvals")
+                if pending_many:
+                    bundle = (resume_payload or {}).get("bundle") or {}
+                    for held in pending_many:
+                        d = bundle.get(held.get("approval_id"), {})
+                        per_decision = d.get("verdict", approval_decision)
+                        per_payload = {
+                            "arguments": d.get("arguments"),
+                            "answer": d.get("answer"),
+                            "reason": d.get("reason"),
+                        }
+                        tool_msg, call_ev, result_ev = await self._resume_pending(
+                            agent, ctx, held, per_decision, emit, per_payload
+                        )
+                        yield call_ev
+                        yield result_ev
+                        messages.append(tool_msg)
             else:
                 messages, templated_keys = await self._build_messages(
                     agent, ctx, scanned_prompt, original=prompt
@@ -466,12 +508,18 @@ class Runner:
                         for tc in tcs:
                             yield emit(EventType.TOOL_CALL, name=tc.name, arguments=tc.arguments)
                         _tool_started = time.monotonic()
-                        try:
-                            results = await self._run_tools_parallel(agent, ctx, tcs)
-                        except ApprovalRequired as exc:
-                            paused = self._pause_for_approval(
+                        results = await self._run_tools_parallel(agent, ctx, tcs)
+                        # Collect EVERY guarded call in this turn (not just the
+                        # first) so no pending is silently dropped; pause on all.
+                        pendings = [
+                            (tc, r.exc)
+                            for tc, r in zip(tcs, results, strict=False)
+                            if isinstance(r, _Paused)
+                        ]
+                        if pendings:
+                            events = self._pause_for_approvals(
                                 ctx,
-                                exc,
+                                pendings,
                                 _step,
                                 messages,
                                 tool_counts,
@@ -479,9 +527,10 @@ class Runner:
                                 emit,
                                 seq,
                             )
-                            if paused is None:
-                                raise
-                            yield paused
+                            if events is None:
+                                raise pendings[0][1]  # no checkpointer -> classic re-raise
+                            for ev in events:
+                                yield ev
                             return
                         _tool_ms = (time.monotonic() - _tool_started) * 1000.0
                         for tc, result_value in zip(tcs, results, strict=False):
@@ -789,16 +838,35 @@ class Runner:
         if self.run_checkpointer is None or resume_key is None:
             return None
         approval_id = getattr(exc, "approval_id", "")
+        # The kind/prompt/answer_schema travel from the raising tool (ask_user) or
+        # the approval plugin through the exception into both the durable pending
+        # marker and the APPROVAL_REQUIRED payload, so a resumed run knows how to
+        # flow the decided value back and a caller's typed Pending is complete.
+        kind = getattr(exc, "kind", "approval")
+        prompt = getattr(exc, "prompt", None)
+        answer_schema = getattr(exc, "answer_schema", None)
+        correlation_key = getattr(exc, "correlation_key", None)
+        expires_at = getattr(exc, "expires_at", None)
         pending = {
             "tool": exc.tool,
             "arguments": dict(exc.arguments),
             "approval_id": approval_id,
+            "kind": kind,
+            "run_id": ctx.run_id,
+            "resume_id": resume_key,
         }
         event = emit(
             EventType.APPROVAL_REQUIRED,
             approval_id=approval_id,
             tool=exc.tool,
             arguments=dict(exc.arguments),
+            kind=kind,
+            run_id=ctx.run_id,
+            resume_id=resume_key,
+            prompt=prompt,
+            answer_schema=answer_schema,
+            correlation_key=correlation_key,
+            expires_at=expires_at,
         )
         self._save_pending(
             resume_key,
@@ -812,6 +880,75 @@ class Runner:
             ctx=ctx,
         )
         return event
+
+    def _pause_for_approvals(
+        self,
+        ctx: RunContext,
+        pendings: list[tuple[ToolCall, ApprovalRequired]],
+        step: int,
+        messages: list[Message],
+        tool_counts: dict[str, int],
+        output_retries_left: int,
+        emit: Any,
+        seq: list[int],
+    ) -> list[Event] | None:
+        """Pause a turn on *several* guarded calls at once (the parallel path).
+
+        Writes ONE checkpoint carrying a list of pending tool calls, and emits one
+        :attr:`EventType.APPROVAL_REQUIRED` event per pending (so ``result.pending``
+        lists them all). Returns ``None`` when no checkpointer/resume key is wired
+        so the caller re-raises (classic block behavior, backward compatible).
+        """
+        resume_key = ctx.state.get("temp:__resume_id__")
+        if self.run_checkpointer is None or resume_key is None:
+            return None
+        pending_list: list[dict[str, Any]] = []
+        events: list[Event] = []
+        for _tc, exc in pendings:
+            approval_id = getattr(exc, "approval_id", "")
+            kind = getattr(exc, "kind", "approval")
+            prompt = getattr(exc, "prompt", None)
+            answer_schema = getattr(exc, "answer_schema", None)
+            correlation_key = getattr(exc, "correlation_key", None)
+            expires_at = getattr(exc, "expires_at", None)
+            pending_list.append(
+                {
+                    "tool": exc.tool,
+                    "arguments": dict(exc.arguments),
+                    "approval_id": approval_id,
+                    "kind": kind,
+                    "run_id": ctx.run_id,
+                    "resume_id": resume_key,
+                }
+            )
+            events.append(
+                emit(
+                    EventType.APPROVAL_REQUIRED,
+                    approval_id=approval_id,
+                    tool=exc.tool,
+                    arguments=dict(exc.arguments),
+                    kind=kind,
+                    run_id=ctx.run_id,
+                    resume_id=resume_key,
+                    prompt=prompt,
+                    answer_schema=answer_schema,
+                    correlation_key=correlation_key,
+                    expires_at=expires_at,
+                )
+            )
+        assert self.run_checkpointer is not None
+        state = {
+            "step": step,
+            "messages": [m.model_dump(mode="json") for m in messages],
+            "tool_counts": dict(tool_counts),
+            "usage": ctx.usage.model_dump(mode="json"),
+            "output_retries_left": output_retries_left,
+            "pending_approvals": pending_list,
+            "trace_seq": seq[0],
+            "state": _persisted_state(ctx),
+        }
+        self.run_checkpointer.put(resume_key, step, state)
+        return events
 
     def _save_pending(
         self,
@@ -855,26 +992,43 @@ class Runner:
         pending: dict[str, Any],
         approval_decision: str | None,
         emit: Any,
+        resume_payload: dict[str, Any] | None = None,
     ) -> tuple[Message, Event, Event]:
-        """Resolve a parked approval, returning the tool message + its events.
+        """Resolve a parked pause, flowing the decided value back as a typed return.
 
-        On ``"approved"`` the held tool runs now (bypassing the approval gate,
-        since a human already signed off). On ``"denied"`` — or any non-approval
-        decision — the model is fed a denial message instead and the tool never
-        runs. The caller appends the returned :class:`Message` to the conversation
-        and yields the two events, then the loop continues from the next step.
+        The human's decision reaches the held work as a *value*, not just routing:
+
+        * an ``ask_user`` ``"question"`` returns the human's typed ``answer`` as the
+          tool's result, read inline by the model;
+        * ``"approved"`` runs the held tool now (bypassing the approval gate, since
+          a human already signed off), with any reviewer-edited ``arguments``;
+        * ``"denied"`` feeds the reviewer's ``reason`` back to the model (not a
+          fixed string) so it can revise instead of failing blindly.
+
+        The caller appends the returned :class:`Message` and yields the two events,
+        then the loop continues from the next step.
         """
+        payload = resume_payload or {}
         tool_name = pending["tool"]
         arguments = dict(pending.get("arguments", {}))
+        kind = pending.get("kind", "approval")
+        # An ``edit`` corrected the args before the tool runs.
+        edited = payload.get("arguments")
+        if edited is not None:
+            arguments = dict(edited)
+
         call_ev = emit(EventType.TOOL_CALL, name=tool_name, arguments=arguments)
 
-        approved = approval_decision == "approved"
-        if approved:
+        if kind == "question":
+            # ask_user: the human's typed answer IS the tool result, fed inline.
+            result_value: Any = payload.get("answer")
+        elif approval_decision == "approved":
             result_value = await self._execute_approved_tool(agent, ctx, tool_name, arguments)
         else:
-            reviewer = approval_decision or "reviewer"
+            reason = payload.get("reason") or "denied by reviewer"
             result_value = (
-                f"error: tool '{tool_name}' denied by reviewer ({reviewer}); do not retry it."
+                f"error: tool '{tool_name}' denied: {reason}. "
+                f"Do not retry it; consider an alternative."
             )
         result_ev = emit(
             EventType.TOOL_RESULT,
@@ -1266,17 +1420,29 @@ class Runner:
     async def _run_tools_parallel(
         self, agent: Any, ctx: RunContext, tcs: list[ToolCall]
     ) -> list[Any]:
-        """Execute a turn's tool calls concurrently, returning results in order."""
+        """Execute a turn's tool calls concurrently, returning results in order.
+
+        A guarded call that wants out-of-band sign-off does not cancel its
+        siblings: its worker catches :class:`ApprovalRequired` and returns a
+        :class:`_Paused` marker, so every branch finishes and *every* pending in
+        the turn is captured (the caller pauses on all of them at once). When no
+        checkpointer is wired the classic behavior holds — the caller re-raises
+        the first marker's exception.
+        """
         import asyncio
 
         max_parallel = getattr(agent, "max_parallel_tools", 0) or 0
         sem = asyncio.Semaphore(max_parallel) if max_parallel > 0 else None
 
         async def _one(tc: ToolCall) -> Any:
-            if sem is not None:
-                async with sem:
-                    return await self._run_tool(agent, ctx, tc)
-            return await self._run_tool(agent, ctx, tc)
+            try:
+                if sem is not None:
+                    async with sem:
+                        return await self._run_tool(agent, ctx, tc)
+                return await self._run_tool(agent, ctx, tc)
+            except ApprovalRequired as exc:
+                # Capture the pause as a value so gather doesn't cancel siblings.
+                return _Paused(exc)
 
         return await asyncio.gather(*(_one(tc) for tc in tcs))
 
@@ -1585,6 +1751,29 @@ def _safe(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump()
     return str(value)
+
+
+def _pending_from_event(event: Event) -> Pending:
+    """Map a terminal ``APPROVAL_REQUIRED`` event into a typed :class:`Pending`.
+
+    The payload already carries the correlation keys and kind-specific fields the
+    pause source recorded (tool/arguments for an approval, prompt/answer_schema
+    for an ``ask_user`` question), so this is a faithful, lossless projection the
+    caller reads off ``result.pending``.
+    """
+    p = event.payload
+    return Pending(
+        kind=p.get("kind", "approval"),
+        approval_id=p.get("approval_id", "") or "",
+        run_id=p.get("run_id", "") or event.run_id,
+        resume_id=p.get("resume_id", "") or "",
+        tool=p.get("tool"),
+        arguments=dict(p.get("arguments", {}) or {}),
+        prompt=p.get("prompt"),
+        answer_schema=p.get("answer_schema"),
+        correlation_key=p.get("correlation_key"),
+        expires_at=p.get("expires_at"),
+    )
 
 
 def _safe_event(event: Event) -> dict[str, Any]:
