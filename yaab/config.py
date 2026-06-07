@@ -268,6 +268,38 @@ def _agent_kwargs(cfg: dict[str, Any]) -> dict[str, Any]:
     return kwargs
 
 
+#: Built-in scalar output types referenceable by name in a declarative spec.
+_BUILTIN_OUTPUT_TYPES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
+
+
+def _resolve_output_type(name: Any) -> type:
+    """Resolve a spec ``output_type`` name to a real type.
+
+    ``None``/``"str"`` → ``str``; the other built-in scalars by name; otherwise a
+    Pydantic model (or any type) registered under the ``output_type`` component
+    kind via ``register_component("output_type", name, lambda: TheType)``. An
+    unknown name is a loud error rather than a silent fall back to ``str``.
+    """
+    if name is None:
+        return str
+    if not isinstance(name, str):
+        # Already a type (programmatic dict): pass through.
+        return name  # type: ignore[no-any-return]
+    if name in _BUILTIN_OUTPUT_TYPES:
+        return _BUILTIN_OUTPUT_TYPES[name]
+    from .extensions import ComponentError, get
+
+    try:
+        resolved = get("output_type", name)
+    except ComponentError as exc:
+        raise ValueError(
+            f"unknown output_type {name!r}: register it with "
+            f"register_component('output_type', {name!r}, lambda: TheModel), "
+            f"or use one of {sorted(_BUILTIN_OUTPUT_TYPES)}"
+        ) from exc
+    return resolved if isinstance(resolved, type) else type(resolved)
+
+
 def _build_leaf_agent(cfg: dict[str, Any]) -> Agent:
     """Build a plain :class:`Agent` (kind: agent) from a spec dict."""
     name = cfg["name"]
@@ -275,12 +307,15 @@ def _build_leaf_agent(cfg: dict[str, Any]) -> Agent:
     skills = _resolve_skills(cfg.get("skills") or [])
     guardrails = _resolve_guardrails(cfg.get("guardrails") or [])
 
-    # output_type is referenced by name; only "str" is supported declaratively.
-    output_type_name = cfg.get("output_type", "str")
-    output_type = str if output_type_name in ("str", None) else str
+    # output_type is referenced by name: a built-in scalar, or a Pydantic model
+    # registered under the ``output_type`` component kind, so a declarative agent
+    # can emit structured output (not only ``str``).
+    output_type = _resolve_output_type(cfg.get("output_type"))
 
     # Everything not handled specially is forwarded to the constructor.
-    rest = {k: v for k, v in cfg.items() if k not in _COMPOSITION_KEYS}
+    # ``output_type`` is resolved above and passed explicitly, so drop the raw
+    # (string) form here to avoid passing it twice.
+    rest = {k: v for k, v in cfg.items() if k not in _COMPOSITION_KEYS and k != "output_type"}
     kwargs = _agent_kwargs(rest)
 
     # sub_agents is forward-compatible: only pass it if the constructor accepts
