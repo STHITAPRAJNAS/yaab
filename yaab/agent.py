@@ -26,6 +26,14 @@ if TYPE_CHECKING:
 _NoneType = type(None)  # module-level singleton (avoids a call in arg defaults)
 
 
+async def _call_maybe_async(fn: Callable[..., Any], *args: Any) -> Any:
+    """Invoke a callback that may be sync or async, awaiting it if needed."""
+    result = fn(*args)
+    if asyncio.iscoroutine(result):
+        return await result
+    return result
+
+
 def _sub_unit(entry: Any) -> Any:
     """Unwrap a sub-agent entry: a :class:`~yaab.conditions.Step` yields its unit.
 
@@ -68,9 +76,19 @@ class Agent(Generic[Deps, Output]):
         instrument: bool = True,
         writes: str | None = None,
         hitl: Any | None = None,
+        before_agent: Callable[..., Any] | None = None,
+        after_agent: Callable[..., Any] | None = None,
     ) -> None:
         self.name = name
         self._model_spec = model
+        #: Per-agent entry/exit callbacks. Unlike run-level plugins (which fire
+        #: once on the top-level Runner), these fire around THIS agent's own loop,
+        #: so they run for every agent in a composition — a workflow child calls
+        #: ``agent.run()`` directly and would otherwise miss the parent's plugins.
+        #: ``before_agent(agent, prompt)`` and ``after_agent(agent, result)`` may
+        #: be sync or async.
+        self.before_agent = before_agent
+        self.after_agent = after_agent
         #: Capture this run's final (typed) output into shared state under this
         #: key after it completes, so a downstream step reads it by name. A prefix
         #: on the key (``temp:``/``user:``/``app:``) selects the scope.
@@ -302,7 +320,9 @@ class Agent(Generic[Deps, Output]):
         """
         if resume is not None:
             return await self._resume(resume, session_id=session_id, identity=identity, deps=deps)
-        return await self._get_runner().run(
+        if self.before_agent is not None:
+            await _call_maybe_async(self.before_agent, self, prompt)
+        result = await self._get_runner().run(
             self,
             prompt,
             deps=deps,
@@ -314,6 +334,9 @@ class Agent(Generic[Deps, Output]):
             timeout=timeout,
             resume_id=resume_id,
         )
+        if self.after_agent is not None:
+            await _call_maybe_async(self.after_agent, self, result)
+        return result
 
     async def _resume(
         self,
