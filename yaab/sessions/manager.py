@@ -132,5 +132,58 @@ class SessionManager:
         session.state.update(state.session)
         await self.service.save(session)
 
+    # --- rewind & migration ---------------------------------------
+    @staticmethod
+    def _turn_starts(messages: list[Message]) -> list[int]:
+        """Indices where each conversational turn begins (each user message)."""
+        return [i for i, m in enumerate(messages) if m.role is Role.USER]
+
+    async def rewind(self, session_id: str, *, keep_turns: int) -> Session:
+        """Roll the conversation back to keep only the first ``keep_turns`` turns.
+
+        A *turn* starts at a user message and runs until the next one, so keeping
+        N turns keeps the first N user messages and everything that followed each
+        (up to the next user message). The session's structured ``state`` is kept
+        intact — only the message history is truncated. The result is persisted.
+        """
+        session = await self.service.get_or_create(session_id)
+        starts = self._turn_starts(session.messages)
+        if keep_turns <= 0:
+            cut = 0
+        elif keep_turns >= len(starts):
+            return session  # nothing to drop
+        else:
+            cut = starts[keep_turns]  # first index of the (keep_turns+1)-th turn
+        session.messages = session.messages[:cut]
+        await self.service.save(session)
+        return session
+
+    async def rewind_last(self, session_id: str, *, turns: int = 1) -> Session:
+        """Drop the most recent ``turns`` turns (an "undo the last exchange")."""
+        session = await self.service.get(session_id)
+        if session is None:
+            raise KeyError(f"unknown session {session_id!r}")
+        total = len(self._turn_starts(session.messages))
+        return await self.rewind(session_id, keep_turns=max(0, total - turns))
+
+    async def migrate_session(self, session_id: str, *, to_service: SessionService) -> Session:
+        """Copy a session (messages + state) into another backend.
+
+        Reads the session from this manager's service and writes a copy — same id,
+        messages, and structured state — into ``to_service``, so a conversation
+        moves across stores or schema versions without loss. The source is left
+        untouched. Returns the migrated copy.
+        """
+        session = await self.service.get(session_id)
+        if session is None:
+            raise KeyError(f"unknown session {session_id!r}")
+        copy = Session(
+            id=session.id,
+            messages=list(session.messages),
+            state=dict(session.state),
+        )
+        await to_service.save(copy)
+        return copy
+
 
 __all__ = ["SessionManager"]
