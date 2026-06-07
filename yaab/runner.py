@@ -80,6 +80,7 @@ class Runner:
         run_checkpointer: Any | None = None,
         checkpoint_mode: str = "step",
         trace_store: Any | None = None,
+        approval_store: Any | None = None,
     ) -> None:
         self.session_service = session_service or InMemorySessionService()
         self.memory_service = memory_service
@@ -110,6 +111,12 @@ class Runner:
         #: Code against the duck-typed ``append(run_id, seq, event_dict)`` so any
         #: compatible backend can be dropped in. ``None`` keeps today's behavior.
         self.trace_store = trace_store
+        #: Optional durable :class:`~yaab.governance.approvals.ApprovalStore`. A
+        #: :class:`~yaab.flow.Flow` delegated through this Runner records every
+        #: ``pause_for`` as an ``ApprovalRequest(kind="flow_pause")`` row here, so
+        #: a flow pause is visible in ``GET /approvals`` and ``approvals.respond()``
+        #: works on it identically to a tool approval (the approved D5 mechanism).
+        self.approval_store = approval_store
         #: Process-local backing stores for the cross-session/cross-app state
         #: scopes (``user:`` / ``app:`` prefixes). Session-scoped state lives on
         #: the session itself; these hold the wider scopes so a run's State can
@@ -144,7 +151,7 @@ class Runner:
     async def run(
         self,
         agent: Any,
-        prompt: str,
+        prompt: str = "",
         *,
         deps: Any = None,
         session_id: str | None = None,
@@ -156,7 +163,28 @@ class Runner:
         resume_id: str | None = None,
         approval_decision: str | None = None,
         resume_payload: dict[str, Any] | None = None,
+        resume: Any = None,
+        resume_from_checkpoint: bool = False,
     ) -> RunResult[Any]:
+        # Delegation seam (FL10): a workflow agent (Sequential/Parallel/.../Flow)
+        # is not a model-driven Agent — it has its own run(). Thread this Runner
+        # (and its checkpointer/store) into it so a Flow's agent-steps roll usage
+        # up, checkpoint, and a Flow pause records into this Runner's store. This
+        # keeps ``runner.run(flow, ...)`` and ``runner.run(flow, resume=...)``
+        # working as the one entry point the design documents.
+        from .multiagent import _WorkflowBase
+
+        if isinstance(agent, _WorkflowBase):
+            return await self._run_workflow(
+                agent,
+                prompt,
+                deps=deps,
+                session_id=session_id,
+                identity=identity,
+                state=state,
+                resume=resume,
+                resume_from_checkpoint=resume_from_checkpoint,
+            )
         events: list[Event] = []
         async for event in self.run_stream(
             agent,
@@ -201,11 +229,48 @@ class Runner:
 
         return asyncio.run(self.run(agent, prompt, **kwargs))
 
+    async def _run_workflow(
+        self,
+        workflow: Any,
+        prompt: str | None,
+        *,
+        deps: Any,
+        session_id: str | None,
+        identity: str | None,
+        state: State | None,
+        resume: Any,
+        resume_from_checkpoint: bool = False,
+    ) -> RunResult[Any]:
+        """Delegate to a workflow agent, threading this Runner into it.
+
+        A :class:`~yaab.flow.Flow` needs the parent Runner so its agent-steps run
+        through this loop (usage/events/session/governance/checkpointing) and its
+        pauses record into this Runner's approval store. Other workflow patterns
+        ignore the injection (they have no ``_runner`` seam) and just run.
+        """
+        if hasattr(workflow, "_runner"):
+            # Only inject when the workflow has no Runner of its own, so an
+            # explicitly-configured Flow Runner is honored (one mechanism).
+            if getattr(workflow, "_runner", None) is None:
+                workflow._runner = self
+        kwargs: dict[str, Any] = {
+            "deps": deps,
+            "session_id": session_id,
+            "identity": identity,
+            "state": state,
+            "resume": resume,
+        }
+        # Only a Flow understands continuing from a persisted checkpoint; pass the
+        # flag only when set so other workflow agents keep their simple signature.
+        if resume_from_checkpoint:
+            kwargs["resume_from_checkpoint"] = True
+        return await workflow.run(prompt if prompt is not None else "", **kwargs)
+
     # ------------------------------------------------------------------
     async def run_stream(
         self,
         agent: Any,
-        prompt: str,
+        prompt: str = "",
         *,
         deps: Any = None,
         session_id: str | None = None,
