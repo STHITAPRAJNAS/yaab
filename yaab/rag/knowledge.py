@@ -33,11 +33,22 @@ class KnowledgeBase:
         context_guard: Any | None = None,
         min_score: float = 0.0,
         name: str = "knowledge",
+        hybrid: bool = False,
     ) -> None:
         self.embedder = resolve_embedder(embedder)
         self.store = store or InMemoryVectorStore()
         self.chunker = chunker or CharacterChunker()
         self.reranker = reranker
+        #: When set, recall combines a dense (embedding) and a sparse (BM25)
+        #: ranking, fused by reciprocal rank — so exact rare terms surface even
+        #: when the embedder generalizes them away. Off by default (dense-only).
+        self.hybrid = hybrid
+        self._bm25: Any | None = None
+        self._chunks_by_id: dict[str, Any] = {}
+        if hybrid:
+            from .hybrid import BM25Index
+
+            self._bm25 = BM25Index()
         #: Retrieval guardrail — a callable ``(RetrievedChunk) -> bool`` that
         #: drops a chunk when it returns False (context-poisoning / leakage
         #: defense applied *before* context reaches the model).
@@ -68,6 +79,9 @@ class KnowledgeBase:
                     self._seen.add(key)
                 chunk.embedding = self.embedder(chunk.text)
                 all_chunks.append(chunk)
+                if self._bm25 is not None:
+                    self._bm25.add(chunk.id, chunk.text)
+                    self._chunks_by_id[chunk.id] = chunk
         self.store.add(all_chunks)
         return len(all_chunks)
 
@@ -94,11 +108,19 @@ class KnowledgeBase:
         where: Filter | None = None,
         rerank_top_n: int | None = None,
     ) -> list[RetrievedChunk]:
-        """Retrieve the top chunks for ``query`` (recall → optional rerank)."""
+        """Retrieve the top chunks for ``query`` (recall → optional rerank).
+
+        With ``hybrid=True`` the dense (embedding) recall is fused with a sparse
+        BM25 recall via reciprocal-rank fusion before any reranking, so a query's
+        exact rare terms reliably surface their chunk.
+        """
         embedding = self.embedder(query)
         # Over-fetch when reranking so the reranker has candidates to sharpen.
         fetch_k = max(k, rerank_top_n or 0, k * 2) if self.reranker else k
-        results = self.store.query(embedding, k=fetch_k, where=where)
+        if self._bm25 is not None:
+            results = self._hybrid_recall(query, embedding, fetch_k, where)
+        else:
+            results = self.store.query(embedding, k=fetch_k, where=where)
         if self.reranker is not None:
             top_n = rerank_top_n or k
             if hasattr(self.reranker, "arerank"):
@@ -111,6 +133,32 @@ class KnowledgeBase:
         if self.context_guard is not None:
             results = [r for r in results if self.context_guard(r)]
         return results[:k]
+
+    def _hybrid_recall(
+        self, query: str, embedding: list[float], k: int, where: Filter | None
+    ) -> list[RetrievedChunk]:
+        """Fuse a dense and a sparse (BM25) recall by reciprocal rank."""
+        from .hybrid import reciprocal_rank_fusion
+        from .types import RetrievedChunk
+
+        assert self._bm25 is not None
+        # Over-fetch both arms so fusion has candidates from each signal.
+        dense = self.store.query(embedding, k=k * 2, where=where)
+        dense_ids = [r.chunk.id for r in dense]
+        sparse_ids = [cid for cid, _ in self._bm25.search(query, k=k * 2)]
+        # A where-filter applies to the sparse arm too: keep only chunks that the
+        # dense (filtered) arm could also return, by intersecting on known chunks.
+        fused = reciprocal_rank_fusion([dense_ids, sparse_ids])
+        by_id = {r.chunk.id: r for r in dense}
+        out: list[RetrievedChunk] = []
+        for cid, score in fused:
+            if cid in by_id:
+                out.append(RetrievedChunk(chunk=by_id[cid].chunk, score=score))
+            elif cid in self._chunks_by_id and where is None:
+                out.append(RetrievedChunk(chunk=self._chunks_by_id[cid], score=score))
+            if len(out) >= k:
+                break
+        return out
 
     async def augment(
         self, query: str, *, k: int = 5, where: Filter | None = None

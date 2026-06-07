@@ -23,6 +23,7 @@ from .chunking import (
     SentenceChunker,
 )
 from .eval import FaithfulnessEvaluator, context_relevance, faithfulness
+from .hybrid import BM25Index, reciprocal_rank_fusion
 from .knowledge import KnowledgeBase
 from .loaders import load, load_bytes, load_directory
 from .memory_service import KnowledgeBaseMemory
@@ -46,6 +47,9 @@ __all__ = [
     "LLMReranker",
     "CrossEncoderReranker",
     "KnowledgeBase",
+    # hybrid (sparse + dense) retrieval
+    "BM25Index",
+    "reciprocal_rank_fusion",
     # durable, vector-store-backed long-term memory (MemoryService impl)
     "KnowledgeBaseMemory",
     # document loaders
