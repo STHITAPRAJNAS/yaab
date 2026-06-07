@@ -73,6 +73,8 @@ _COMPOSITION_KEYS = frozenset(
         "when",
         "stop",
         "writes",
+        "callbacks",
+        "plugins",
     }
 )
 
@@ -300,12 +302,62 @@ def _resolve_output_type(name: Any) -> type:
     return resolved if isinstance(resolved, type) else type(resolved)
 
 
+def _resolve_callback(name: Any) -> Any:
+    """Resolve a registered ``callback`` component by name (or pass a callable)."""
+    if callable(name):
+        return name
+    from .extensions import ComponentError, get
+
+    try:
+        return get("callback", name)
+    except ComponentError as exc:
+        raise ValueError(
+            f"unknown callback {name!r}: register it with "
+            f"register_component('callback', {name!r}, lambda: my_fn)"
+        ) from exc
+
+
+def _resolve_plugins(specs: list[Any]) -> list[Any]:
+    """Resolve registered ``plugin`` components by name (or pass instances)."""
+    from .extensions import ComponentError, get
+
+    out = []
+    for spec in specs:
+        if isinstance(spec, str):
+            try:
+                out.append(get("plugin", spec))
+            except ComponentError as exc:
+                raise ValueError(
+                    f"unknown plugin {spec!r}: register it with "
+                    f"register_component('plugin', {spec!r}, lambda: MyPlugin())"
+                ) from exc
+        else:
+            out.append(spec)
+    return out
+
+
 def _build_leaf_agent(cfg: dict[str, Any]) -> Agent:
     """Build a plain :class:`Agent` (kind: agent) from a spec dict."""
     name = cfg["name"]
     tools = _resolve_tools(cfg.get("tools") or [])
     skills = _resolve_skills(cfg.get("skills") or [])
     guardrails = _resolve_guardrails(cfg.get("guardrails") or [])
+
+    # callbacks: {before_agent: name, after_agent: name} -> per-agent hooks.
+    callbacks = cfg.get("callbacks") or {}
+    cb_kwargs: dict[str, Any] = {}
+    if "before_agent" in callbacks:
+        cb_kwargs["before_agent"] = _resolve_callback(callbacks["before_agent"])
+    if "after_agent" in callbacks:
+        cb_kwargs["after_agent"] = _resolve_callback(callbacks["after_agent"])
+
+    # plugins: [name, ...] -> resolved onto a Runner attached to the agent.
+    runner = None
+    plugin_specs = cfg.get("plugins") or []
+    if plugin_specs:
+        from .runner import Runner
+
+        runner = Runner(plugins=_resolve_plugins(plugin_specs))
 
     # output_type is referenced by name: a built-in scalar, or a Pydantic model
     # registered under the ``output_type`` component kind, so a declarative agent
@@ -328,12 +380,16 @@ def _build_leaf_agent(cfg: dict[str, Any]) -> Agent:
             )
         kwargs["sub_agents"] = [agent_from_dict(s) for s in cfg["sub_agents"]]
 
+    if runner is not None:
+        kwargs["runner"] = runner
+
     return Agent(
         name,
         tools=tools,
         skills=skills,
         guardrails=guardrails,
         output_type=output_type,
+        **cb_kwargs,
         **kwargs,
     )
 
