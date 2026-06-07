@@ -9,7 +9,9 @@ nest arbitrarily and drop into tools, graphs, and servers:
 * :class:`MapAgent`        — fan one sub-agent across many inputs;
 * :class:`LoopAgent`       — re-run a sub-agent until a condition or a cap;
 * :class:`Swarm`           — autonomous hand-off between peer agents;
-* :class:`RouterAgent`     — run exactly one of N branches (exclusive choice).
+* :class:`RouterAgent`     — run exactly one of N branches (exclusive choice);
+* :class:`~yaab.flow.Flow` — explicit branching, cycles, fan-out/merge, and
+  durable human pauses, when the control flow itself must be inspectable.
 
 Every pattern shares **one** :class:`~yaab.state.State` object across all its
 children for a run, so a value written by one step is read by the next by key.

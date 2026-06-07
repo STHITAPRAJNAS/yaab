@@ -70,6 +70,7 @@ from .exceptions import (
 from .extensions import available as available_components
 from .extensions import get as get_component
 from .extensions import register as register_component
+from .flow import Flow
 from .governance.approval import ToolApprovalPlugin
 from .governance.approvals import (
     ApprovalDecision,
@@ -141,6 +142,7 @@ __all__ = [
     "LoopAgent",
     "Swarm",
     "RouterAgent",
+    "Flow",
     # conditional execution + routing
     "Step",
     "Branch",
