@@ -40,6 +40,8 @@ from .eval import (
     LLMJudge,
     NumericTolerance,
     Regex,
+    ResponseMatch,
+    RubricJudge,
     ToolTrajectoryMatch,
 )
 from .evalset import EvalCase, EvalSet
@@ -157,6 +159,8 @@ __all__ = [
     "NumericTolerance",
     "Levenshtein",
     "LLMJudge",
+    "RubricJudge",
+    "ResponseMatch",
     "ToolTrajectoryMatch",
     # evalset (portable .evalset.json format)
     "EvalSet",

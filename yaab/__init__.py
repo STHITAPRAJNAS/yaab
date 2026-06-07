@@ -51,7 +51,7 @@ from .conditions import (
 )
 from .config import agent_from_dict, agent_from_yaml, runner_from_dict
 from .content import Content, Part, PartKind
-from .context import KeepAll, SummarizeHistory, TruncateMessages
+from .context import KeepAll, RelevanceFilter, SummarizeHistory, TruncateMessages
 from .deploy_backends import DurableBackends, durable_backends
 from .eval import available_metrics, get_metric, register_metric
 from .exceptions import (
@@ -238,6 +238,7 @@ __all__ = [
     # context-window management
     "TruncateMessages",
     "SummarizeHistory",
+    "RelevanceFilter",
     "KeepAll",
     # declarative config
     "agent_from_dict",

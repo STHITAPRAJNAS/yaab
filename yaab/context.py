@@ -110,10 +110,73 @@ class SummarizeHistory:
         return system + [summary] + recent
 
 
+#: Common words that carry no topical signal, excluded from overlap scoring.
+_STOPWORDS = frozenset(
+    "the a an and or but is are was were be been being to of in on at for with "
+    "how what when where why who which that this these those it its as by from "
+    "do does did can could would should will i you he she they we me my your".split()
+)
+
+
+def _content_words(text: str) -> set[str]:
+    return {w.strip(".,!?;:'\"") for w in text.lower().split()} - _STOPWORDS - {""}
+
+
+def _keyword_overlap(query: str, text: str) -> float:
+    """Default relevance score: overlap of topical (non-stopword) word sets."""
+    q = _content_words(query)
+    t = _content_words(text)
+    if not q or not t:
+        return 0.0
+    return len(q & t) / len(q)
+
+
+class RelevanceFilter:
+    """Drop prior turns that aren't relevant to the latest user message.
+
+    Where :class:`TruncateMessages` drops by age and :class:`SummarizeHistory`
+    compresses, this keeps only history that earns its place: each non-system,
+    non-latest message is scored against the latest user message, and anything
+    below ``min_score`` is dropped. The system message(s) and the latest user
+    message are *always* kept — you cannot drop the question you must answer.
+
+    ``scorer(query, text) -> float`` is injectable (defaults to keyword overlap),
+    so the filter runs offline; pass an embedding-similarity scorer for semantic
+    relevance.
+    """
+
+    def __init__(
+        self,
+        *,
+        min_score: float = 0.15,
+        scorer: Callable[[str, str], float] | None = None,
+    ) -> None:
+        self.min_score = min_score
+        self.scorer = scorer or _keyword_overlap
+
+    async def apply(self, messages: list[Message], *, model: Any = None) -> list[Message]:
+        system, rest = _split_system(messages)
+        if not rest:
+            return messages
+        # The latest user message is the relevance anchor and is always kept.
+        last_user_idx = next(
+            (i for i in range(len(rest) - 1, -1, -1) if rest[i].role is Role.USER), None
+        )
+        if last_user_idx is None:
+            return messages
+        query = str(rest[last_user_idx].content)
+        kept: list[Message] = []
+        for i, msg in enumerate(rest):
+            if i == last_user_idx or self.scorer(query, str(msg.content)) >= self.min_score:
+                kept.append(msg)
+        return system + kept
+
+
 __all__ = [
     "ContextStrategy",
     "KeepAll",
     "TruncateMessages",
     "SummarizeHistory",
+    "RelevanceFilter",
     "approx_tokens",
 ]

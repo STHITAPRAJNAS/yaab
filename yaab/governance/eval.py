@@ -156,6 +156,89 @@ class LLMJudge:
             return 0.0
 
 
+class ResponseMatch:
+    """Token-overlap (ROUGE-style) similarity in [0, 1] vs ``case.expected``.
+
+    The fraction of the expected answer's words that appear in the output —
+    a deterministic, offline text-overlap signal that tolerates wording the way
+    exact match cannot, without needing a model judge.
+    """
+
+    name = "response_match"
+
+    def evaluate(self, case: Case, output: Any) -> float:
+        expected_words = str(case.expected).lower().split()
+        if not expected_words:
+            return 0.0
+        out_words = set(str(output).lower().split())
+        hits = sum(1 for w in expected_words if w in out_words)
+        return hits / len(expected_words)
+
+
+class RubricBreakdown(BaseModel):
+    """A rubric judge's per-criterion scores plus their aggregate."""
+
+    scores: dict[str, float]
+    aggregate: float
+
+
+class RubricJudge:
+    """Score an output against *named criteria* with a model judge.
+
+    Unlike the freeform :class:`LLMJudge` (one blended number), the judge is asked
+    to score each rubric criterion separately and return them as a JSON object, so
+    the result is an inspectable per-criterion breakdown plus an aggregate (the
+    mean). Use :meth:`ascore_rubric` for the breakdown, :meth:`ascore` for just
+    the aggregate float (so it drops into the same eval pipeline as every metric).
+    """
+
+    name = "rubric_judge"
+
+    def __init__(self, model: Any, *, rubric: dict[str, str]) -> None:
+        from ..models import resolve_model
+
+        if not rubric:
+            raise ValueError("RubricJudge needs at least one rubric criterion")
+        self.model = resolve_model(model)
+        self.rubric = rubric
+
+    async def ascore_rubric(self, case: Case, output: Any) -> RubricBreakdown:
+        import json
+
+        from ..types import Message, Role
+
+        criteria_lines = "\n".join(f"- {name}: {desc}" for name, desc in self.rubric.items())
+        prompt = (
+            "Score the OUTPUT from 0 to 1 on EACH criterion below. Reply with ONLY "
+            'a JSON object mapping each criterion name to its score, e.g. {"name": 0.7}.\n\n'
+            f"CRITERIA:\n{criteria_lines}\n\n"
+            f"INPUT: {case.inputs}\nEXPECTED: {case.expected}\nOUTPUT: {output}\n\nJSON:"
+        )
+        scores: dict[str, float] = {}
+        try:
+            resp = await self.model.complete([Message(role=Role.USER, content=prompt)])
+            raw = json.loads(_extract_json(resp.content))
+            for name in self.rubric:
+                if name in raw:
+                    scores[name] = max(0.0, min(1.0, float(raw[name])))
+        except (ValueError, TypeError, AttributeError, json.JSONDecodeError):
+            scores = {}
+        aggregate = sum(scores.values()) / len(scores) if scores else 0.0
+        return RubricBreakdown(scores=scores, aggregate=aggregate)
+
+    async def ascore(self, case: Case, output: Any) -> float:
+        return (await self.ascore_rubric(case, output)).aggregate
+
+
+def _extract_json(text: str) -> str:
+    """Pull the first ``{...}`` object out of a model reply (tolerating fences)."""
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        return "{}"
+    return text[start : end + 1]
+
+
 class FunctionEvaluator:
     """Wrap an arbitrary scoring function as an :class:`Evaluator`."""
 
