@@ -35,6 +35,8 @@ from ..governance.eval import (
     LLMJudge,
     NumericTolerance,
     Regex,
+    ResponseMatch,
+    RubricJudge,
 )
 
 
@@ -79,7 +81,9 @@ _register("metric", "regex", lambda **kw: Regex())
 _register("metric", "json_match", lambda **kw: JSONMatch())
 _register("metric", "numeric_tolerance", lambda **kw: NumericTolerance(**kw))
 _register("metric", "levenshtein", lambda **kw: Levenshtein())
+_register("metric", "response_match", lambda **kw: ResponseMatch())
 _register("metric", "llm_judge", lambda **kw: LLMJudge(**kw))
+_register("metric", "rubric_judge", lambda **kw: RubricJudge(**kw))
 
 
 def _register_rag_metrics() -> None:
