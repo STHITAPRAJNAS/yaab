@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .adapters import adapt_tool, from_crewai_tool, from_langchain_tool
 from .agent_tool import AgentTool
 from .auth import ToolAuth, ToolAuthRequired, ToolCredential, as_headers
 from .base import FunctionTool, Tool, coerce_tools, tool
@@ -22,4 +23,8 @@ __all__ = [
     "ToolAuthRequired",
     "ToolCredential",
     "as_headers",
+    # reuse tools from other ecosystems
+    "adapt_tool",
+    "from_langchain_tool",
+    "from_crewai_tool",
 ]
