@@ -100,7 +100,7 @@ async def check_flow_route_loop() -> str:
 
 async def check_flow_hitl_pause_resume() -> str:
     """A Flow step pauses for approval (flow_pause), then resumes with the decision."""
-    from yaab import Agent, Flow, Runner, RunContext
+    from yaab import Agent, Flow, RunContext, Runner
     from yaab.governance import approvals
     from yaab.governance.approvals import InMemoryApprovalStore
     from yaab.graph.checkpoint import MemorySaver
