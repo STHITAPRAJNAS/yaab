@@ -6,7 +6,94 @@ All notable changes to YAAB are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
+## [0.2.0] — 2026-06-09
+
+A major feature release on top of 0.1.0: one coherent orchestration model with
+seven native patterns, durable multi-replica execution, a unified
+human-in-the-loop surface, and a broad set of capability additions. Backward
+compatible — existing 0.1.0 code keeps working.
+
+### Added — Orchestration: one model, seven native patterns
+- **One shared `State` per run** — every agent, tool, and step in a run reads and
+  writes the same prefix-scoped `State` (`app:`/`user:`/`temp:`). The Runner
+  builds it once (from the session when present) and every child in
+  Sequential/Parallel/Map/Loop/Swarm inherits the same object, so a value written
+  in one step is read by the next.
+- **`writes=` output capture & `{key}` instructions** — `Agent(writes="key")`
+  lands an agent's *typed* output into shared state; string instructions
+  substitute `{key}` / `{key?}` from that state before the model call. The
+  declarative inter-agent handoff, with no prompt-string piping.
+- **Unified conditions** — one `Condition` concept (a callable **or** a safe,
+  sandboxed expression string) over a read-only state view, with `&`/`|`/`~`
+  combinators; `when=` (input guard), `stop=` (output guard), and `else=`
+  (fallback) on every pattern; decision events carry the resolved operands so
+  *why* a step was skipped is answerable from the trace.
+- **`RouterAgent`** — a seventh workflow pattern for exclusive choice: run exactly
+  one of N branches by input guard, first-match-wins with a mandatory default,
+  zero model calls to route, `from_picker` with build-time typo-safety.
+- **`Flow`** — explicit, durable, branchable control flow (`.step/.then/.route/
+  .loop/.fan_out/.start_at/.returns`) that lowers onto the durable graph engine.
+  It owns no state/checkpoint/pause of its own: it threads the one `State`, routes
+  on the one `Condition`, and pauses into the one `Pending`. `RunHistory` adds
+  time-travel: list a run's checkpoints, inspect any (including a paused) one, and
+  fork-from-checkpoint into a new thread.
+
+### Added — Durable runtime, multi-pod, and human-in-the-loop
+- **Durable background runs that survive restarts and span replicas** — a run is
+  now a durable record in a swappable `RunStore` (in-memory, SQLite, Postgres,
+  Redis) instead of an in-process task: poll it, cancel it from any replica, and
+  resume it from its last completed step after a crash. `RunWorker` drains the
+  queue with bounded concurrency, heartbeat leases, and crash recovery (an
+  abandoned run is re-queued and picked up by another replica), so background
+  work no longer dies on restart or a rolling deploy. Cross-replica cancel flows
+  through `StoreCancellationToken`.
+- **One human-in-the-loop idiom: pause → decide → resume** — a guarded tool, an
+  `ask_user` question, or a `Flow` pause all surface one typed `Pending`; a human
+  decides with `approvals.approve`/`deny`/`edit`/`respond` (returning a
+  self-correlating `Decision`); `agent.run(resume=decision)` continues — needing
+  only the `approval_id`, so it resumes durably from a *fresh process or replica*.
+  Decisions are validated before they mutate and are first-write-wins
+  (double-approve resumes exactly once).
+- **Run any number of replicas behind a load balancer, safely** —
+  `durable_backends(dsn=…, redis_url=…)` wires every stateful concern to shared
+  storage in one call; a startup guardrail warns loudly if any backend is still
+  in-memory while running more than one replica; a shared `RedisRateLimiter`
+  keeps a `rate=N` budget global across replicas.
+- **A debugger that replays a run with per-step model/tool/token/cost/latency** —
+  an opt-in `TraceStore` persists each run's timeline; `yaab web` renders a span
+  waterfall (latency bars, cost badges), an approvals tab, a session-state
+  inspector, and run replay. Round-trip AG-UI emits `STATE_SNAPSHOT`/`STATE_DELTA`
+  and accepts human input back via `resume_agui`.
+- **Durable schedules and durable artifacts** — a `CronStore` materializes due
+  schedules into runs; `SQLiteArtifactService` / `PostgresArtifactService` /
+  `RedisArtifactService` make artifacts durable across replicas. `resume_id` is
+  exposed on the public `Agent.run` API.
+
+### Added — Capability breadth
+- **Typed outputs from declarative agents** — a YAML/dict `output_type` resolves
+  by name to a built-in scalar or a registered Pydantic model.
+- **Reuse foreign tools** — `from_langchain_tool` / `from_crewai_tool` /
+  `adapt_tool` wrap a tool from another ecosystem as a native tool (duck-typed,
+  no extra install).
+- **Relevance-filter context strategy** — `RelevanceFilter` keeps only history
+  relevant to the latest message (injectable scorer), alongside truncate/summarize.
+- **Per-agent callbacks** — `Agent(before_agent=, after_agent=)` fire around each
+  agent's own loop (so they run for every agent in a composition); a declarative
+  spec can wire `callbacks:` and `plugins:` by registered name.
+- **Rubric judge & text-overlap metric** — `RubricJudge` scores against named
+  criteria with a per-criterion breakdown; `ResponseMatch` is a deterministic
+  ROUGE-style overlap metric.
+- **Session rewind & migration** — roll a conversation back to a prior turn
+  (`rewind`/`rewind_last`) or copy a session across backends (`migrate_session`).
+- **Hybrid retrieval** — `KnowledgeBase(hybrid=True)` fuses a dense (embedding)
+  and a sparse (BM25) recall by reciprocal rank, so exact rare terms surface.
+
+### Verification
+- Full suite green (1094 offline tests, ruff/format/mypy clean, 21/21 smoke);
+  the v2/durability surface is additionally live-verified against a real model
+  (`scripts/live_v2_check.py`, `live_durable_check.py`, `live_wave3_check.py`).
+
+### Added — durable runtime (detail)
 - **Durable background runs that survive restarts and span replicas** — a run is
   now a durable record in a swappable `RunStore` (in-memory, SQLite, Postgres,
   Redis) instead of an in-process task: poll it, cancel it from any replica, and
@@ -185,5 +272,6 @@ First public release: `pip install yaab-sdk` → `import yaab` / `$ yaab`.
   publishes through PyPI Trusted Publishing (OIDC) with a tag↔version gate and
   a built-wheel smoke test.
 
-[Unreleased]: https://github.com/sthitaprajnas/yaab/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/sthitaprajnas/yaab/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/sthitaprajnas/yaab/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sthitaprajnas/yaab/releases/tag/v0.1.0
