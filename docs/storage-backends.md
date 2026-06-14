@@ -87,7 +87,7 @@ kb = KnowledgeBase(store=OpenSearchVectorStore(index="kb", hosts=[{"host": "..."
 ```
 
 All stores honor metadata `where` filters, so [per-user/document access
-control](rag.md#per-user--document-level-access-control) pushes down to the
+control](rag.md#per-user-document-level-access-control) pushes down to the
 database/cluster (JSONB containment on Postgres, `JSON_VALUE` on Oracle, term
 filters on OpenSearch).
 
@@ -108,13 +108,13 @@ from yaab.graph import StateGraph, PostgresSaver
 app = graph.compile(checkpointer=PostgresSaver("postgresql://…@aurora-endpoint/db"))
 ```
 
-See [Graph orchestration](graph.md#durable-execution--checkpoints).
+See [Graph orchestration](graph.md#durable-execution-checkpoints).
 
 ## Audit sinks
 
 Protocol: `AuditSink` (`write(event)`). In-memory + SQLite ship; forward to
 Langfuse, Logfire, an OTel collector, or a callback via
-[`yaab.observability.sinks`](platform.md#deeper-observability--eval).
+[`yaab.observability.sinks`](platform.md#deeper-observability-eval).
 
 ## Implement your own
 

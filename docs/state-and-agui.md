@@ -63,6 +63,40 @@ YAAB events map to the AG-UI vocabulary:
 | run end | `RUN_FINISHED` |
 | error | `RUN_ERROR` |
 
+### State snapshots & deltas
+
+The stream is **round-trip**: it carries session state to the frontend, not just
+text. `run_agui` emits a `STATE_SNAPSHOT` at the start (the initial state as a
+dict) and a `STATE_DELTA` whenever a step writes state — so a coagent UI can
+render and live-update shared state without a side channel.
+
+| YAAB | AG-UI event |
+|---|---|
+| run start state | `STATE_SNAPSHOT` |
+| a state write | `STATE_DELTA` |
+| a guarded tool pauses | `INPUT_REQUIRED` |
+
+### Resuming from human input
+
+When a guarded tool (or an `ask_user` question) pauses the run, the stream emits
+`INPUT_REQUIRED` with the `approvalId`. The frontend records a decision and feeds
+it back with `resume_agui`, which streams the continuation in the same AG-UI
+vocabulary — the other half of the [human-in-the-loop](hitl.md) round-trip.
+
+```python
+from yaab.agui import run_agui, resume_agui, AGUIEventType
+from yaab.governance import approvals
+
+approval_id = None
+async for event in run_agui(agent, "wire $5000 to ACME"):
+    if event["type"] == AGUIEventType.INPUT_REQUIRED:
+        approval_id = event["approvalId"]
+
+decision = await approvals.approve(approval_id, by="alice", store=store)   # or deny / respond
+async for event in resume_agui(agent, decision):
+    print(event["type"], event)        # tool runs, then RUN_FINISHED
+```
+
 ### Serve over SSE
 
 ```python

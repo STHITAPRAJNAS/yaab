@@ -25,6 +25,36 @@ Built-in metrics (`yaab.governance.eval`):
 | `llm_judge` | LLM judge (async) |
 | `faithfulness`, `context_relevance`, `faithfulness_llm` | RAG groundedness |
 
+## Rubric judge & overlap metric
+
+`ResponseMatch` is a deterministic ROUGE-style metric — the fraction of the
+expected answer's words present in the output, in `[0, 1]`, no model call:
+
+```python
+from yaab.governance.eval import ResponseMatch, Case
+
+m = ResponseMatch()
+m.evaluate(Case(inputs="q", expected="the quick brown fox"), "the quick brown fox")  # 1.0
+```
+
+`RubricJudge` scores against *named criteria* and returns a per-criterion
+breakdown plus the mean — so "accuracy" and "tone" are separately visible, not
+collapsed into one opaque number. It is async:
+
+```python
+from yaab.governance.eval import RubricJudge, Case
+from yaab.testing import FunctionModel
+from yaab.models.base import ModelResponse
+
+judge = RubricJudge(
+    FunctionModel(lambda messages: ModelResponse(content='{"accuracy": 1.0, "tone": 0.5}')),
+    rubric={"accuracy": "Is it factually correct?", "tone": "Is the tone professional?"},
+)
+breakdown = await judge.ascore_rubric(Case(inputs="explain X", expected="…"), "an explanation")
+print(breakdown.scores, breakdown.aggregate)   # {'accuracy': 1.0, 'tone': 0.5}  0.75
+score = await judge.ascore(Case(inputs="q", expected="e"), "o")   # just the aggregate float
+```
+
 ## External suites via adapters
 
 RAGAS and DeepEval plug in behind the same contract; their libraries are
@@ -71,7 +101,7 @@ report = await exp.run(lambda x: my_agent.run_sync(x).output)
 print(report.aggregate)        # mean score per metric
 ```
 
-Results feed the [drift monitor and trust scorer](governance.md#drift-detection--trust-scoring).
+Results feed the [drift monitor and trust scorer](governance.md#drift-detection-trust-scoring).
 
 ## Add your own (extensibility)
 

@@ -121,6 +121,27 @@ remote = RemoteAgent("https://other-service", name="billing")
 agent = Agent("a", model="openai/gpt-4o", tools=[remote])
 ```
 
+## Reusing tools from other ecosystems
+
+Wrap a tool built for LangChain or CrewAI as a native YAAB tool — duck-typed, so
+no extra package is installed. `adapt_tool` auto-detects the ecosystem (a tool
+exposing `.invoke` is treated as LangChain-style, one exposing `.run`/`._run` as
+CrewAI-style); `from_langchain_tool` / `from_crewai_tool` are the explicit forms.
+
+```python
+from yaab import Agent
+from yaab.tools import adapt_tool, from_langchain_tool, from_crewai_tool
+
+agent = Agent("a", model="openai/gpt-4o", tools=[
+    from_langchain_tool(some_langchain_tool),    # forwards to .invoke
+    from_crewai_tool(some_crewai_tool),          # forwards to .run
+    adapt_tool(some_tool),                        # auto-detected
+])
+```
+
+Each returns a `FunctionTool` carrying the foreign tool's `name`/`description`, so
+it drops straight into `tools=[…]`.
+
 ## Coercion
 
 `Agent(tools=[...])` accepts a mix of plain functions and `Tool` objects;
