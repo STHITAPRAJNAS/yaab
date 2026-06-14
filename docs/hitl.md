@@ -15,6 +15,11 @@ tries to call one, a human decides over any channel, and the run resumes from
 exactly where it stopped — running the approved tool or feeding the model a
 denial. The model never re-decides; the captured turns are never re-requested.
 
+The same pause/decide/resume idiom answers an agent's question (`ask_user`) and
+pauses a [Flow](flow.md) step (`ctx.pause_for`) — one mechanism, three front
+doors. A human decides with one of four verbs — `approve`, `deny`, `edit`,
+`respond` — and resume is always `agent.run(resume=decision)`.
+
 ---
 
 ## Pick the tools that need approval
@@ -126,41 +131,88 @@ A paused run is two durable rows — a checkpoint and a pending approval — key
 the same `resume_id`. Approve it from any replica, days later, and it resumes
 from its last completed step.
 
-### Decide
+### Decide — one verb set
 
-A reviewer records a decision against the `approval_id`. The store is durable, so
+A reviewer decides with one of four verbs from `yaab.governance.approvals`. Each
+returns a `Decision` — the single value resume consumes. The store is durable, so
 the reviewer can be on a different process than the one that paused the run:
 
 ```python
-from yaab.governance.approvals import ApprovalDecision
+from yaab.governance import approvals
 
-pending = await store.list_pending()                 # what is waiting
-req = pending[0]
-await store.decide(req.approval_id, decision=ApprovalDecision.APPROVED, reviewer="alice")
-# or: decision=ApprovalDecision.DENIED, reviewer="bob", reason="too large"
+# Either pass the paused RunResult directly, or look up what is waiting:
+req = (await store.list_pending())[0]
+
+decision = await approvals.approve(req.approval_id, by="alice", store=store)
+# decision = await approvals.deny(req.approval_id, by="bob", reason="too large", store=store)
+# decision = await approvals.edit(req.approval_id, by="alice",
+#                                 arguments={"amount": 1000}, store=store)   # run with corrected args
 ```
+
+* **`approve`** — let the held tool run.
+* **`deny`** — refuse it, with a `reason` the model reads and can revise from.
+* **`edit`** — approve with corrected `arguments`; the tool runs with those.
+* **`respond`** — answer an `ask_user` question with a typed `answer`.
+
+The `Decision` is self-correlating: it carries the `approval_id` and the
+`resume_id` (the checkpoint key), so resume needs no `session_id` and works from a
+fresh process given only the `approval_id` and the same store config. `decide` is
+first-write-wins, so a double-approve resumes the run exactly once.
 
 ### Resume
 
-Resume the **same** run, threading the decision in. The captured model turns are
-never re-requested — on approve the guarded tool runs now (the model already
-decided to call it; a human just unblocked it); on deny the model receives the
-denial and continues:
+Resume the **same** run by threading the `Decision` into `agent.run(resume=...)`.
+The captured model turns are never re-requested — on approve the guarded tool
+runs now (the model already decided to call it; a human just unblocked it); on
+deny the model receives the denial and continues:
 
 ```python
-result_output = None
-async for ev in runner.run_stream(
-    agent, "wire $5000 to ACME",
-    resume_id="run-42",
-    approval_decision="approved",     # or "denied"
-):
-    if ev.type.value == "run_end":
-        result_output = ev.payload["result"].output
-print(result_output)                  # the tool ran; the run finished
+result = await agent.run(resume=decision)
+print(result.output)                  # the tool ran; the run finished
 ```
 
-`Runner.run(..., resume_id="run-42", approval_decision="approved")` does the same
-in one call when you do not need the event stream.
+Because the decision carries its own correlation keys, this works from a fresh
+process — the replica that paused the run and the one that resumes it need not be
+the same. When one model turn guarded several tools, decide each and resume once
+with `approvals.multiplex(result, {approval_id: decision, ...})`.
+
+---
+
+## Ask the human a question (`ask_user`)
+
+Approval gates a tool the *model* chose; sometimes the agent needs a fact it does
+not have ("for how many people?", "which address?"). The built-in `ask_user` tool
+pauses the run with a `question` pending and resumes with the human's validated
+answer returned inline — reusing the *same* pause machinery, decided with
+`respond`.
+
+```python
+from yaab import Agent
+from yaab.tools.builtin import ask_user
+from yaab.governance import ToolApprovalPlugin, InMemoryApprovalStore, approvals
+
+store = InMemoryApprovalStore()
+agent = Agent("concierge", tools=[ask_user],
+              hitl=ToolApprovalPlugin(tools=["ask_user"], mode="queue", store=store))
+
+result = await agent.run("Book me a table tonight", resume_id="r")
+if result.paused and result.pending[0].kind == "question":
+    answer = await approvals.respond(result, by="user", answer=4, store=store)
+    result = await agent.run(resume=answer)
+```
+
+`ask_user` accepts an optional `answer_schema` (a JSON Schema, e.g.
+`{"type": "integer", "minimum": 1}`); the human's answer is validated against it
+*before* anything is stored, so a mistyped answer leaves the run paused rather
+than half-committing.
+
+## Pause a Flow step (`ctx.pause_for`)
+
+Inside a [Flow](flow.md) step, `ctx.pause_for(value)` suspends the whole run and
+lands an `ApprovalRequest` with `kind="flow_pause"` — so the pause shows up in
+`GET /approvals` and `approvals.respond()` works on it identically. The caller
+resumes the same `session_id` with the decision, which is what `pause_for`
+returns on continuation. See [Flow → the HITL pause](flow.md#the-hitl-pause-ctxpause_for).
 
 ---
 

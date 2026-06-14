@@ -130,7 +130,7 @@ audit = AuditLog(sinks=[
 ])
 ```
 
-More eval metrics for CI and the [drift monitor](governance.md#drift-detection--trust-scoring):
+More eval metrics for CI and the [drift monitor](governance.md#drift-detection-trust-scoring):
 
 ```python
 from yaab.governance import Regex, JSONMatch, NumericTolerance, Levenshtein, LLMJudge

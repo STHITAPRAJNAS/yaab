@@ -52,6 +52,28 @@ cross-encoder rerankers drop in behind `VectorStore` / `Reranker`. Built-ins:
 | Vector stores | in-memory · pgvector/Aurora · Chroma · Qdrant · OpenSearch · Oracle 23ai |
 | Rerankers | `KeywordReranker` (lexical hybrid), `LLMReranker`, `CrossEncoderReranker` |
 
+## Hybrid search (sparse + dense)
+
+`KnowledgeBase(hybrid=True)` runs a sparse **BM25** recall alongside the dense
+(embedding) recall and fuses the two rankings by reciprocal rank — so exact rare
+terms (an error code, a product SKU, a surname) that an embedding glosses over
+still surface, while semantic matches keep their reach.
+
+```python
+from yaab.rag import KnowledgeBase, Document
+
+kb = KnowledgeBase(hybrid=True)
+kb.add([
+    Document(text="The mitochondria is the powerhouse of the cell.", source="c"),
+    Document(text="Photosynthesis converts light into chemical energy.", source="b"),
+])
+chunks = await kb.retrieve("mitochondria powerhouse", k=1)
+```
+
+Both arms over-fetch and the fused top-k is returned — order-only fusion, so the
+two recalls need no comparable scores. Everything else (chunking, citations,
+access control) is unchanged.
+
 ## Production vector stores
 
 All stores satisfy one `VectorStore` protocol and honor metadata `where` filters
@@ -133,7 +155,7 @@ await FaithfulnessEvaluator("openai/gpt-4o").ascore(answer, chunks)  # LLM judge
 ```
 
 These plug into the [governance eval framework](governance.md#evaluation) and the
-[drift monitor](governance.md#drift-detection--trust-scoring) for ongoing RAG
+[drift monitor](governance.md#drift-detection-trust-scoring) for ongoing RAG
 quality tracking.
 
 ### Embedding cache

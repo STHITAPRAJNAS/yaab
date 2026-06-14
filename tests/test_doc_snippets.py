@@ -30,6 +30,16 @@ ILLUSTRATIVE: dict[str, set[str]] = {
     "get-started.md": {"extractor", "transformer", "loader", "legal", "finance", "risk"},
     "state.md": {"agent", "pdf_bytes", "new_bytes"},
     "streaming-events.md": {"agent"},
+    "orchestration.md": set(),
+    "conditions.md": set(),
+    "flow.md": set(),
+    "durable-runs.md": set(),
+    "hitl.md": set(),
+    "agents.md": {"Deps", "MyDeps", "MyModel"},
+    "tools.md": {"Agent", "Runner", "some_langchain_tool", "some_crewai_tool", "some_tool"},
+    "evaluation.md": {"answer", "chunks", "my_agent"},
+    "rag.md": {"answer", "docs", "new_docs", "query"},
+    "state-and-agui.md": {"agent", "store"},
 }
 
 DOC_FILES = sorted(ILLUSTRATIVE)
@@ -92,6 +102,8 @@ def test_snippet_names_are_defined(doc: str) -> None:
                 defined.add(node.id)
             elif isinstance(node, ast.arg):
                 defined.add(node.arg)
+            elif isinstance(node, ast.ExceptHandler) and node.name:
+                defined.add(node.name)
             elif isinstance(node, ast.alias):
                 defined.add((node.asname or node.name).split(".")[0])
         # Second pass: every name this block reads.
