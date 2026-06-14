@@ -38,6 +38,28 @@ await agent.run("What's my name?", session_id=s.id)   # remembers
 Backends: `InMemorySessionService` (default), `SQLiteSessionService`, and your
 own (Postgres/Redis) implementing the `SessionService` protocol.
 
+### Rewind & migrate
+
+Roll a conversation back to an earlier point, or copy it to another backend. A
+*turn* starts at a user message and runs until the next one; `rewind` keeps the
+first N turns, `rewind_last` drops the most recent N. The structured `state` is
+preserved — only the message history is truncated — and the result is persisted.
+
+```python
+session = await sessions.rewind(s.id, keep_turns=2)     # keep the first 2 turns
+session = await sessions.rewind_last(s.id, turns=1)      # undo the last exchange
+```
+
+`migrate_session` copies a session (messages **and** state) into another
+`SessionService` under the same id, leaving the source untouched — for moving a
+conversation across stores or schema versions:
+
+```python
+from yaab.sessions import InMemorySessionService
+
+await sessions.migrate_session(s.id, to_service=InMemorySessionService())
+```
+
 ## Memory (long-term, vector)
 
 ```python

@@ -88,6 +88,11 @@ nav:
       - Usage limits & run control: limits.md
       - Robustness: robustness.md
   - Orchestration:
+      - The orchestration model: orchestration.md
+      - Conditions: conditions.md
+      - Flow: flow.md
+      - Human-in-the-loop: hitl.md
+      - Durable runs: durable-runs.md
       - Graph orchestration: graph.md
       - "Interop: MCP & A2A": interop.md
   - Governance:

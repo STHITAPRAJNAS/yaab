@@ -67,6 +67,97 @@ specialist = Agent("specialist", model="openai/gpt-4o", instructions="You are a 
 generalist = Agent("generalist", model="openai/gpt-4o", tools=[specialist.as_tool()])
 ```
 
+## Per-agent callbacks
+
+`before_agent` / `after_agent` fire around an agent's *own* loop — so in a
+composition (Sequential, Parallel, Swarm, …) each child gets its own pair when it
+runs, not once at the top. Both may be sync or async.
+
+```python
+from yaab import Agent
+from yaab.testing import TestModel
+
+events: list[str] = []
+agent = Agent(
+    "a",
+    model=TestModel("hi"),
+    before_agent=lambda ag, prompt: events.append(f"before:{ag.name}:{prompt}"),
+    after_agent=lambda ag, result: events.append(f"after:{ag.name}:{result.output}"),
+)
+# before_agent(agent, prompt) runs first; after_agent(agent, result) runs last.
+```
+
+## Filtering context to what's relevant
+
+A `context_strategy` rewrites the message history before each model call.
+`RelevanceFilter` keeps only the turns relevant to the latest message (system
+messages and the latest user turn are always kept), alongside the built-in
+truncate/summarize strategies.
+
+```python
+from yaab import Agent, RelevanceFilter
+
+agent = Agent(
+    "a",
+    model="openai/gpt-4o",
+    context_strategy=RelevanceFilter(min_score=0.15),   # drop low-relevance history
+)
+```
+
+The default scorer is keyword overlap; inject any `(query, text) -> float` (e.g.
+an embedding similarity) for semantic relevance:
+
+```python
+from yaab import RelevanceFilter
+
+def embed_score(query: str, text: str) -> float:
+    ...                       # your similarity in [0, 1]
+
+strategy = RelevanceFilter(min_score=0.2, scorer=embed_score)
+```
+
+## Declarative agents (YAML / dict)
+
+`agent_from_yaml` / `agent_from_dict` build an agent from a spec. `output_type`
+resolves by name — the built-in scalars `str` / `int` / `float` / `bool` need no
+registration; any Pydantic model is referenced by the name it was registered
+under, so a declarative agent can emit a typed object, not just text.
+
+```python
+from pydantic import BaseModel
+from yaab import agent_from_dict, register_component
+from yaab.testing import TestModel
+
+class Ticket(BaseModel):
+    title: str
+    priority: int
+
+register_component("output_type", "Ticket", lambda: Ticket)   # resolve the name
+
+agent = agent_from_dict({
+    "name": "tk",
+    "model": TestModel('{"title": "Reset password", "priority": 1}'),
+    "output_type": "Ticket",        # -> agent.output_type is Ticket
+})
+```
+
+Callbacks and plugins wire by registered name too — `callbacks: {before_agent:
+…, after_agent: …}` resolves `callback` components onto the agent's hooks, and
+`plugins: [name]` resolves `plugin` components onto its Runner. An unknown name is
+a clear load-time error:
+
+```python
+from yaab import agent_from_dict, register_component
+from yaab.testing import TestModel
+
+register_component("callback", "audit", lambda: (lambda ag, prompt: None))
+agent = agent_from_dict({
+    "name": "a",
+    "model": TestModel("hi"),
+    "callbacks": {"before_agent": "audit"},
+})
+```
+
 ## The Runner
 
 `Agent.run` delegates to a `Runner`, which owns the services, the plugin chain,
