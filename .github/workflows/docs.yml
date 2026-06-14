@@ -39,14 +39,17 @@ jobs:
         run: mkdocs build --strict
 
       - name: Upload Pages artifact
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
   deploy:
-    # Publish the docs site on every merge to develop or main.
-    if: github.event_name == 'push'
+    # The GitHub Pages source/environment only permits deploys from develop, so
+    # publish only on a push to develop. (main still gets a strict build above,
+    # and PRs are build-checked — but a push to main must not attempt a deploy,
+    # which the environment would reject.)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     needs: build
     runs-on: ubuntu-latest
     environment:
