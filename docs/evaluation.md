@@ -101,7 +101,7 @@ report = await exp.run(lambda x: my_agent.run_sync(x).output)
 print(report.aggregate)        # mean score per metric
 ```
 
-Results feed the [drift monitor and trust scorer](governance.md#drift-detection--trust-scoring).
+Results feed the [drift monitor and trust scorer](governance.md#drift-detection-trust-scoring).
 
 ## Add your own (extensibility)
 

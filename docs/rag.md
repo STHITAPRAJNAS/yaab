@@ -155,7 +155,7 @@ await FaithfulnessEvaluator("openai/gpt-4o").ascore(answer, chunks)  # LLM judge
 ```
 
 These plug into the [governance eval framework](governance.md#evaluation) and the
-[drift monitor](governance.md#drift-detection--trust-scoring) for ongoing RAG
+[drift monitor](governance.md#drift-detection-trust-scoring) for ongoing RAG
 quality tracking.
 
 ### Embedding cache
