@@ -48,7 +48,7 @@ async def test_sequential_early_stop():
 
     b.run = tracking_run  # type: ignore[assignment]
 
-    seq = SequentialAgent("pipe", [a, b], stop_when=lambda out: "STOP" in str(out))
+    seq = SequentialAgent("pipe", [a, b], stop=lambda out: "STOP" in str(out))
     result = await seq.run("go")
     assert result.output == "STOP here"
     assert ran["b"] is False  # pipeline stopped before b

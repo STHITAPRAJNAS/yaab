@@ -306,11 +306,11 @@ async def c_loop_agent():
     )
 
     # Stop once output contains a number >= 3 (best-effort parse).
-    def until(out):
+    def reached(out):
         digits = "".join(ch for ch in str(out) if ch.isdigit())
         return bool(digits) and int(digits[:3]) >= 3
 
-    r = await LoopAgent("inc", counter, max_iterations=5, until=until).run("1")
+    r = await LoopAgent("inc", counter, max_iterations=5, stop=reached).run("1")
     return f"final={str(r.output)[:30]!r}"
 
 
@@ -420,19 +420,22 @@ async def c_rag_citation():
 
 
 async def c_rag_faithfulness():
-    """LLM-judge faithfulness metric against a real model."""
+    """Faithfulness metric scores a grounded answer high.
+
+    The metric reads the retrieved context from ``case.metadata["chunks"]`` (a
+    list of ``RetrievedChunk``) — passing it elsewhere makes the score a silent
+    0.0, so a grounded answer must land well above the floor.
+    """
     from yaab import get_metric
     from yaab.eval import score
     from yaab.governance.eval import Case
+    from yaab.rag.types import Chunk, RetrievedChunk
 
     metric = get_metric("faithfulness")
-    # Faithful answer grounded in context.
-    case = Case(
-        inputs={"context": "The Eiffel Tower is in Paris, France."},
-        expected="The Eiffel Tower is in Paris.",
-    )
+    chunks = [RetrievedChunk(chunk=Chunk(text="The Eiffel Tower is in Paris, France."), score=1.0)]
+    case = Case(inputs="Where is the Eiffel Tower?", metadata={"chunks": chunks})
     s = await score(metric, case, "The Eiffel Tower is located in Paris.")
-    assert 0.0 <= float(s) <= 1.0, s
+    assert 0.5 <= float(s) <= 1.0, f"grounded answer should score high, got {s}"
     return f"faithfulness score={s}"
 
 
@@ -777,13 +780,13 @@ CHECKS = [
     ("structured-output streaming", ["structured", "stream"], c_structured_streaming),
     ("sequential pipeline", ["multiagent"], c_sequential),
     ("parallel fan-out", ["multiagent"], c_parallel),
-    ("loop agent (until)", ["multiagent"], c_loop_agent),
+    ("loop agent (stop=)", ["multiagent"], c_loop_agent),
     ("map agent (fan-out inputs)", ["multiagent"], c_map_agent),
     ("swarm hand-off", ["multiagent"], c_swarm),
     ("agent-as-tool (nested)", ["multiagent", "tools"], c_agent_as_tool),
     ("graph + agent node + HITL", ["graph"], c_graph_agent_hitl),
     ("RAG retrieve + cite", ["rag"], c_rag_citation),
-    ("RAG faithfulness (LLM judge)", ["rag", "eval"], c_rag_faithfulness),
+    ("RAG faithfulness (grounded)", ["rag", "eval"], c_rag_faithfulness),
     ("governance lifecycle + audit", ["governance"], c_governance_audit),
     ("central registry + custom fields + live", ["governance"], c_central_registry_live),
     ("guardrail prompt-injection block", ["governance"], c_guardrail_block),

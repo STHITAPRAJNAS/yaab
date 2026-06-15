@@ -66,17 +66,17 @@ from yaab import LoopAgent
 refiner = LoopAgent(
     "refiner", drafting_agent,
     max_iterations=5,
-    until=lambda out: "FINAL" in out,
+    stop=lambda out: "FINAL" in out,
 )
 ```
 
-A `SequentialAgent` can also stop early via `stop_when`:
+A `SequentialAgent` can also stop early via `stop=`:
 
 ```python
 from yaab import SequentialAgent
 
 pipeline = SequentialAgent("triage", [classify, escalate, resolve],
-                           stop_when=lambda out: "RESOLVED" in str(out))
+                           stop=lambda out: "RESOLVED" in str(out))
 ```
 
 ## Swarm (autonomous hand-off)
