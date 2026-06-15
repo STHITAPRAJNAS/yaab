@@ -40,7 +40,7 @@ async def test_loop_stops_on_condition():
     from yaab.models.test_model import FunctionModel
 
     agent = Agent("a", model=FunctionModel(make_response))
-    loop = LoopAgent("loop", agent, max_iterations=5, until=lambda out: out == "done")
+    loop = LoopAgent("loop", agent, max_iterations=5, stop=lambda out: out == "done")
     result = await loop.run("go")
     assert result.output == "done"
     assert calls["n"] == 2
