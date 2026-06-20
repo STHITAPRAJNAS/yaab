@@ -25,17 +25,24 @@ a first-class governance/registry/compliance layer that none of them ship.
 | [Storage & backends](storage-backends.md) | In-memory defaults + Postgres/Aurora, Redis, pgvector, OpenSearch, Chroma, Qdrant, Oracle — all extendible |
 | [State scoping & AG-UI](state-and-agui.md) | `temp:`/`user:`/`app:` state prefixes; AG-UI streaming middleware |
 | [RAG](rag.md) | Built-in retrieval: knowledge base, chunking, vector stores, rerank, citations, faithfulness |
-| [Multi-agent](multi-agent.md) | Sequential, Parallel, Loop, Swarm, agent-as-tool |
+| [Multi-agent](multi-agent.md) | Sequential, Parallel, Map, Loop, Swarm, agent-as-tool |
 | [Streaming & events](streaming-events.md) | Token streaming, the semantic event stream, SSE endpoints |
 | [Usage limits & run control](limits.md) | Token/request/tool caps, cancellation, timeouts |
 | [Robustness](robustness.md) | Built-in tools, context-window mgmt, HITL approval, resilience, YAML config |
+| [Record & replay](record-replay.md) | VCR-style cassettes — record a real model once, replay offline in CI |
+| [The orchestration model](orchestration.md) | The seven native patterns, and when to reach for each |
+| [Conditions](conditions.md) | `when=`/`stop=`/`else_=`, combinators, `RouterAgent` |
+| [Flow](flow.md) | Explicit, durable, branchable control flow + `RunHistory` time-travel |
+| [Human-in-the-loop](hitl.md) | One pause → decide → resume surface (approve/deny/edit/respond, `ask_user`) |
+| [Durable runs](durable-runs.md) | `RunStore`/`RunWorker`, cross-replica cancel/resume, `durable_backends` |
 | [Graph orchestration](graph.md) | Durable `StateGraph`, checkpoints, HITL, channels, time-travel |
 | [Interop: MCP & A2A](interop.md) | MCP client/tools, A2A server + client (RemoteAgent) |
-| [Governance & compliance](governance.md) | Registry, lifecycle, guardrails, audit, evals, compliance mappers |
-| [Evaluation](evaluation.md) | Metric registry, RAGAS/DeepEval adapters, experiments, custom metrics |
+| [Governance & compliance](governance.md) | Registry, lifecycle, guardrails, audit, multi-tenant spend governance, compliance mappers |
+| [Evaluation](evaluation.md) | Metric registry (incl. rubric judge), RAGAS/DeepEval adapters, experiments |
 | [Optimization](optimization.md) | Signature/Module/Optimizer, compiled artifacts |
 | [Prompts & skills](prompts-skills.md) | Versioned prompt management, reusable skill bundles |
 | [Serving & auth](serving.md) | `fastapi_server_app`, A2A server, bearer/API-key/OAuth2 |
+| [OpenAI-compatible API](openai-compat.md) | `/v1/chat/completions` + `/v1/models` for any OpenAI-SDK client |
 | [Platform extensions](platform.md) | Doc loaders, Chroma/Qdrant, sandbox, structured streaming, batch, `yaab web`, sinks |
 | [Extending YAAB](extending.md) | The component registry, protocols, entry points |
 | [Deployment](DEPLOYMENT.md) | Local → Cloud Run / Fargate / Lambda / K8s, durable backends |

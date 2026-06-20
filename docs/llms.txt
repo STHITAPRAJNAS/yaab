@@ -1,10 +1,12 @@
 # YAAB
 
 > Yet Another Agent Builder — a type-safe, governance-first Python agent SDK with a
-> Rust performance core. Agents, tools, typed output, durable graph orchestration,
-> RAG, multi-agent composition, MCP/A2A interop, and a first-class
-> governance/registry/compliance layer, on a universal LiteLLM model layer.
-> Everything runs offline with TestModel for development and CI.
+> Rust performance core. Agents, tools, typed output, seven native orchestration
+> patterns, durable multi-replica runs, a unified human-in-the-loop surface, RAG,
+> multi-agent composition, MCP/A2A/AG-UI and OpenAI-compatible interop, browser-use
+> tools, multi-tenant spend governance, and a first-class governance/registry/
+> compliance layer, on a universal LiteLLM model layer. Everything runs offline
+> with TestModel (and record/replay cassettes) for development and CI.
 
 ## Getting started
 
@@ -20,26 +22,34 @@
 - [State: sessions, memory, artifacts](https://sthitaprajnas.github.io/yaab/state/)
 - [Storage & backends](https://sthitaprajnas.github.io/yaab/storage-backends/): Postgres, Redis, pgvector, OpenSearch, Chroma, Qdrant
 - [RAG](https://sthitaprajnas.github.io/yaab/rag/): knowledge base, chunking, vector stores, citations
-- [Multi-agent](https://sthitaprajnas.github.io/yaab/multi-agent/): Sequential, Parallel, Loop, Swarm
+- [State scoping & AG-UI](https://sthitaprajnas.github.io/yaab/state-and-agui/): app:/user:/temp: prefixes, AG-UI streaming
+- [Multi-agent](https://sthitaprajnas.github.io/yaab/multi-agent/): Sequential, Parallel, Map, Loop, Swarm, agent-as-tool
 - [Streaming & events](https://sthitaprajnas.github.io/yaab/streaming-events/): token streaming, semantic events, SSE
 - [Usage limits & run control](https://sthitaprajnas.github.io/yaab/limits/)
 - [Robustness](https://sthitaprajnas.github.io/yaab/robustness/): built-in tools, HITL approval, resilience
+- [Record & replay](https://sthitaprajnas.github.io/yaab/record-replay/): VCR-style cassettes for deterministic offline tests
 
 ## Orchestration
 
+- [The orchestration model](https://sthitaprajnas.github.io/yaab/orchestration/): the seven native patterns and when to use each
+- [Conditions](https://sthitaprajnas.github.io/yaab/conditions/): when=/stop=/else_=, combinators, RouterAgent
+- [Flow](https://sthitaprajnas.github.io/yaab/flow/): explicit, durable, branchable control flow + RunHistory
+- [Human-in-the-loop](https://sthitaprajnas.github.io/yaab/hitl/): the unified pause → decide → resume surface
+- [Durable runs](https://sthitaprajnas.github.io/yaab/durable-runs/): RunStore/RunWorker, cross-replica cancel/resume, durable_backends
 - [Graph orchestration](https://sthitaprajnas.github.io/yaab/graph/): durable StateGraph, checkpoints, HITL
 - [Interop: MCP & A2A](https://sthitaprajnas.github.io/yaab/interop/)
 
 ## Governance
 
-- [Governance & compliance](https://sthitaprajnas.github.io/yaab/governance/): registry, lifecycle, guardrails, audit, compliance mappers
-- [Evaluation](https://sthitaprajnas.github.io/yaab/evaluation/): metrics, RAGAS/DeepEval adapters, experiments
+- [Governance & compliance](https://sthitaprajnas.github.io/yaab/governance/): registry, lifecycle, guardrails, audit, multi-tenant spend governance, compliance mappers
+- [Evaluation](https://sthitaprajnas.github.io/yaab/evaluation/): metrics (incl. rubric judge), RAGAS/DeepEval adapters, experiments
 
 ## Going further
 
 - [Optimization](https://sthitaprajnas.github.io/yaab/optimization/): Signature/Module/Optimizer, compiled artifacts
 - [Prompts & skills](https://sthitaprajnas.github.io/yaab/prompts-skills/)
 - [Serving & auth](https://sthitaprajnas.github.io/yaab/serving/): fastapi_server_app, A2A server, auth
+- [OpenAI-compatible API](https://sthitaprajnas.github.io/yaab/openai-compat/): /v1/chat/completions + /v1/models for any OpenAI-SDK client
 - [Platform extensions](https://sthitaprajnas.github.io/yaab/platform/)
 - [Extending YAAB](https://sthitaprajnas.github.io/yaab/extending/): component registry, protocols, entry points
 - [Deployment](https://sthitaprajnas.github.io/yaab/DEPLOYMENT/): Cloud Run, Fargate, Lambda, K8s
