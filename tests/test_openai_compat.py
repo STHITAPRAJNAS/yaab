@@ -94,6 +94,34 @@ def test_multi_turn_seeds_history():
     assert "Alice" in seen
 
 
+def test_ephemeral_sessions_are_cleaned_up():
+    # Multi-turn requests seed ephemeral sessions; they must not accumulate.
+    from yaab.runner import Runner
+    from yaab.sessions import InMemorySessionService
+
+    svc = InMemorySessionService()
+    runner = Runner(session_service=svc)
+    agent = Agent("a", model=TestModel(custom_output="ok"))
+    from yaab.openai_compat import openai_compat_app as _app
+
+    client = TestClient(_app({"a": agent}, runner=runner))
+    for _ in range(3):
+        r = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "a",
+                "messages": [
+                    {"role": "user", "content": "hi"},
+                    {"role": "assistant", "content": "hello"},
+                    {"role": "user", "content": "again"},
+                ],
+            },
+        )
+        assert r.status_code == 200
+    # No ephemeral sessions left behind.
+    assert len(svc._store) == 0
+
+
 def _parse_sse(text):
     """Return the list of JSON `data:` payloads (excluding the [DONE] sentinel)."""
     import json

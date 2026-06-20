@@ -98,7 +98,12 @@ async def _tool_passthrough(
 
 
 def _stream_completion(
-    runner: Any, agent: Any, prompt: str, session_id: str | None, identity: str
+    runner: Any,
+    agent: Any,
+    prompt: str,
+    session_id: str | None,
+    identity: str,
+    cleanup: Callable[[], Any] | None = None,
 ) -> Any:
     """Return a StreamingResponse of OpenAI ``chat.completion.chunk`` SSE events."""
     import json
@@ -119,15 +124,19 @@ def _stream_completion(
         return f"data: {json.dumps(payload)}\n\n"
 
     async def _source() -> Any:
-        # First chunk announces the assistant role.
-        yield _chunk({"role": "assistant"}, None)
-        async for token in runner.stream_text(
-            agent, prompt, session_id=session_id, identity=identity
-        ):
-            if token:
-                yield _chunk({"content": token}, None)
-        yield _chunk({}, "stop")
-        yield "data: [DONE]\n\n"
+        try:
+            # First chunk announces the assistant role.
+            yield _chunk({"role": "assistant"}, None)
+            async for token in runner.stream_text(
+                agent, prompt, session_id=session_id, identity=identity
+            ):
+                if token:
+                    yield _chunk({"content": token}, None)
+            yield _chunk({}, "stop")
+            yield "data: [DONE]\n\n"
+        finally:
+            if cleanup is not None:
+                await cleanup()
 
     return StreamingResponse(_source(), media_type="text/event-stream")
 
@@ -178,6 +187,18 @@ def add_openai_routes(
             )
         return session.id
 
+    async def _drop_session(session_id: str | None) -> None:
+        """Delete an ephemeral seeded session so it does not accumulate."""
+        if session_id is None:
+            return
+        svc: Any = runner.session_service
+        delete = getattr(svc, "delete", None)
+        if delete is not None:
+            try:
+                await delete(session_id)
+            except Exception:  # noqa: BLE001 - cleanup must never fail the request
+                pass
+
     @app.get("/v1/models")
     async def list_models() -> Any:
         names_fn = getattr(resolve_agent, "names", None)
@@ -217,9 +238,14 @@ def add_openai_routes(
             session_id = await _seed_session(messages[:-1])
 
             if body.get("stream"):
-                return _stream_completion(runner, agent, prompt, session_id, identity)
+                return _stream_completion(
+                    runner, agent, prompt, session_id, identity, lambda: _drop_session(session_id)
+                )
 
-            result = await runner.run(agent, prompt, session_id=session_id, identity=identity)
+            try:
+                result = await runner.run(agent, prompt, session_id=session_id, identity=identity)
+            finally:
+                await _drop_session(session_id)
             return JSONResponse(
                 {
                     "id": _completion_id(),
