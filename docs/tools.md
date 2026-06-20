@@ -142,6 +142,29 @@ agent = Agent("a", model="openai/gpt-4o", tools=[
 Each returns a `FunctionTool` carrying the foreign tool's `name`/`description`, so
 it drops straight into `tools=[…]`.
 
+## Browser use
+
+`browser_toolset()` gives an agent a real (headless) browser — navigate, click,
+type, read, screenshot — for sites with no API. Needs the optional extra:
+`pip install 'yaab-sdk[browser]'` then `playwright install chromium`.
+
+```python
+from yaab import Agent
+from yaab.tools.builtin import browser_toolset
+
+tools = browser_toolset(allow_domains=["example.com"])   # allowlist gates navigation
+agent = Agent("scraper", tools=tools)
+# ... after the run: await tools.session.aclose()
+```
+
+Safety is built in and composable: navigation is restricted to `allow_domains`
+(suffix match; `None` allows all — dev only; `[]` blocks all), the browser is
+headless by default, and because these are ordinary tools the existing
+[approval](hitl.md) and guardrail machinery applies unchanged — e.g.
+`ToolApprovalPlugin(tools=["browser_navigate"])` pauses for human sign-off before
+each navigation. Playwright is imported lazily, so the SDK never needs it unless a
+browser tool actually runs.
+
 ## Coercion
 
 `Agent(tools=[...])` accepts a mix of plain functions and `Tool` objects;
