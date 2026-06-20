@@ -172,11 +172,13 @@ def test_browser_not_in_default_toolset():
     reason="opt-in: set YAAB_BROWSER_TESTS=1 (needs `playwright install chromium`)",
 )
 @pytest.mark.asyncio
-async def test_real_browser_against_local_fixture(tmp_path):
+async def test_real_browser_against_local_fixture(tmp_path, monkeypatch):
     """Drive real headless Chromium against a local HTML file (opt-in)."""
     pytest.importorskip("playwright")
     from yaab.tools.builtin.browser import BrowserSession
 
+    # screenshot() writes a sanitized basename into the cwd; run inside tmp_path.
+    monkeypatch.chdir(tmp_path)
     html = tmp_path / "page.html"
     html.write_text(
         "<html><head><title>Fixture</title></head>"
@@ -194,8 +196,7 @@ async def test_real_browser_against_local_fixture(tmp_path):
         assert "Hello Browser" in text
         await session.type("#q", "typed text")
         await session.click("#go")
-        shot = tmp_path / "shot.png"
-        out = await session.screenshot(str(shot))
-        assert shot.exists() and "saved screenshot" in out
+        out = await session.screenshot("shot.png")
+        assert (tmp_path / "shot.png").exists() and "saved screenshot" in out
     finally:
         await session.aclose()
