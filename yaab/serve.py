@@ -432,6 +432,7 @@ def fastapi_server_app(
     run_checkpointer: Any | None = None,
     cron_store: Any | None = None,
     worker: Any | None = None,
+    openai_compat: bool = False,
 ) -> Any:
     """Build a FastAPI app that serves ``agent`` (YAAB-native + A2A endpoints).
 
@@ -1332,6 +1333,16 @@ def fastapi_server_app(
         except Exception:  # noqa: BLE001 - empty body is valid for these endpoints
             return {}
         return body if isinstance(body, dict) else {}
+
+    if openai_compat:
+        from .openai_compat import _AgentRegistry, add_openai_routes
+
+        add_openai_routes(
+            app,
+            _AgentRegistry(agent),
+            auth_scheme=auth_scheme,
+            runner=served_runner,
+        )
 
     return app
 

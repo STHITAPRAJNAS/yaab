@@ -103,6 +103,7 @@ nav:
       - Optimization: optimization.md
       - Prompts & skills: prompts-skills.md
       - Serving & auth: serving.md
+      - OpenAI-compatible API: openai-compat.md
       - Platform extensions: platform.md
       - Extending YAAB: extending.md
       - Deployment: DEPLOYMENT.md
