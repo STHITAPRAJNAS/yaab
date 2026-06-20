@@ -97,7 +97,7 @@ from yaab.serve import serve
 
 backends = durable_backends(dsn="postgresql://user:pw@db/app")
 runner = Runner(**backends.runner_kwargs())   # sessions, artifacts, checkpoint, trace
-serve(agent, **backends.serve_kwargs())        # run queue, approvals, trace, fault tolerance
+serve(agent, **backends.serve_kwargs())        # run queue, approvals, trace, spend, fault tolerance
 ```
 
 With no `dsn` the same call returns process-local backends — the dev/test default
