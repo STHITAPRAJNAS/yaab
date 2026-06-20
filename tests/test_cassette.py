@@ -52,3 +52,20 @@ def test_request_key_is_stable_and_redacted():
         )
     )
     assert k3 != k1
+
+
+def test_cassette_roundtrips_and_sequences(tmp_path):
+    from yaab.models.cassette import _Cassette
+
+    path = tmp_path / "c.json"
+    cass = _Cassette(path)
+    cass.append("k1", {"req": 1}, response={"content": "a"}, stream=None)
+    cass.append("k1", {"req": 1}, response={"content": "b"}, stream=None)
+    cass.save()
+
+    reloaded = _Cassette(path)
+    # Same key replays in recorded order, then exhausts.
+    assert reloaded.next("k1")["response"]["content"] == "a"
+    assert reloaded.next("k1")["response"]["content"] == "b"
+    assert reloaded.next("k1") is None
+    assert reloaded.next("unknown") is None
