@@ -105,3 +105,21 @@ async def test_replay_miss_raises(tmp_path):
     rep = CassetteModel(path, mode="replay")
     with pytest.raises(CassetteMiss):
         await rep.complete([Message(role=Role.USER, content="never recorded")])
+
+
+@pytest.mark.asyncio
+async def test_stream_records_then_replays(tmp_path):
+    from yaab.models.cassette import CassetteModel
+    from yaab.testing import TestModel
+    from yaab.types import Message, Role
+
+    path = tmp_path / "s.json"
+    inner = TestModel(custom_output="abc")  # TestModel.stream yields deltas + done
+
+    rec = CassetteModel(path, inner=inner, mode="record")
+    chunks1 = [c.delta async for c in rec.stream([Message(role=Role.USER, content="hi")])]
+    assert "".join(chunks1) == "abc"
+
+    rep = CassetteModel(path, mode="replay")
+    chunks2 = [c.delta async for c in rep.stream([Message(role=Role.USER, content="hi")])]
+    assert chunks2 == chunks1

@@ -5,12 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Literal
 
 from ..exceptions import CassetteMiss
 from ..types import Message
-from .base import ModelProvider, ModelResponse
+from .base import ModelProvider, ModelResponse, StreamChunk
 
 _FORMAT_VERSION = 1
 
@@ -185,3 +186,34 @@ class CassetteModel:
         self._cassette.append(key, canon, response=resp.model_dump(), stream=None)
         self._cassette.save()
         return resp
+
+    def stream(
+        self,
+        messages: list[Message],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[StreamChunk]:
+        key, canon = self._key(messages, tools, None, None, kwargs)
+
+        async def _gen() -> AsyncIterator[StreamChunk]:
+            if self.mode != "record":
+                hit = self._cassette.next(key)
+                if hit is not None and hit.get("stream") is not None:
+                    for raw in hit["stream"]:
+                        yield StreamChunk.model_validate(raw)
+                    return
+                if self.mode == "replay":
+                    raise CassetteMiss(
+                        f"no recorded stream for request {key[:12]} in "
+                        f"{self.path} (mode=replay)"
+                    )
+            assert self.inner is not None
+            recorded: list[dict[str, Any]] = []
+            async for chunk in self.inner.stream(messages, tools=tools, **kwargs):
+                recorded.append(chunk.model_dump())
+                yield chunk
+            self._cassette.append(key, canon, response=None, stream=recorded)
+            self._cassette.save()
+
+        return _gen()
