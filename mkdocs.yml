@@ -87,6 +87,7 @@ nav:
       - Streaming & events: streaming-events.md
       - Usage limits & run control: limits.md
       - Robustness: robustness.md
+      - Record & replay: record-replay.md
   - Orchestration:
       - The orchestration model: orchestration.md
       - Conditions: conditions.md
