@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections import defaultdict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal
 
@@ -217,3 +219,25 @@ class CassetteModel:
             self._cassette.save()
 
         return _gen()
+
+
+def _default_mode(inner: ModelProvider | None) -> Literal["once", "record", "replay"]:
+    if os.environ.get("YAAB_RECORD") == "1" and inner is not None:
+        return "record"
+    return "replay"
+
+
+@contextmanager
+def use_cassette(
+    path: str | Path,
+    *,
+    inner: ModelProvider | None = None,
+    mode: Literal["once", "record", "replay"] | None = None,
+) -> Iterator[CassetteModel]:
+    """Yield a CassetteModel. ``mode`` defaults from env: YAAB_RECORD=1 with an
+    inner records, otherwise replays — so devs record once and CI replays."""
+    resolved = mode or _default_mode(inner)
+    yield CassetteModel(path, inner=inner, mode=resolved)
+
+
+__all__ = ["CassetteModel", "use_cassette", "CassetteMiss"]

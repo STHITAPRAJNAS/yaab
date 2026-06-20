@@ -123,3 +123,28 @@ async def test_stream_records_then_replays(tmp_path):
     rep = CassetteModel(path, mode="replay")
     chunks2 = [c.delta async for c in rep.stream([Message(role=Role.USER, content="hi")])]
     assert chunks2 == chunks1
+
+
+@pytest.mark.asyncio
+async def test_use_cassette_default_mode(monkeypatch, tmp_path):
+    from yaab.testing import use_cassette
+    from yaab.testing import TestModel
+    from yaab.types import Message, Role
+
+    path = tmp_path / "u.json"
+    # No YAAB_RECORD -> replay mode.
+    monkeypatch.delenv("YAAB_RECORD", raising=False)
+    with use_cassette(path) as model:
+        assert model.mode == "replay"
+    # YAAB_RECORD=1 with an inner -> record mode.
+    monkeypatch.setenv("YAAB_RECORD", "1")
+    with use_cassette(path, inner=TestModel(custom_output="z")) as model:
+        assert model.mode == "record"
+        out = await model.complete([Message(role=Role.USER, content="hi")])
+        assert out.content == "z"
+
+
+def test_testing_reexports():
+    from yaab.testing import CassetteModel as ExportedCassetteModel
+
+    assert ExportedCassetteModel is not None
