@@ -69,3 +69,39 @@ def test_cassette_roundtrips_and_sequences(tmp_path):
     assert reloaded.next("k1")["response"]["content"] == "b"
     assert reloaded.next("k1") is None
     assert reloaded.next("unknown") is None
+
+
+@pytest.mark.asyncio
+async def test_complete_records_then_replays(tmp_path):
+    from yaab.models.cassette import CassetteModel
+    from yaab.testing import TestModel
+    from yaab.types import Message, Role
+
+    path = tmp_path / "c.json"
+    inner = TestModel(custom_output="hello world")
+
+    rec = CassetteModel(path, inner=inner, mode="record")
+    msgs = [Message(role=Role.USER, content="hi")]
+    out1 = await rec.complete(msgs)
+    assert out1.content == "hello world"
+    assert path.exists()
+
+    # Replay with NO inner and a model that would raise if called.
+    rep = CassetteModel(path, mode="replay")
+    out2 = await rep.complete(msgs)
+    assert out2.content == "hello world"
+
+
+@pytest.mark.asyncio
+async def test_replay_miss_raises(tmp_path):
+    from yaab.models.cassette import CassetteModel
+    from yaab.testing import TestModel
+    from yaab.types import Message, Role
+
+    path = tmp_path / "c.json"
+    # Record an unrelated request so the file exists but the key below misses.
+    rec = CassetteModel(path, inner=TestModel(custom_output="x"), mode="record")
+    await rec.complete([Message(role=Role.USER, content="recorded")])
+    rep = CassetteModel(path, mode="replay")
+    with pytest.raises(CassetteMiss):
+        await rep.complete([Message(role=Role.USER, content="never recorded")])

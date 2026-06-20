@@ -6,10 +6,11 @@ import hashlib
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from ..exceptions import CassetteMiss
 from ..types import Message
+from .base import ModelProvider, ModelResponse
 
 _FORMAT_VERSION = 1
 
@@ -96,3 +97,78 @@ class _Cassette:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         doc = {"version": _FORMAT_VERSION, "interactions": self.interactions}
         self.path.write_text(json.dumps(doc, indent=2, default=str), encoding="utf-8")
+
+
+class CassetteModel:
+    """Record/replay wrapper around a ``ModelProvider``.
+
+    modes: ``record`` (always call inner, append), ``once`` (replay if present
+    else call+append), ``replay`` (replay only; miss -> CassetteMiss).
+    """
+
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        inner: ModelProvider | None = None,
+        mode: Literal["once", "record", "replay"] = "once",
+    ) -> None:
+        if mode in ("record", "once") and inner is None:
+            raise ValueError(f"mode={mode!r} requires an inner model")
+        self.path = Path(path)
+        self.inner = inner
+        self.mode = mode
+        self.name = getattr(inner, "name", "cassette")
+        self._cassette = _Cassette(path)
+
+    def _key(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None,
+        output_schema: dict[str, Any] | None,
+        tool_choice: Any | None,
+        kwargs: dict[str, Any],
+    ) -> tuple[str, dict[str, Any]]:
+        model = getattr(self.inner, "name", self.name)
+        canon = _canonical_request(
+            messages,
+            tools=tools,
+            output_schema=output_schema,
+            tool_choice=tool_choice,
+            model=model,
+            params=dict(kwargs),
+        )
+        return _request_key(canon), canon
+
+    async def complete(
+        self,
+        messages: list[Message],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        output_schema: dict[str, Any] | None = None,
+        tool_choice: Any | None = None,
+        **kwargs: Any,
+    ) -> ModelResponse:
+        key, canon = self._key(messages, tools, output_schema, tool_choice, kwargs)
+
+        if self.mode != "record":
+            hit = self._cassette.next(key)
+            if hit is not None and hit.get("response") is not None:
+                return ModelResponse.model_validate(hit["response"])
+            if self.mode == "replay":
+                raise CassetteMiss(
+                    f"no recorded completion for request {key[:12]} in "
+                    f"{self.path} (mode=replay)"
+                )
+
+        assert self.inner is not None  # guaranteed by __init__ for record/once
+        resp = await self.inner.complete(
+            messages,
+            tools=tools,
+            output_schema=output_schema,
+            tool_choice=tool_choice,
+            **kwargs,
+        )
+        self._cassette.append(key, canon, response=resp.model_dump(), stream=None)
+        self._cassette.save()
+        return resp
