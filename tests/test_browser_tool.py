@@ -93,3 +93,59 @@ async def test_browser_session_actions():
 
     assert os.path.exists("shot.png")
     os.remove("shot.png")
+
+
+@pytest.mark.asyncio
+async def test_browser_toolset_wires_to_session():
+    from yaab.tools.builtin.browser import BrowserSession, browser_toolset
+
+    page = _FakePage()
+    session = BrowserSession(allow_domains=None, page=page)
+    tools = browser_toolset(session=session)
+
+    names = {t.name for t in tools}
+    assert names == {
+        "browser_navigate",
+        "browser_click",
+        "browser_type",
+        "browser_extract",
+        "browser_screenshot",
+        "browser_back",
+    }
+    assert tools.session is session
+
+    # Execute a tool the way the runner does (FunctionTool.execute(ctx, **kwargs)).
+    from yaab.types import RunContext
+
+    nav = next(t for t in tools if t.name == "browser_navigate")
+    out = await nav.execute(RunContext(), url="https://example.com")
+    assert "example.com" in out
+    assert page.url == "https://example.com"
+
+
+@pytest.mark.asyncio
+async def test_missing_playwright_raises_with_hint(monkeypatch):
+    import builtins
+
+    from yaab.exceptions import ToolError
+    from yaab.tools.builtin.browser import BrowserSession
+
+    real_import = builtins.__import__
+
+    def _no_playwright(name, *args, **kwargs):
+        if name.startswith("playwright"):
+            raise ImportError("no playwright")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _no_playwright)
+
+    session = BrowserSession()  # no injected page -> must launch -> import fails
+    with pytest.raises(ToolError, match="Playwright"):
+        await session.navigate("https://example.com")
+
+
+def test_browser_not_in_default_toolset():
+    from yaab.tools.builtin import default_toolset
+
+    names = {t.name for t in default_toolset()}
+    assert not any(n.startswith("browser_") for n in names)
