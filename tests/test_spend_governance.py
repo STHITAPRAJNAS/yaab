@@ -82,7 +82,6 @@ async def test_tenant_cap_pools_across_identities():
 @pytest.mark.asyncio
 async def test_rolling_window_expires_old_spend():
     from yaab.governance.budget import Budget, InMemorySpendStore, SpendGovernancePlugin
-
     from yaab.plugins.builtins import BudgetExceeded
 
     clock = {"now": 1_000_000.0}
