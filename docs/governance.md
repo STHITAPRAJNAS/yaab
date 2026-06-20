@@ -137,6 +137,39 @@ A soft denial returns an error string to the model (so the agent can adapt); a
 hard denial raises `PolicyViolation`. Every non-allow decision is audited. The
 caller's capabilities come from `ctx.state["capabilities"]`.
 
+## Multi-tenant spend governance
+
+Cap spend across runs, per user (`identity`) and optionally per tenant, with
+lifetime or rolling (daily/monthly) windows. `SpendGovernancePlugin` records each
+model call's cost to a durable `SpendStore` and blocks a run whose key is already
+over budget. Budgets are app-owned policy (a mapping or a resolver).
+
+```python
+from yaab import Runner
+from yaab.governance import Budget, SpendGovernancePlugin, SQLiteSpendStore
+
+spend = SpendGovernancePlugin(
+    SQLiteSpendStore("spend.db"),                 # durable ledger (shared across pods)
+    budgets={
+        "id:alice": Budget(5.0, window="day"),    # per-user daily cap
+        "tenant:acme": Budget(200.0, window="month"),
+    },
+    tenant_of=lambda identity: "acme" if identity else None,
+)
+runner = Runner(plugins=[spend])
+```
+
+A run over budget raises `BudgetExceeded` *before* its next model call.
+Enforcement is **post-hoc** — a model call's exact cost is only known after it
+returns, so a key over budget blocks the *next* run.
+
+**Across pods:** the in-memory store is per-process (each pod would track its own
+budget). For correct caps behind a load balancer, use a shared backend —
+`SQLiteSpendStore` on one node, `PostgresSpendStore` for multiple pods — or just
+let [`durable_backends()`](durable-runs.md) wire `spend_store` alongside every
+other shared backend. The server exposes `GET /spend/{key}` for current
+spend/remaining.
+
 ## Audit log & lineage
 
 Append-only, tamper-evident (hash-chained in Rust). Every run, model call, tool

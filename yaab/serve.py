@@ -433,6 +433,8 @@ def fastapi_server_app(
     cron_store: Any | None = None,
     worker: Any | None = None,
     openai_compat: bool = False,
+    spend_store: Any | None = None,
+    budgets: Any | None = None,
 ) -> Any:
     """Build a FastAPI app that serves ``agent`` (YAAB-native + A2A endpoints).
 
@@ -1343,6 +1345,25 @@ def fastapi_server_app(
             auth_scheme=auth_scheme,
             runner=served_runner,
         )
+
+    if spend_store is not None:
+
+        @app.get("/spend/{key}")
+        async def get_spend(key: str, request: Request) -> Any:
+            """Report an identity/tenant key's spend (and remaining budget)."""
+            _identify(request)  # authenticated operators only
+            from .governance.budget import _budget_for, _window_start
+
+            now = time.time()
+            budget = _budget_for(budgets, key) if budgets is not None else None
+            since = _window_start(budget, now) if budget is not None else None
+            spent = await spend_store.total(key, since=since)
+            body: dict[str, Any] = {"key": key, "spent_usd": spent}
+            if budget is not None:
+                body["window"] = budget.window
+                body["limit_usd"] = budget.limit_usd
+                body["remaining_usd"] = max(0.0, budget.limit_usd - spent)
+            return JSONResponse(body)
 
     return app
 

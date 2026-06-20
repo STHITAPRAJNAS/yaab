@@ -73,6 +73,8 @@ class DurableBackends:
     registry_backend: Any = None
     # Shared rate-limit budget across replicas (only when a Redis URL is given).
     rate_limiter: Any = None
+    # Cross-pod spend ledger backing per-identity/tenant budget governance.
+    spend_store: Any = None
 
     def runner_kwargs(self) -> dict[str, Any]:
         """The subset of fields a :class:`~yaab.Runner` accepts, ready to splat.
@@ -98,6 +100,7 @@ class DurableBackends:
             "approval_store": self.approval_store,
             "trace_store": self.trace_store,
             "run_checkpointer": self.run_checkpointer,
+            "spend_store": self.spend_store,
         }
 
 
@@ -129,6 +132,7 @@ def _in_memory_backends() -> DurableBackends:
     from .artifacts import InMemoryArtifactService
     from .governance.approvals import InMemoryApprovalStore
     from .governance.audit import InMemoryAuditSink
+    from .governance.budget import InMemorySpendStore
     from .governance.registry import InMemoryRegistryBackend
     from .graph.checkpoint import MemorySaver
     from .runs.memory import InMemoryRunStore
@@ -146,6 +150,7 @@ def _in_memory_backends() -> DurableBackends:
         audit_sink=InMemoryAuditSink(),
         registry_backend=InMemoryRegistryBackend(),
         rate_limiter=None,
+        spend_store=InMemorySpendStore(),
     )
 
 
@@ -154,6 +159,7 @@ def _sqlite_backends(dsn: str) -> DurableBackends:
     from .artifacts.sqlite import SQLiteArtifactService
     from .governance.approvals import SQLiteApprovalStore
     from .governance.audit import SQLiteAuditSink
+    from .governance.budget import SQLiteSpendStore
     from .governance.registry import SQLiteRegistryBackend
     from .graph.checkpoint import SQLiteSaver
     from .runs.sqlite import SQLiteRunStore
@@ -172,6 +178,7 @@ def _sqlite_backends(dsn: str) -> DurableBackends:
         audit_sink=SQLiteAuditSink(path),
         registry_backend=SQLiteRegistryBackend(path),
         rate_limiter=None,
+        spend_store=SQLiteSpendStore(path),
     )
 
 
@@ -189,6 +196,7 @@ def _postgres_backends(dsn: str) -> DurableBackends:
     # the struct is always complete. Callers needing a durable audit sink across
     # replicas can override the field after building.
     from .governance.audit import InMemoryAuditSink
+    from .governance.budget import PostgresSpendStore
     from .governance.registry import SQLiteRegistryBackend
     from .graph.checkpoint import PostgresSaver
     from .runs.postgres import PostgresRunStore
@@ -206,6 +214,7 @@ def _postgres_backends(dsn: str) -> DurableBackends:
         audit_sink=InMemoryAuditSink(),
         registry_backend=SQLiteRegistryBackend(),
         rate_limiter=None,
+        spend_store=PostgresSpendStore(dsn),
     )
 
 
