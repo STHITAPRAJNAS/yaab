@@ -57,7 +57,9 @@ def _completion_id() -> str:
     return f"chatcmpl-{uuid.uuid4().hex}"
 
 
-async def _tool_passthrough(agent: Any, messages: list[dict[str, Any]], body: dict[str, Any]) -> Any:
+async def _tool_passthrough(
+    agent: Any, messages: list[dict[str, Any]], body: dict[str, Any]
+) -> Any:
     """Single model turn with caller-supplied tools; map the response to OpenAI."""
     import json
 
@@ -167,9 +169,10 @@ def add_openai_routes(
         """Create an ephemeral session seeded with ``prior`` turns; return its id."""
         if not prior:
             return None
-        session = await runner.session_service.create_session()
+        svc: Any = runner.session_service
+        session = await svc.get_or_create()
         for m in prior:
-            await runner.session_service.append_message(
+            await svc.append(
                 session.id,
                 Message(role=Role(m["role"]), content=m.get("content") or ""),
             )
@@ -216,9 +219,7 @@ def add_openai_routes(
             if body.get("stream"):
                 return _stream_completion(runner, agent, prompt, session_id, identity)
 
-            result = await runner.run(
-                agent, prompt, session_id=session_id, identity=identity
-            )
+            result = await runner.run(agent, prompt, session_id=session_id, identity=identity)
             return JSONResponse(
                 {
                     "id": _completion_id(),
@@ -250,8 +251,9 @@ class _AgentRegistry:
             self._agents = dict(agents)
             self._default = next(iter(self._agents.values()), None)
         else:  # a bare Agent
-            self._agents = {agents.name: agents}
-            self._default = agents
+            agent: Any = agents
+            self._agents = {agent.name: agent}
+            self._default = agent
 
     def names(self) -> list[str]:
         return list(self._agents)

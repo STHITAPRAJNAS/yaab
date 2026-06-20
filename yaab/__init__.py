@@ -284,4 +284,8 @@ def __getattr__(name: str) -> object:
         from . import artifacts
 
         return getattr(artifacts, name)
+    if name == "openai_compat_app":
+        from .openai_compat import openai_compat_app
+
+        return openai_compat_app
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

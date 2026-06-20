@@ -70,6 +70,30 @@ def test_single_agent_default_model():
     assert resp.json()["choices"][0]["message"]["content"] == "ok"
 
 
+def test_multi_turn_seeds_history():
+    # A multi-turn request seeds prior turns into an ephemeral session; the agent
+    # sees them (asserted via the model recording the messages it was called with).
+    model = TestModel(custom_output="answer")
+    agent = Agent("assistant", model=model)
+    client = _client({"assistant": agent})
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "assistant",
+            "messages": [
+                {"role": "user", "content": "my name is Alice"},
+                {"role": "assistant", "content": "Hi Alice"},
+                {"role": "user", "content": "what is my name?"},
+            ],
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["choices"][0]["message"]["content"] == "answer"
+    # The model was called with the seeded prior turns in context.
+    seen = " ".join(m.content for call in model.calls for m in call)
+    assert "Alice" in seen
+
+
 def _parse_sse(text):
     """Return the list of JSON `data:` payloads (excluding the [DONE] sentinel)."""
     import json
@@ -135,3 +159,68 @@ def test_tools_passthrough_surfaces_tool_calls():
     assert calls[0]["function"]["name"] == "get_weather"
     # arguments is a JSON string per the OpenAI schema.
     assert isinstance(calls[0]["function"]["arguments"], str)
+
+
+def test_auth_required_401_envelope():
+    from yaab.auth import BearerTokenAuth
+
+    agent = Agent("a", model=TestModel(custom_output="x"))
+    app = openai_compat_app({"a": agent}, auth=BearerTokenAuth({"sk-good": "alice"}))
+    client = TestClient(app)
+    body = {"model": "a", "messages": [{"role": "user", "content": "hi"}]}
+
+    # No key -> 401 with an OpenAI error envelope.
+    r = client.post("/v1/chat/completions", json=body)
+    assert r.status_code == 401
+    assert r.json()["error"]["code"] == "invalid_api_key"
+
+    # Valid bearer key -> 200.
+    r = client.post("/v1/chat/completions", json=body, headers={"Authorization": "Bearer sk-good"})
+    assert r.status_code == 200
+
+
+def test_exported_from_package():
+    import yaab
+
+    assert hasattr(yaab, "openai_compat_app")
+
+
+def test_fastapi_server_app_openai_flag():
+    from yaab.serve import fastapi_server_app
+
+    agent = Agent("srv", model=TestModel(custom_output="served"))
+    app = fastapi_server_app(agent, openai_compat=True)
+    client = TestClient(app)
+    # Native endpoint still works.
+    assert client.get("/health").status_code == 200
+    # And the OpenAI surface is mounted on the same app.
+    r = client.post(
+        "/v1/chat/completions",
+        json={"model": "srv", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 200
+    assert r.json()["choices"][0]["message"]["content"] == "served"
+
+
+@pytest.mark.asyncio
+async def test_real_openai_sdk_compatibility():
+    """Drive the actual `openai` SDK against the app in-process (ASGI transport)."""
+    openai = pytest.importorskip("openai")
+    import httpx
+
+    agent = Agent("gpt", model=TestModel(custom_output="hi from yaab"))
+    app = openai_compat_app({"gpt": agent})
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
+        sdk = openai.AsyncOpenAI(
+            api_key="unused", base_url="http://test/v1", http_client=http_client
+        )
+        completion = await sdk.chat.completions.create(
+            model="gpt", messages=[{"role": "user", "content": "hi"}]
+        )
+        assert completion.choices[0].message.content == "hi from yaab"
+        assert completion.usage.total_tokens >= 0
+
+        models = await sdk.models.list()
+        assert any(m.id == "gpt" for m in models.data)
