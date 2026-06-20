@@ -6,6 +6,42 @@ All notable changes to YAAB are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-06-20
+
+Four additive capabilities for adoption, testing, multi-tenant operation, and
+real-world tasks. Backward compatible — existing 0.2.0 code keeps working.
+
+### Added
+- **Record/replay testing** — `CassetteModel` (in `yaab.testing`) wraps any model
+  and records its responses to a VCR-style JSON cassette, then replays them
+  offline and deterministically, so CI exercises real model behaviour with no
+  keys, cost, or flakiness. Modes `record`/`once`/`replay`; requests matched by a
+  normalized hash (provider keys stripped before writing); streaming recorded
+  chunk-for-chunk. `use_cassette()` picks the mode from `YAAB_RECORD`.
+- **OpenAI-compatible serving** — `openai_compat_app(agents)` (or
+  `fastapi_server_app(agent, openai_compat=True)`) exposes agents at
+  `POST /v1/chat/completions` (streaming + non-streaming) and `GET /v1/models`, so
+  any OpenAI-SDK client, eval harness, or gateway drives a yaab agent with only a
+  `base_url` swap. The `model` string selects an agent; without request `tools`
+  the agent loop runs and returns the final answer, with `tools` a single model
+  turn surfaces `tool_calls` (function-calling passthrough). Reuses the server's
+  `AuthScheme`.
+- **Multi-tenant spend governance** — `SpendGovernancePlugin` records each model
+  call's cost to a durable `SpendStore` (in-memory / SQLite / Postgres) and blocks
+  a run whose identity or tenant key is over budget. `Budget(limit_usd, window)`
+  with lifetime / daily / monthly windows; wired into `durable_backends()` as
+  `spend_store` (correct caps across pods) with a `GET /spend/{key}` endpoint.
+- **Browser-use tools** — `browser_toolset()` gives an agent a real headless
+  browser (navigate/click/type/extract/screenshot/back) via Playwright behind the
+  optional `yaab-sdk[browser]` extra. A domain allowlist gates navigation, the
+  screenshot path is sanitized, and—being ordinary tools—the existing approval and
+  guardrail machinery applies (e.g. HITL on `browser_navigate`).
+
+### Verification
+- Full suite green (1168 offline tests, ruff/format/mypy clean); each capability
+  additionally verified against a real model (Gemini) or, for browser, a separate
+  CI job running headless Chromium against a local fixture.
+
 ## [0.2.0] — 2026-06-09
 
 A major feature release on top of 0.1.0: one coherent orchestration model with
@@ -272,6 +308,7 @@ First public release: `pip install yaab-sdk` → `import yaab` / `$ yaab`.
   publishes through PyPI Trusted Publishing (OIDC) with a tag↔version gate and
   a built-wheel smoke test.
 
-[Unreleased]: https://github.com/sthitaprajnas/yaab/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/sthitaprajnas/yaab/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/sthitaprajnas/yaab/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/sthitaprajnas/yaab/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sthitaprajnas/yaab/releases/tag/v0.1.0
