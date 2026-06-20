@@ -173,8 +173,7 @@ class CassetteModel:
                 return ModelResponse.model_validate(hit["response"])
             if self.mode == "replay":
                 raise CassetteMiss(
-                    f"no recorded completion for request {key[:12]} in "
-                    f"{self.path} (mode=replay)"
+                    f"no recorded completion for request {key[:12]} in {self.path} (mode=replay)"
                 )
 
         assert self.inner is not None  # guaranteed by __init__ for record/once
@@ -207,8 +206,7 @@ class CassetteModel:
                     return
                 if self.mode == "replay":
                     raise CassetteMiss(
-                        f"no recorded stream for request {key[:12]} in "
-                        f"{self.path} (mode=replay)"
+                        f"no recorded stream for request {key[:12]} in {self.path} (mode=replay)"
                     )
             assert self.inner is not None
             recorded: list[dict[str, Any]] = []

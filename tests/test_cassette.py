@@ -127,8 +127,7 @@ async def test_stream_records_then_replays(tmp_path):
 
 @pytest.mark.asyncio
 async def test_use_cassette_default_mode(monkeypatch, tmp_path):
-    from yaab.testing import use_cassette
-    from yaab.testing import TestModel
+    from yaab.testing import TestModel, use_cassette
     from yaab.types import Message, Role
 
     path = tmp_path / "u.json"
@@ -148,3 +147,17 @@ def test_testing_reexports():
     from yaab.testing import CassetteModel as ExportedCassetteModel
 
     assert ExportedCassetteModel is not None
+
+
+@pytest.mark.asyncio
+async def test_api_key_never_written(tmp_path):
+    from yaab.models.cassette import CassetteModel
+    from yaab.testing import TestModel
+    from yaab.types import Message, Role
+
+    path = tmp_path / "r.json"
+    rec = CassetteModel(path, inner=TestModel(custom_output="ok"), mode="record")
+    await rec.complete([Message(role=Role.USER, content="hi")], api_key="SUPER_SECRET")
+    text = path.read_text(encoding="utf-8")
+    assert "SUPER_SECRET" not in text
+    assert "api_key" not in text
