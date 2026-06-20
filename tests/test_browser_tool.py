@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 
@@ -149,3 +151,37 @@ def test_browser_not_in_default_toolset():
 
     names = {t.name for t in default_toolset()}
     assert not any(n.startswith("browser_") for n in names)
+
+
+@pytest.mark.skipif(
+    not os.environ.get("YAAB_BROWSER_TESTS"),
+    reason="opt-in: set YAAB_BROWSER_TESTS=1 (needs `playwright install chromium`)",
+)
+@pytest.mark.asyncio
+async def test_real_browser_against_local_fixture(tmp_path):
+    """Drive real headless Chromium against a local HTML file (opt-in)."""
+    pytest.importorskip("playwright")
+    from yaab.tools.builtin.browser import BrowserSession
+
+    html = tmp_path / "page.html"
+    html.write_text(
+        "<html><head><title>Fixture</title></head>"
+        "<body><h1 id='h'>Hello Browser</h1>"
+        "<input id='q'><button id='go'>Go</button></body></html>",
+        encoding="utf-8",
+    )
+    url = html.as_uri()
+
+    session = BrowserSession(allow_domains=None, headless=True)
+    try:
+        nav = await session.navigate(url)
+        assert "Fixture" in nav
+        text = await session.extract("#h")
+        assert "Hello Browser" in text
+        await session.type("#q", "typed text")
+        await session.click("#go")
+        shot = tmp_path / "shot.png"
+        out = await session.screenshot(str(shot))
+        assert shot.exists() and "saved screenshot" in out
+    finally:
+        await session.aclose()
