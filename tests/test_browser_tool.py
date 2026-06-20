@@ -146,6 +146,20 @@ async def test_missing_playwright_raises_with_hint(monkeypatch):
         await session.navigate("https://example.com")
 
 
+@pytest.mark.asyncio
+async def test_screenshot_path_is_sanitized_against_traversal():
+    from yaab.tools.builtin.browser import BrowserSession
+
+    session = BrowserSession(page=_FakePage())
+    out = await session.screenshot("../../etc/evil.png")
+    # The directory components are stripped; only a basename is written.
+    assert "evil.png" in out
+    assert ".." not in out
+    assert os.path.exists("evil.png")
+    assert not os.path.exists(os.path.join("..", "..", "etc", "evil.png"))
+    os.remove("evil.png")
+
+
 def test_browser_not_in_default_toolset():
     from yaab.tools.builtin import default_toolset
 

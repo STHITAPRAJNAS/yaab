@@ -19,8 +19,7 @@ from ...exceptions import ToolError
 from ..base import FunctionTool, Tool
 
 _INSTALL_HINT = (
-    "browser tools need Playwright: "
-    "pip install 'yaab-sdk[browser]' && playwright install chromium"
+    "browser tools need Playwright: pip install 'yaab-sdk[browser]' && playwright install chromium"
 )
 
 
@@ -108,11 +107,16 @@ class BrowserSession:
         return text[:max_chars]
 
     async def screenshot(self, path: str = "screenshot.png") -> str:
+        # The model controls ``path``; reduce to a bare filename so it can never
+        # traverse out of the working directory (no ``../`` or absolute paths).
+        import os
+
+        safe = os.path.basename(path) or "screenshot.png"
         page = await self._ensure_page()
         data = await page.screenshot()
-        with open(path, "wb") as fh:
+        with open(safe, "wb") as fh:
             fh.write(data)
-        return f"saved screenshot to {path} ({len(data)} bytes)"
+        return f"saved screenshot to {safe} ({len(data)} bytes)"
 
     async def back(self) -> str:
         page = await self._ensure_page()
