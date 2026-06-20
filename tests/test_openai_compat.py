@@ -68,3 +68,42 @@ def test_single_agent_default_model():
     )
     assert resp.status_code == 200
     assert resp.json()["choices"][0]["message"]["content"] == "ok"
+
+
+def _parse_sse(text):
+    """Return the list of JSON `data:` payloads (excluding the [DONE] sentinel)."""
+    import json
+
+    out = []
+    for line in text.splitlines():
+        if line.startswith("data: "):
+            payload = line[len("data: ") :]
+            if payload.strip() == "[DONE]":
+                continue
+            out.append(json.loads(payload))
+    return out
+
+
+def test_chat_completion_streaming():
+    agent = Agent("assistant", model=TestModel(custom_output="one two three"))
+    client = _client({"assistant": agent})
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "assistant",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    chunks = _parse_sse(resp.text)
+    # Every chunk is a chat.completion.chunk; first carries the role.
+    assert all(c["object"] == "chat.completion.chunk" for c in chunks)
+    assert chunks[0]["choices"][0]["delta"].get("role") == "assistant"
+    # Concatenated content deltas reconstruct the answer.
+    text = "".join(c["choices"][0]["delta"].get("content", "") for c in chunks)
+    assert "one two three" in text
+    # The last chunk carries finish_reason and the [DONE] sentinel terminates.
+    assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+    assert resp.text.rstrip().endswith("[DONE]")

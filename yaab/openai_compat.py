@@ -57,6 +57,41 @@ def _completion_id() -> str:
     return f"chatcmpl-{uuid.uuid4().hex}"
 
 
+def _stream_completion(
+    runner: Any, agent: Any, prompt: str, session_id: str | None, identity: str
+) -> Any:
+    """Return a StreamingResponse of OpenAI ``chat.completion.chunk`` SSE events."""
+    import json
+
+    from fastapi.responses import StreamingResponse
+
+    cid = _completion_id()
+    created = int(time.time())
+
+    def _chunk(delta: dict[str, Any], finish_reason: str | None) -> str:
+        payload = {
+            "id": cid,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": agent.name,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+        }
+        return f"data: {json.dumps(payload)}\n\n"
+
+    async def _source() -> Any:
+        # First chunk announces the assistant role.
+        yield _chunk({"role": "assistant"}, None)
+        async for token in runner.stream_text(
+            agent, prompt, session_id=session_id, identity=identity
+        ):
+            if token:
+                yield _chunk({"content": token}, None)
+        yield _chunk({}, "stop")
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_source(), media_type="text/event-stream")
+
+
 def add_openai_routes(
     app: Any,
     resolve_agent: Callable[[str | None], Any],
@@ -125,6 +160,10 @@ def add_openai_routes(
                 )
             prompt = messages[-1].get("content") or ""
             session_id = await _seed_session(messages[:-1])
+
+            if body.get("stream"):
+                return _stream_completion(runner, agent, prompt, session_id, identity)
+
             result = await runner.run(
                 agent, prompt, session_id=session_id, identity=identity
             )
