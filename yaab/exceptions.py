@@ -31,6 +31,11 @@ class ToolError(YaabError):
     """Raised when a tool cannot be found, validated, or executed."""
 
 
+class CassetteMiss(YaabError):
+    """Raised when a CassetteModel in replay mode has no recorded interaction
+    matching a request (unknown key, or the recorded sequence is exhausted)."""
+
+
 class MaxStepsExceeded(YaabError):
     """Raised when the agent loop exceeds its configured step budget."""
 
