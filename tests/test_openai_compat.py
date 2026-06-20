@@ -107,3 +107,31 @@ def test_chat_completion_streaming():
     # The last chunk carries finish_reason and the [DONE] sentinel terminates.
     assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
     assert resp.text.rstrip().endswith("[DONE]")
+
+
+def test_tools_passthrough_surfaces_tool_calls():
+    # When the request carries `tools`, a single model turn surfaces tool_calls
+    # back to the caller (OpenAI function-calling passthrough) — no execution.
+    agent = Agent("assistant", model=TestModel(call_tools=["get_weather"]))
+    client = _client({"assistant": agent})
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "assistant",
+            "messages": [{"role": "user", "content": "weather in Paris?"}],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {"name": "get_weather", "parameters": {"type": "object"}},
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    calls = choice["message"]["tool_calls"]
+    assert calls[0]["type"] == "function"
+    assert calls[0]["function"]["name"] == "get_weather"
+    # arguments is a JSON string per the OpenAI schema.
+    assert isinstance(calls[0]["function"]["arguments"], str)

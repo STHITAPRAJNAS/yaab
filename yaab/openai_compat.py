@@ -57,6 +57,44 @@ def _completion_id() -> str:
     return f"chatcmpl-{uuid.uuid4().hex}"
 
 
+async def _tool_passthrough(agent: Any, messages: list[dict[str, Any]], body: dict[str, Any]) -> Any:
+    """Single model turn with caller-supplied tools; map the response to OpenAI."""
+    import json
+
+    from fastapi.responses import JSONResponse
+
+    yaab_messages = _to_yaab_messages(messages)
+    if agent.instructions and isinstance(agent.instructions, str):
+        yaab_messages = [Message(role=Role.SYSTEM, content=agent.instructions), *yaab_messages]
+    resp = await agent.model.complete(
+        yaab_messages,
+        tools=body.get("tools"),
+        tool_choice=body.get("tool_choice"),
+    )
+    message: dict[str, Any] = {"role": "assistant", "content": resp.content or None}
+    finish_reason = "stop"
+    if resp.tool_calls:
+        message["tool_calls"] = [
+            {
+                "id": tc.id,
+                "type": "function",
+                "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+            }
+            for tc in resp.tool_calls
+        ]
+        finish_reason = "tool_calls"
+    return JSONResponse(
+        {
+            "id": _completion_id(),
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": agent.name,
+            "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
+            "usage": _usage_block(resp.usage),
+        }
+    )
+
+
 def _stream_completion(
     runner: Any, agent: Any, prompt: str, session_id: str | None, identity: str
 ) -> Any:
@@ -151,7 +189,21 @@ def add_openai_routes(
             body = await request.json()
             agent = resolve_agent(body.get("model"))
             messages = body.get("messages") or []
-            if not messages or messages[-1].get("role") != "user":
+            if not messages:
+                raise _OpenAIError(
+                    400,
+                    "messages must not be empty",
+                    type="invalid_request_error",
+                    code="invalid_request",
+                )
+
+            # Client-side function-calling passthrough: when the request carries
+            # `tools`, do a single model turn with those tools and surface any
+            # tool_calls back to the caller (no server-side execution).
+            if body.get("tools"):
+                return await _tool_passthrough(agent, messages, body)
+
+            if messages[-1].get("role") != "user":
                 raise _OpenAIError(
                     400,
                     "the last message must have role 'user'",
