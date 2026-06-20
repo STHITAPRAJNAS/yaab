@@ -161,3 +161,17 @@ async def test_api_key_never_written(tmp_path):
     text = path.read_text(encoding="utf-8")
     assert "SUPER_SECRET" not in text
     assert "api_key" not in text
+
+
+@pytest.mark.asyncio
+async def test_replays_real_gemini_cassette_offline():
+    from pathlib import Path
+
+    from yaab import Agent
+    from yaab.models.cassette import CassetteModel
+
+    path = Path(__file__).parent / "cassettes" / "gemini_capital.json"
+    model = CassetteModel(path, mode="replay")
+    agent = Agent("geo", model=model, instructions="Answer in one short sentence.")
+    result = await agent.run("What is the capital of France?")
+    assert "paris" in str(result.output).lower()

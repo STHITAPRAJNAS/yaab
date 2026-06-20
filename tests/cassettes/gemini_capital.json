@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "model": "gemini/gemini-2.5-flash",
+  "interactions": [
+    {
+      "key": "f7ff84d9e2eafc79d60f8ee671d2fbce80884e2ce9a12105cdb79620bc886c4d",
+      "request": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "Answer in one short sentence."
+          },
+          {
+            "role": "user",
+            "content": "What is the capital of France?"
+          }
+        ],
+        "tools": null,
+        "output_schema": null,
+        "tool_choice": null,
+        "model": "gemini/gemini-2.5-flash",
+        "params": {}
+      },
+      "response": {
+        "content": "Paris is the capital of France.",
+        "tool_calls": [],
+        "finish_reason": "stop",
+        "usage": {
+          "requests": 1,
+          "input_tokens": 14,
+          "output_tokens": 36,
+          "total_tokens": 50,
+          "cached_input_tokens": 0,
+          "cost_usd": 9.42e-05
+        },
+        "model": "gemini/gemini-2.5-flash",
+        "reasoning": null,
+        "raw": null
+      },
+      "stream": null
+    }
+  ]
+}
