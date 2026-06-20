@@ -35,6 +35,48 @@ async def test_sqlite_ledger_is_shared_across_instances(tmp_path):
     assert await pod_b.total("tenant:acme", since=150.0) == pytest.approx(0.4)
 
 
+def test_durable_backends_wire_spend_store(tmp_path):
+    from yaab import durable_backends
+    from yaab.governance.budget import InMemorySpendStore, SQLiteSpendStore
+
+    # In-memory default carries a spend store and exposes it via serve_kwargs.
+    mem = durable_backends()
+    assert isinstance(mem.spend_store, InMemorySpendStore)
+    assert "spend_store" in mem.serve_kwargs()
+
+    # A SQLite DSN wires the durable (multi-pod-capable) spend store.
+    sqlite = durable_backends(dsn=f"sqlite://{tmp_path / 'app.db'}")
+    assert isinstance(sqlite.spend_store, SQLiteSpendStore)
+
+
+def test_serve_spend_endpoint():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from yaab import Agent
+    from yaab.governance.budget import Budget, InMemorySpendStore
+    from yaab.models.test_model import TestModel
+    from yaab.serve import fastapi_server_app
+
+    store = InMemorySpendStore()
+    agent = Agent("a", model=TestModel(custom_output="x"))
+    app = fastapi_server_app(
+        agent, spend_store=store, budgets={"id:alice": Budget(2.0, window="lifetime")}
+    )
+    client = TestClient(app)
+
+    import asyncio
+
+    asyncio.run(store.record("id:alice", 0.5, at=1.0))
+    r = client.get("/spend/id:alice")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["key"] == "id:alice"
+    assert body["spent_usd"] == pytest.approx(0.5)
+    assert body["limit_usd"] == pytest.approx(2.0)
+    assert body["remaining_usd"] == pytest.approx(1.5)
+
+
 def test_postgres_store_requires_driver_when_absent():
     try:
         import psycopg  # noqa: F401
