@@ -27,6 +27,14 @@ from .authorization import (
     ToolAuthorizationPlugin,
     ToolAuthorizer,
 )
+from .budget import (
+    Budget,
+    InMemorySpendStore,
+    PostgresSpendStore,
+    SpendGovernancePlugin,
+    SpendStore,
+    SQLiteSpendStore,
+)
 from .eval import (
     Case,
     Contains,
@@ -146,6 +154,13 @@ __all__ = [
     "AuditKind",
     "AuditSink",
     "SQLiteAuditSink",
+    # multi-tenant spend governance (durable ledger + enforcing plugin)
+    "SpendGovernancePlugin",
+    "SpendStore",
+    "InMemorySpendStore",
+    "SQLiteSpendStore",
+    "PostgresSpendStore",
+    "Budget",
     # eval
     "Dataset",
     "Case",

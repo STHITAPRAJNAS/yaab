@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from ...extensions import register
 from .ask_user import ask_user
+from .browser import BrowserSession, browser_toolset
 from .calculator import calculator
 from .code import python_exec
 from .datetime_tool import current_time
@@ -79,5 +80,7 @@ __all__ = [
     "make_file_tools",
     "file_toolset",
     "ask_user",
+    "browser_toolset",
+    "BrowserSession",
     "default_toolset",
 ]

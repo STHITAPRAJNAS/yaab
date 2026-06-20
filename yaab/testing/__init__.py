@@ -3,6 +3,14 @@
 from __future__ import annotations
 
 from ..governance.audit import InMemoryAuditSink
+from ..models.cassette import CassetteMiss, CassetteModel, use_cassette
 from ..models.test_model import FunctionModel, TestModel
 
-__all__ = ["TestModel", "FunctionModel", "InMemoryAuditSink"]
+__all__ = [
+    "TestModel",
+    "FunctionModel",
+    "InMemoryAuditSink",
+    "CassetteModel",
+    "use_cassette",
+    "CassetteMiss",
+]

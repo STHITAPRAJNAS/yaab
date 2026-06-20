@@ -40,6 +40,8 @@ ILLUSTRATIVE: dict[str, set[str]] = {
     "evaluation.md": {"answer", "chunks", "my_agent"},
     "rag.md": {"answer", "docs", "new_docs", "query"},
     "state-and-agui.md": {"agent", "store"},
+    "record-replay.md": {"real_model"},
+    "openai-compat.md": set(),
 }
 
 DOC_FILES = sorted(ILLUSTRATIVE)

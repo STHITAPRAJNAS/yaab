@@ -122,7 +122,7 @@ from .tools.builtin.ask_user import ask_user
 from .tools.openapi import OpenAPITool, openapi_toolset
 from .types import Event, EventType, Message, Pending, RunContext, RunResult, Usage
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 #: Which performance backend is active: ``"rust"`` or ``"python"``.
 BACKEND = _core.backend()
@@ -284,4 +284,8 @@ def __getattr__(name: str) -> object:
         from . import artifacts
 
         return getattr(artifacts, name)
+    if name == "openai_compat_app":
+        from .openai_compat import openai_compat_app
+
+        return openai_compat_app
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
