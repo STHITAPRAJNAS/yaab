@@ -65,6 +65,79 @@ class InMemorySpendStore:
         )
 
 
+class SQLiteSpendStore:
+    """Durable spend ledger backed by SQLite — durable on a single node.
+
+    Two views over one database file see each other's spend, so a paused/over-budget
+    decision is consistent across worker threads and processes on the same host.
+    """
+
+    def __init__(self, path: str = "yaab_spend.db") -> None:
+        import sqlite3
+
+        self._conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=5000")
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS spend "
+            "(key TEXT NOT NULL, usd REAL NOT NULL, at REAL NOT NULL)"
+        )
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_spend_key_at ON spend (key, at)")
+
+    async def record(self, key: str, usd: float, *, at: float) -> None:
+        self._conn.execute("INSERT INTO spend (key, usd, at) VALUES (?, ?, ?)", (key, usd, at))
+
+    async def total(self, key: str, *, since: float | None = None) -> float:
+        if since is None:
+            row = self._conn.execute(
+                "SELECT COALESCE(SUM(usd), 0) FROM spend WHERE key = ?", (key,)
+            ).fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT COALESCE(SUM(usd), 0) FROM spend WHERE key = ? AND at >= ?",
+                (key, since),
+            ).fetchone()
+        return float(row[0])
+
+
+class PostgresSpendStore:
+    """Durable spend ledger backed by Postgres / Aurora — the multi-pod backend.
+
+    Uses ``psycopg`` (``pip install 'yaab-sdk[postgres]'``), imported lazily, so a
+    spend cap is enforced against one shared ledger every pod reads and writes —
+    a ``rate``/budget that is global across replicas, not per-pod.
+    """
+
+    def __init__(self, dsn: str, *, table: str = "yaab_spend") -> None:
+        from ..artifacts.postgres import _require_psycopg
+
+        psycopg = _require_psycopg()
+        self._conn = psycopg.connect(dsn, autocommit=True)
+        self._table = table
+        self._conn.execute(
+            f"CREATE TABLE IF NOT EXISTS {table} "
+            f"(key TEXT NOT NULL, usd DOUBLE PRECISION NOT NULL, at DOUBLE PRECISION NOT NULL)"
+        )
+        self._conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_key_at ON {table} (key, at)")
+
+    async def record(self, key: str, usd: float, *, at: float) -> None:
+        self._conn.execute(
+            f"INSERT INTO {self._table} (key, usd, at) VALUES (%s, %s, %s)", (key, usd, at)
+        )
+
+    async def total(self, key: str, *, since: float | None = None) -> float:
+        if since is None:
+            row = self._conn.execute(
+                f"SELECT COALESCE(SUM(usd), 0) FROM {self._table} WHERE key = %s", (key,)
+            ).fetchone()
+        else:
+            row = self._conn.execute(
+                f"SELECT COALESCE(SUM(usd), 0) FROM {self._table} WHERE key = %s AND at >= %s",
+                (key, since),
+            ).fetchone()
+        return float(row[0])
+
+
 def _budget_for(policy: BudgetPolicy, key: str) -> Budget | None:
     if callable(policy):
         return policy(key)

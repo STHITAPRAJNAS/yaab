@@ -19,6 +19,35 @@ async def test_inmemory_ledger_record_and_total():
     assert await store.total("id:alice", since=150.0) == pytest.approx(0.25)
 
 
+@pytest.mark.asyncio
+async def test_sqlite_ledger_is_shared_across_instances(tmp_path):
+    # Multi-pod consistency: spend recorded by one process instance is visible to
+    # another opened on the same database file — the floor for cross-pod caps.
+    from yaab.governance.budget import SQLiteSpendStore
+
+    path = str(tmp_path / "spend.db")
+    pod_a = SQLiteSpendStore(path)
+    await pod_a.record("tenant:acme", 0.7, at=100.0)
+    await pod_a.record("tenant:acme", 0.4, at=200.0)
+
+    pod_b = SQLiteSpendStore(path)  # a "second pod" over the same store
+    assert await pod_b.total("tenant:acme") == pytest.approx(1.1)
+    assert await pod_b.total("tenant:acme", since=150.0) == pytest.approx(0.4)
+
+
+def test_postgres_store_requires_driver_when_absent():
+    try:
+        import psycopg  # noqa: F401
+
+        pytest.skip("psycopg is installed")
+    except ImportError:
+        pass
+    from yaab.governance.budget import PostgresSpendStore
+
+    with pytest.raises(RuntimeError, match="psycopg"):
+        PostgresSpendStore("postgresql://x")
+
+
 def test_budget_window_start():
     from yaab.governance.budget import Budget, _window_start
 
