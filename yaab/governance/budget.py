@@ -13,7 +13,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Literal, Protocol
 
 from ..models.base import ModelResponse
 from ..plugins import Plugin
@@ -61,9 +61,7 @@ class InMemorySpendStore:
 
     async def total(self, key: str, *, since: float | None = None) -> float:
         return sum(
-            usd
-            for k, usd, at in self._entries
-            if k == key and (since is None or at >= since)
+            usd for k, usd, at in self._entries if k == key and (since is None or at >= since)
         )
 
 
