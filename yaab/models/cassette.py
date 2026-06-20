@@ -57,6 +57,9 @@ class _Cassette:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self.interactions: list[dict[str, Any]] = []
+        #: The recording model's name, stamped at save time so replay (which has
+        #: no inner model) reproduces the same request key.
+        self.model: str | None = None
         self._cursor: dict[str, int] = defaultdict(int)
         if self.path.exists():
             self._load()
@@ -69,6 +72,7 @@ class _Cassette:
                     f"cassette {self.path} has unsupported version {doc.get('version')!r}"
                 )
             self.interactions = list(doc["interactions"])
+            self.model = doc.get("model")
         except (json.JSONDecodeError, KeyError, OSError) as exc:
             raise CassetteMiss(f"cassette {self.path} is unreadable: {exc}") from exc
 
@@ -95,7 +99,11 @@ class _Cassette:
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        doc = {"version": _FORMAT_VERSION, "interactions": self.interactions}
+        doc = {
+            "version": _FORMAT_VERSION,
+            "model": self.model,
+            "interactions": self.interactions,
+        }
         self.path.write_text(json.dumps(doc, indent=2, default=str), encoding="utf-8")
 
 
@@ -118,8 +126,13 @@ class CassetteModel:
         self.path = Path(path)
         self.inner = inner
         self.mode = mode
-        self.name = getattr(inner, "name", "cassette")
         self._cassette = _Cassette(path)
+        if inner is not None:
+            # Stamp the recording model so replay reproduces the same request key.
+            self._cassette.model = inner.name
+        # The model name used in keys: the live inner when recording, else the
+        # name stamped into the cassette at record time.
+        self.name = inner.name if inner is not None else (self._cassette.model or "cassette")
 
     def _key(
         self,
@@ -129,7 +142,7 @@ class CassetteModel:
         tool_choice: Any | None,
         kwargs: dict[str, Any],
     ) -> tuple[str, dict[str, Any]]:
-        model = getattr(self.inner, "name", self.name)
+        model = self.name
         canon = _canonical_request(
             messages,
             tools=tools,
