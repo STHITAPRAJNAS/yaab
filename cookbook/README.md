@@ -44,9 +44,15 @@ python -m cookbook.recipes.agents
 
 ## Apps
 
-| App | Scenario |
-|-----|----------|
-| _(coming in Wave 3)_ | |
+Realistic, multi-feature applications. Each runs offline (`python -m
+cookbook.apps.<name>`) and live via `YAAB_SAMPLE_MODEL`.
+
+| App | Scenario | Capabilities |
+|-----|----------|--------------|
+| [`support_desk`](apps/support_desk/) | Grounded, governed, safe-to-act support | RAG · tools · HITL approval · per-tenant spend caps · OpenAI-compat serving |
+| [`refund_pipeline`](apps/refund_pipeline/) | Durable workflow with a human gate | Flow · pause→decide→resume · durable checkpoint + approval store |
+| [`research_assistant`](apps/research_assistant/) | Durable multi-step research | Flow · hybrid (BM25+dense) retrieval · streaming · (browser + record/replay live) |
+| [`coding_agent`](apps/coding_agent/) | Plan, then run code in a sandbox | multi-agent (planner→coder) · sandboxed exec · tool approval |
 
 ## How they're tested
 
