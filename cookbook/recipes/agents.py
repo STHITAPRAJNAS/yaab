@@ -10,17 +10,16 @@ from __future__ import annotations
 
 import asyncio
 
+from cookbook._harness import expect, resolve_model
 from yaab import Agent
 from yaab.models.test_model import TestModel
-
-from cookbook._harness import expect, resolve_model
 
 
 async def run() -> dict:
     model = resolve_model(
         offline_default=TestModel(custom_output="The capital of France is Paris.")
     )
-    agent = Agent(
+    agent: Agent = Agent(
         "geographer",
         model=model,
         instructions="Answer in one short, factual sentence.",
