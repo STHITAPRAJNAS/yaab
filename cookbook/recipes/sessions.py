@@ -28,6 +28,8 @@ async def run() -> dict:
     second = await runner.run(agent, "What is my name?", session_id=sid)
 
     session = await runner.session_service.get(sid)
+    expect(session is not None, "the session should exist after two turns")
+    assert session is not None  # for the type checker
     history = len(session.messages)
     expect(history >= 4, f"expected >=4 messages persisted across two turns, got {history}")
     expect("alice" in str(second.output).lower(), "expected the assistant to recall the name")
