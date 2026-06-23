@@ -75,5 +75,17 @@ def _app_names() -> list[str]:
 def test_apps_package_importable():
     import cookbook.apps  # noqa: F401
 
-    # Wave 1 ships no apps yet; later waves add them. The discovery helper must work.
+    # The discovery helper must always work, even with zero apps.
     assert isinstance(_app_names(), list)
+
+
+@pytest.mark.parametrize("name", _app_names())
+async def test_app_runs_offline(name):
+    mod = importlib.import_module(f"cookbook.apps.{name}")
+    result = await mod.run()
+    assert result, f"app {name}.run() returned an empty result"
+
+
+@pytest.mark.parametrize("name", _app_names())
+def test_app_has_readme(name):
+    assert (_COOKBOOK / "apps" / name / "README.md").exists(), f"app {name} needs a README.md"
