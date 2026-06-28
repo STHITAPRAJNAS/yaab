@@ -75,6 +75,7 @@ nav:
       - Get started: get-started.md
       - Quickstart: quickstart.md
       - Concepts: concepts.md
+  - Cookbook: cookbook.md
   - Core:
       - Agents: agents.md
       - Tools: tools.md
