@@ -6,6 +6,22 @@ All notable changes to YAAB are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-06-28
+
+A documentation and examples release — **no library changes** (the `yaab` package
+is byte-for-byte 0.3.0; existing code is unaffected).
+
+### Added
+- **Cookbook** (`cookbook/`) — mature, runnable examples for every major
+  capability: **4 flagship multi-feature apps** (support desk, refund pipeline,
+  research assistant, coding agent) and **27 focused per-capability recipes**.
+  Each runs offline with a deterministic `TestModel` (and is exercised in CI) and
+  runs live with `YAAB_SAMPLE_MODEL`. Browsable catalog at `docs/cookbook.md`.
+
+### Documentation
+- The `llms.txt` index and the docs landing-page nav table were synced with the
+  full page set (the 0.2 orchestration pages and the 0.3 capability pages).
+
 ## [0.3.0] — 2026-06-20
 
 Four additive capabilities for adoption, testing, multi-tenant operation, and
@@ -308,7 +324,8 @@ First public release: `pip install yaab-sdk` → `import yaab` / `$ yaab`.
   publishes through PyPI Trusted Publishing (OIDC) with a tag↔version gate and
   a built-wheel smoke test.
 
-[Unreleased]: https://github.com/sthitaprajnas/yaab/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/sthitaprajnas/yaab/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/sthitaprajnas/yaab/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/sthitaprajnas/yaab/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/sthitaprajnas/yaab/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sthitaprajnas/yaab/releases/tag/v0.1.0
