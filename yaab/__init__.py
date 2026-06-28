@@ -122,7 +122,7 @@ from .tools.builtin.ask_user import ask_user
 from .tools.openapi import OpenAPITool, openapi_toolset
 from .types import Event, EventType, Message, Pending, RunContext, RunResult, Usage
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 #: Which performance backend is active: ``"rust"`` or ``"python"``.
 BACKEND = _core.backend()
