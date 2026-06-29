@@ -164,6 +164,16 @@ async def test_api_key_never_written(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_secret_in_tool_result_is_redacted():
+    from yaab.models.cassette import _scrub_secrets
+
+    blob = {"messages": [{"role": "tool", "content": "token=sk-ABCDEFGHIJ1234567890"}]}
+    scrubbed = _scrub_secrets(blob)
+    assert "sk-ABCDEFGHIJ1234567890" not in str(scrubbed)
+    assert "REDACTED" in str(scrubbed)
+
+
+@pytest.mark.asyncio
 async def test_replays_real_gemini_cassette_offline():
     from pathlib import Path
 

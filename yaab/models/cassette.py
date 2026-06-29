@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from collections import defaultdict
 from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
@@ -19,6 +20,31 @@ _FORMAT_VERSION = 1
 
 # kwargs that must never be written to a cassette or affect the key.
 _SECRET_KEYS = {"api_key", "authorization", "auth", "key", "token"}
+
+# Secret-shaped substrings scrubbed from ALL serialized cassette content
+# (messages, tool args, and tool *results*), not just request kwargs — a tool
+# that reads a .env or returns an API token must not leave it in a committed file.
+_SECRET_PATTERNS = [
+    re.compile(r"sk-[A-Za-z0-9]{8,}"),  # OpenAI-style key
+    re.compile(r"AKIA[0-9A-Z]{16}"),  # AWS access key id
+    re.compile(r"ghp_[A-Za-z0-9]{20,}"),  # GitHub PAT
+    re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),  # JWT
+    re.compile(r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----"),  # PEM
+]
+
+
+def _scrub_secrets(value: Any) -> Any:
+    """Recursively replace secret-shaped substrings with ``[REDACTED]``."""
+    if isinstance(value, str):
+        out = value
+        for pat in _SECRET_PATTERNS:
+            out = pat.sub("[REDACTED]", out)
+        return out
+    if isinstance(value, dict):
+        return {k: _scrub_secrets(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_scrub_secrets(v) for v in value]
+    return value
 
 
 def _redact(params: dict[str, Any]) -> dict[str, Any]:
@@ -102,11 +128,13 @@ class _Cassette:
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        doc = {
-            "version": _FORMAT_VERSION,
-            "model": self.model,
-            "interactions": self.interactions,
-        }
+        doc = _scrub_secrets(
+            {
+                "version": _FORMAT_VERSION,
+                "model": self.model,
+                "interactions": self.interactions,
+            }
+        )
         self.path.write_text(json.dumps(doc, indent=2, default=str), encoding="utf-8")
 
 
