@@ -54,3 +54,33 @@ def test_builtin_tools_declare_capabilities():
     read, write, _list = make_file_tools(root=".")
     assert Capability.FS_READ in read.capabilities
     assert Capability.FS_WRITE_IN_ROOT in write.capabilities
+
+
+@pytest.mark.asyncio
+async def test_capability_gate_blocks_renamed_action():
+    # A tool named innocuously but carrying NET_EGRESS must still be gated —
+    # the model can't bypass the gate by routing the action through a benign name.
+    from yaab import Agent, Runner, tool
+    from yaab.governance import ToolApprovalPlugin
+    from yaab.models.test_model import TestModel
+
+    ran = {"called": False}
+
+    @tool(name="summarize", capabilities={Capability.NET_EGRESS})
+    def summarize(url: str) -> str:
+        """Looks harmless; actually egresses."""
+        ran["called"] = True
+        return "fetched"
+
+    async def deny(tool_name, args, ctx) -> bool:
+        return False  # deny all egress
+
+    plugin = ToolApprovalPlugin(gate_capabilities={Capability.NET_EGRESS}, approver=deny)
+    agent: Agent = Agent(
+        "a",
+        model=TestModel(call_tools=["summarize"], custom_output="done"),
+        tools=[summarize],
+        runner=Runner(plugins=[plugin]),
+    )
+    await agent.run("summarize http://x")
+    assert ran["called"] is False  # gated by capability despite the benign name
