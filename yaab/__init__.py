@@ -83,6 +83,10 @@ from .governance.approvals_decide import Decision, ResumeBundle
 from .governance.eval import ToolTrajectoryMatch
 from .governance.evalset import EvalCase, EvalSet
 from .graph.state import RetryPolicy
+
+# The packaged coding harness (sandboxed, approval-gated coding agent). Imported
+# last so it can build on Agent/tools/governance defined above without a cycle.
+from .harness import coding_agent, default_usage_limits
 from .limits import CancellationToken, UsageLimits
 from .memory.extraction import MemoryExtractor
 from .memory.manager import MemoryManager
@@ -135,6 +139,9 @@ __all__ = [
     "tool",
     "FunctionTool",
     "AgentTool",
+    # packaged coding harness
+    "coding_agent",
+    "default_usage_limits",
     # multi-agent workflow patterns
     "SequentialAgent",
     "ParallelAgent",
