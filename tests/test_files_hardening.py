@@ -27,6 +27,15 @@ async def test_write_rejects_lock_files(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_write_rejects_nested_and_uppercase_git(tmp_path):
+    _read, write, _list = make_file_tools(root=str(tmp_path))
+    # Nested .git (not just top-level) is protected.
+    assert "error" in (await write.fn(path="sub/.git/hooks/pre-commit", content="x")).lower()
+    # Case-insensitive (matters on Windows/macOS filesystems).
+    assert "error" in (await write.fn(path=".GIT/config", content="x")).lower()
+
+
+@pytest.mark.asyncio
 async def test_write_rejects_symlink_escape(tmp_path):
     if os.name != "posix":
         pytest.skip("symlink test is POSIX-specific")

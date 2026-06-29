@@ -41,24 +41,30 @@ def _is_protected(root: Path, target: Path) -> bool:
         rel = target.relative_to(root).parts
     except ValueError:
         return True
-    return bool(rel) and (rel[0] in _PROTECTED or rel[-1].endswith(".lock"))
+    lowered = [p.lower() for p in rel]
+    return bool(rel) and (
+        any(p in _PROTECTED for p in lowered) or lowered[-1].endswith(".lock")
+    )
 
 
-def _has_symlink_component(root: Path, target: Path) -> bool:
-    """True if any component between ``root`` and ``target`` is a symlink/junction.
+def _has_symlink_component(root: Path, rel_path: str) -> bool:
+    """True if any component of ``root/rel_path`` is a symlink/junction.
 
-    The resolved-path check in :func:`_safe_path` is check-then-use; this rejects a
-    symlink planted along the path so a write/read cannot follow it out of root.
+    Walks the **unresolved** join (``Path.resolve`` would collapse the symlinks we
+    are trying to detect), so a symlink planted along the path is rejected and a
+    write/read cannot follow it out of root. Absolute or ``..`` components are also
+    rejected.
     """
-    try:
-        rel = target.relative_to(root).parts
-    except ValueError:
-        return True
     cur = root
-    for part in rel:
-        cur = cur / part
-        if cur.is_symlink():
-            return True
+    try:
+        for part in Path(rel_path).parts:
+            if part in ("..", "/", "\\") or (len(part) == 2 and part.endswith(":")):
+                return True  # traversal or absolute/drive component
+            cur = cur / part
+            if cur.is_symlink():
+                return True
+    except (OSError, ValueError):
+        return True
     return False
 
 
@@ -98,7 +104,7 @@ def make_file_tools(*, root: str) -> tuple[FunctionTool, FunctionTool, FunctionT
         target = _safe_path(base, path)
         if target is None:
             return f"error: path {path!r} escapes the sandbox root"
-        if _has_symlink_component(base, target):
+        if _has_symlink_component(base, path):
             return f"error: path {path!r} contains a symlink and is rejected"
         if not target.is_file():
             return f"error: no such file: {path}"
@@ -123,7 +129,7 @@ def make_file_tools(*, root: str) -> tuple[FunctionTool, FunctionTool, FunctionT
             return f"error: content exceeds {_MAX_BYTES} bytes"
         if _is_protected(base, target):
             return f"error: writing to protected path {path!r} is not allowed"
-        if _has_symlink_component(base, target):
+        if _has_symlink_component(base, path):
             return f"error: path {path!r} contains a symlink and is rejected"
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -131,7 +137,12 @@ def make_file_tools(*, root: str) -> tuple[FunctionTool, FunctionTool, FunctionT
             # mid-write never truncates the destination.
             fd, tmp = tempfile.mkstemp(dir=str(target.parent), prefix=".yaab-tmp-")
             try:
-                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                try:
+                    fh = os.fdopen(fd, "w", encoding="utf-8")
+                except Exception:
+                    os.close(fd)  # fdopen failed to take ownership of the fd
+                    raise
+                with fh:
                     fh.write(content)
                 os.replace(tmp, target)
             finally:
