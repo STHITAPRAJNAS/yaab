@@ -42,9 +42,7 @@ def _is_protected(root: Path, target: Path) -> bool:
     except ValueError:
         return True
     lowered = [p.lower() for p in rel]
-    return bool(rel) and (
-        any(p in _PROTECTED for p in lowered) or lowered[-1].endswith(".lock")
-    )
+    return bool(rel) and (any(p in _PROTECTED for p in lowered) or lowered[-1].endswith(".lock"))
 
 
 def _has_symlink_component(root: Path, rel_path: str) -> bool:
