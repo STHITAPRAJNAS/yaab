@@ -79,6 +79,14 @@ def test_fail_closed_when_gate_misses_a_destructive_cap(tmp_path):
         coding_agent(root=str(tmp_path), gate={Capability.FS_WRITE_IN_ROOT})
 
 
+def test_fail_closed_when_gate_misses_in_root_write(tmp_path):
+    # Regression: FS_WRITE_IN_ROOT is gate-worthy (in DEFAULT_GATE) but not in
+    # DESTRUCTIVE; a custom gate that drops it must still fail closed, or
+    # file_write/file_edit would run ungated.
+    with pytest.raises(ValueError, match="fs_write_in_root|ungated"):
+        coding_agent(root=str(tmp_path), allow_net=False, gate={Capability.PROCESS_SPAWN})
+
+
 def test_agents_md_is_auto_loaded(tmp_path):
     (tmp_path / "AGENTS.md").write_text("Project rule: prefer tabs.\n", encoding="utf-8")
     agent = coding_agent(root=str(tmp_path))

@@ -262,6 +262,17 @@ def make_file_edit(*, root: str) -> FunctionTool:
             return f"error: editing protected path {path!r} is not allowed"
         if not target.is_file():
             return f"error: no such file: {path}"
+        # Refuse oversized files: an edit operates on the capped (_MAX_BYTES) view,
+        # so writing it back would silently truncate everything past the cap. Fail
+        # closed rather than destroy data with a misleading success diff.
+        try:
+            if target.stat().st_size > _MAX_BYTES:
+                return (
+                    f"error: file {path!r} exceeds {_MAX_BYTES} bytes; refuse to edit "
+                    "(would truncate). Edit a smaller file or split it."
+                )
+        except OSError as exc:
+            return f"error: failed to stat {path}: {exc}"
         if not old_string:
             return "error: old_string must not be empty"
 

@@ -54,6 +54,22 @@ async def test_edit_not_found_is_error(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_edit_refuses_oversized_file_no_truncation(tmp_path):
+    # Regression: editing a >1MB file used to silently truncate to the 1MB cap
+    # (the edit operates on a capped view that is then written back wholesale).
+    big = tmp_path / "big.txt"
+    payload = b"AAAA" + b"x" * 1_000_000 + b"-TAIL-MARKER-"
+    big.write_bytes(payload)
+    by = _tools(str(tmp_path))
+    ctx = RunContext()
+    await by["file_read"].fn(ctx, path="big.txt")
+    out = await by["file_edit"].fn(ctx, path="big.txt", old_string="AAAA", new_string="BBBB")
+    assert "error" in out.lower() and "exceed" in out.lower()
+    # The file is byte-for-byte intact — nothing was truncated.
+    assert big.read_bytes() == payload
+
+
+@pytest.mark.asyncio
 async def test_edit_replace_all(tmp_path):
     (tmp_path / "b.py").write_text("a\na\n")
     by = _tools(str(tmp_path))
