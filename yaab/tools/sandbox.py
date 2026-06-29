@@ -16,11 +16,73 @@ Select the backend when constructing the tool with
 
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 import sys
 from typing import Protocol, runtime_checkable
 
 _PREAMBLE = "import builtins, math, json, statistics, re\nimport sys as _sys\n"
+
+#: Environment variables the sandboxed child is allowed to see. Everything else
+#: (every ``*_API_KEY``, cloud credential, DB URL in ``os.environ``) is dropped
+#: so executed code cannot read secrets out of the parent process.
+_SAFE_ENV_KEYS = (
+    "PATH",
+    "PYTHONPATH",
+    "LANG",
+    "LC_ALL",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "SYSTEMROOT",
+    "SystemRoot",
+    "WINDIR",
+)
+
+
+def _minimal_env() -> dict[str, str]:
+    """A scrubbed environment — no inherited secrets."""
+    return {k: os.environ[k] for k in _SAFE_ENV_KEYS if k in os.environ}
+
+
+def _set_rlimits() -> None:  # pragma: no cover - runs in the child, POSIX only
+    if sys.platform == "win32":
+        return
+    import resource
+
+    for res, soft in (
+        (resource.RLIMIT_CPU, 60),
+        (resource.RLIMIT_NPROC, 64),
+        (resource.RLIMIT_FSIZE, 64 * 1024 * 1024),
+    ):
+        try:
+            resource.setrlimit(res, (soft, soft))
+        except (ValueError, OSError):
+            pass
+
+
+def _kill_tree(proc: subprocess.Popen) -> None:
+    """Terminate the process and its whole group/tree, cross-platform."""
+    if sys.platform == "win32":
+        try:
+            subprocess.run(  # noqa: S603,S607
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                capture_output=True,
+            )
+        except Exception:  # noqa: BLE001 - best-effort cleanup
+            try:
+                proc.kill()
+            except Exception:  # noqa: BLE001
+                pass
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except Exception:  # noqa: BLE001 - best-effort cleanup
+        try:
+            proc.kill()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 @runtime_checkable
@@ -29,24 +91,52 @@ class Sandbox(Protocol):
 
 
 class SubprocessSandbox:
-    """Run code in an isolated subprocess (default; not a security boundary)."""
+    """Run code in an isolated subprocess (default; not a security boundary).
+
+    Hardened: the child gets a scrubbed environment (no inherited secrets), runs
+    in its own process group, and the whole group is killed on timeout so a
+    spawned grandchild cannot outlive the deadline. POSIX additionally sets
+    CPU/process/file-size rlimits. This bounds crashes, hangs, and accidental
+    resource exhaustion — it is still **not** a boundary against a determined
+    attacker (use :class:`DockerSandbox` for untrusted code).
+    """
 
     async def run(self, code: str, *, timeout: float) -> str:
+        kwargs: dict = {}
+        if sys.platform == "win32":  # new process group so the tree can be killed
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kwargs["start_new_session"] = True  # own process group for group-kill
+            kwargs["preexec_fn"] = _set_rlimits  # noqa: PLW1509
+
         try:
-            proc = subprocess.run(
+            proc = subprocess.Popen(  # noqa: S603
                 [sys.executable, "-I", "-c", _PREAMBLE + code],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=timeout,
+                env=_minimal_env(),
+                **kwargs,
             )
-        except subprocess.TimeoutExpired:
-            return f"error: execution exceeded {timeout}s timeout"
         except Exception as exc:  # noqa: BLE001
             return f"error: {exc}"
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _kill_tree(proc)
+            proc.communicate()
+            return f"error: execution exceeded {timeout}s timeout"
+        except Exception as exc:  # noqa: BLE001
+            _kill_tree(proc)
+            try:
+                proc.wait(timeout=5)  # reap so the child does not become a zombie
+            except Exception:  # noqa: BLE001
+                pass
+            return f"error: {exc}"
         if proc.returncode != 0:
-            err = proc.stderr.strip().splitlines()
-            return f"error: {err[-1] if err else 'non-zero exit'}"
-        return proc.stdout.strip() or "(no output)"
+            tail = (err or "").strip().splitlines()
+            return f"error: {tail[-1] if tail else 'non-zero exit'}"
+        return (out or "").strip() or "(no output)"
 
 
 class DockerSandbox:

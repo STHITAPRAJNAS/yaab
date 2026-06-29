@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal
 
+from .._redaction import scrub_secrets as _scrub_secrets
 from ..exceptions import CassetteMiss
 from ..types import Message
 from .base import ModelProvider, ModelResponse, StreamChunk
@@ -102,11 +103,13 @@ class _Cassette:
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        doc = {
-            "version": _FORMAT_VERSION,
-            "model": self.model,
-            "interactions": self.interactions,
-        }
+        doc = _scrub_secrets(
+            {
+                "version": _FORMAT_VERSION,
+                "model": self.model,
+                "interactions": self.interactions,
+            }
+        )
         self.path.write_text(json.dumps(doc, indent=2, default=str), encoding="utf-8")
 
 

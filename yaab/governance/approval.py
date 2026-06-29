@@ -29,6 +29,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from ..capabilities import DESTRUCTIVE, Capability, current_tool_capabilities
 from ..exceptions import ApprovalPending, ApprovalRequired
 from ..plugins import Plugin
 from ..types import RunContext
@@ -68,6 +69,7 @@ class ToolApprovalPlugin(Plugin):
         *,
         tools: list[str] | None = None,
         needs_approval: NeedsApproval | None = None,
+        gate_capabilities: set[Capability] | frozenset[Capability] | None = None,
         approver: Approver | None = None,
         audit: AuditLog | None = None,
         mode: str = "inline",
@@ -77,8 +79,8 @@ class ToolApprovalPlugin(Plugin):
         on_timeout: str = "deny",
         escalate_to: str | None = None,
     ) -> None:
-        if tools is None and needs_approval is None:
-            raise ValueError("specify `tools` and/or `needs_approval`")
+        if tools is None and needs_approval is None and gate_capabilities is None:
+            raise ValueError("specify `tools`, `needs_approval`, and/or `gate_capabilities`")
         if mode not in ("inline", "block", "queue"):
             raise ValueError("mode must be 'inline', 'block', or 'queue'")
         if mode == "queue" and store is None:
@@ -87,6 +89,14 @@ class ToolApprovalPlugin(Plugin):
             raise ValueError("on_timeout must be 'deny', 'approve', or 'escalate'")
         self._tools = set(tools or [])
         self._needs_approval = needs_approval
+        #: Gate by tool *capability* (effect), not name — a tool routed through a
+        #: differently-named tool with the same capability is still gated.
+        self.gate_capabilities: frozenset[Capability] = frozenset(gate_capabilities or ())
+        if on_timeout == "approve" and (self.gate_capabilities & DESTRUCTIVE):
+            raise ValueError(
+                "on_timeout='approve' is forbidden when gating a destructive "
+                "capability (silence must not equal approval)"
+            )
         self.approver = approver
         self.audit = audit
         #: Resolution strategy for a guarded call with no inline approver:
@@ -111,9 +121,19 @@ class ToolApprovalPlugin(Plugin):
         #: The next reviewer/agent to route to when ``on_timeout == "escalate"``.
         self.escalate_to = escalate_to
 
+    def guards_capability(self, cap: Capability) -> bool:
+        return cap in self.gate_capabilities
+
     def _guarded(self, tool: str, args: dict, ctx: RunContext) -> bool:
         if tool in self._tools:
             return True
+        # Capability-based gating: a tool whose declared capabilities intersect
+        # the gated set is guarded regardless of its name. The runner sets the
+        # current tool's capabilities on the context before before_tool runs.
+        if self.gate_capabilities:
+            tool_caps = current_tool_capabilities.get()
+            if self.gate_capabilities & tool_caps:
+                return True
         if self._needs_approval is not None:
             return bool(self._needs_approval(tool, args, ctx))
         return False

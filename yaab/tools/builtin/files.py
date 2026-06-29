@@ -19,13 +19,51 @@ results back to the model) rather than raised.
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 
+from ...capabilities import Capability
 from ..base import FunctionTool, tool
 
 #: Hard cap on bytes written/read regardless of caller-supplied limits, so a
 #: runaway tool call can't exhaust memory or disk in one shot.
 _MAX_BYTES = 1_000_000
+
+
+#: In-root paths an agent must not poison — corrupting these can achieve code
+#: execution outside the sandbox at the next dev/CI action (supply-chain escape).
+_PROTECTED = (".git", ".github", ".hg", ".svn")
+
+
+def _is_protected(root: Path, target: Path) -> bool:
+    try:
+        rel = target.relative_to(root).parts
+    except ValueError:
+        return True
+    lowered = [p.lower() for p in rel]
+    return bool(rel) and (any(p in _PROTECTED for p in lowered) or lowered[-1].endswith(".lock"))
+
+
+def _has_symlink_component(root: Path, rel_path: str) -> bool:
+    """True if any component of ``root/rel_path`` is a symlink/junction.
+
+    Walks the **unresolved** join (``Path.resolve`` would collapse the symlinks we
+    are trying to detect), so a symlink planted along the path is rejected and a
+    write/read cannot follow it out of root. Absolute or ``..`` components are also
+    rejected.
+    """
+    cur = root
+    try:
+        for part in Path(rel_path).parts:
+            if part in ("..", "/", "\\") or (len(part) == 2 and part.endswith(":")):
+                return True  # traversal or absolute/drive component
+            cur = cur / part
+            if cur.is_symlink():
+                return True
+    except (OSError, ValueError):
+        return True
+    return False
 
 
 def _safe_path(root: Path, path: str) -> Path | None:
@@ -53,7 +91,7 @@ def make_file_tools(*, root: str) -> tuple[FunctionTool, FunctionTool, FunctionT
     base = Path(root).resolve()
     base.mkdir(parents=True, exist_ok=True)
 
-    @tool(name="file_read")
+    @tool(name="file_read", capabilities={Capability.FS_READ})
     async def read_file(path: str, max_chars: int = 10_000) -> str:
         """Read a text file under the sandbox root and return its contents.
 
@@ -64,6 +102,8 @@ def make_file_tools(*, root: str) -> tuple[FunctionTool, FunctionTool, FunctionT
         target = _safe_path(base, path)
         if target is None:
             return f"error: path {path!r} escapes the sandbox root"
+        if _has_symlink_component(base, path):
+            return f"error: path {path!r} contains a symlink and is rejected"
         if not target.is_file():
             return f"error: no such file: {path}"
         try:
@@ -72,7 +112,7 @@ def make_file_tools(*, root: str) -> tuple[FunctionTool, FunctionTool, FunctionT
         except OSError as exc:
             return f"error: failed to read {path}: {exc}"
 
-    @tool(name="file_write")
+    @tool(name="file_write", capabilities={Capability.FS_WRITE_IN_ROOT})
     async def write_file(path: str, content: str) -> str:
         """Write text to a file under the sandbox root (creating parent dirs).
 
@@ -85,14 +125,32 @@ def make_file_tools(*, root: str) -> tuple[FunctionTool, FunctionTool, FunctionT
             return f"error: path {path!r} escapes the sandbox root"
         if len(content.encode("utf-8")) > _MAX_BYTES:
             return f"error: content exceeds {_MAX_BYTES} bytes"
+        if _is_protected(base, target):
+            return f"error: writing to protected path {path!r} is not allowed"
+        if _has_symlink_component(base, path):
+            return f"error: path {path!r} contains a symlink and is rejected"
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
+            # Atomic: write a temp file in the same dir, then replace, so a crash
+            # mid-write never truncates the destination.
+            fd, tmp = tempfile.mkstemp(dir=str(target.parent), prefix=".yaab-tmp-")
+            try:
+                try:
+                    fh = os.fdopen(fd, "w", encoding="utf-8")
+                except Exception:
+                    os.close(fd)  # fdopen failed to take ownership of the fd
+                    raise
+                with fh:
+                    fh.write(content)
+                os.replace(tmp, target)
+            finally:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
         except OSError as exc:
             return f"error: failed to write {path}: {exc}"
         return f"wrote {len(content)} chars to {path}"
 
-    @tool(name="file_list")
+    @tool(name="file_list", capabilities={Capability.FS_READ})
     async def list_directory(path: str = ".", glob: str = "*") -> str:
         """List entries in a directory under the sandbox root matching ``glob``.
 

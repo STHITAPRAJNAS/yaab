@@ -127,12 +127,16 @@ class AuditLog:
         identity: str | None = None,
         **payload: Any,
     ) -> AuditEvent:
+        from .._redaction import scrub_secrets
+
+        # Scrub secrets BEFORE hashing so redaction is part of the signed payload
+        # (the chain stays verifiable and no token lands in the audit record).
         event = AuditEvent(
             kind=kind,
             agent_id=agent_id,
             version=version,
             identity=identity,
-            payload=payload,
+            payload=scrub_secrets(payload),
             prev_hash=self._last_hash,
         )
         event.hash = _core.hash_event(self._last_hash, event.signing_payload())

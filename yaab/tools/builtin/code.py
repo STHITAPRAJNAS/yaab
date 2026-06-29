@@ -9,6 +9,7 @@ the tool behind tool authorization / approval.
 
 from __future__ import annotations
 
+from ...capabilities import Capability
 from ..base import tool
 from ..sandbox import Sandbox, get_default_sandbox
 
@@ -16,7 +17,7 @@ from ..sandbox import Sandbox, get_default_sandbox
 def make_python_exec(sandbox: Sandbox):
     """Build a ``python_exec`` tool bound to a specific sandbox backend."""
 
-    @tool(name="python_exec")
+    @tool(name="python_exec", capabilities={Capability.PROCESS_SPAWN})
     async def python_exec(code: str, timeout_seconds: float = 5.0) -> str:
         """Execute a short Python snippet and return its stdout.
 
@@ -27,7 +28,7 @@ def make_python_exec(sandbox: Sandbox):
     return python_exec
 
 
-@tool
+@tool(capabilities={Capability.PROCESS_SPAWN})
 async def python_exec(code: str, timeout_seconds: float = 5.0) -> str:
     """Execute a short Python snippet and return its stdout.
 
