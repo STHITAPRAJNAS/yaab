@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ...capabilities import Capability
 from ..base import FunctionTool, tool
 
 #: Hard cap on bytes written/read regardless of caller-supplied limits, so a
@@ -53,7 +54,7 @@ def make_file_tools(*, root: str) -> tuple[FunctionTool, FunctionTool, FunctionT
     base = Path(root).resolve()
     base.mkdir(parents=True, exist_ok=True)
 
-    @tool(name="file_read")
+    @tool(name="file_read", capabilities={Capability.FS_READ})
     async def read_file(path: str, max_chars: int = 10_000) -> str:
         """Read a text file under the sandbox root and return its contents.
 
@@ -72,7 +73,7 @@ def make_file_tools(*, root: str) -> tuple[FunctionTool, FunctionTool, FunctionT
         except OSError as exc:
             return f"error: failed to read {path}: {exc}"
 
-    @tool(name="file_write")
+    @tool(name="file_write", capabilities={Capability.FS_WRITE_IN_ROOT})
     async def write_file(path: str, content: str) -> str:
         """Write text to a file under the sandbox root (creating parent dirs).
 
@@ -92,7 +93,7 @@ def make_file_tools(*, root: str) -> tuple[FunctionTool, FunctionTool, FunctionT
             return f"error: failed to write {path}: {exc}"
         return f"wrote {len(content)} chars to {path}"
 
-    @tool(name="file_list")
+    @tool(name="file_list", capabilities={Capability.FS_READ})
     async def list_directory(path: str = ".", glob: str = "*") -> str:
         """List entries in a directory under the sandbox root matching ``glob``.
 

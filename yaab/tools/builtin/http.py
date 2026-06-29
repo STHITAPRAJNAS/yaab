@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from ...capabilities import Capability
 from ..base import tool
 
 _MAX_BYTES = 50_000
 
 
-@tool
+@tool(capabilities={Capability.NET_EGRESS})
 async def http_get(url: str, max_chars: int = 10_000) -> str:
     """Fetch the text body of an HTTP(S) URL (GET only, read-only).
 

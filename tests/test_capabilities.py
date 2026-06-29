@@ -36,3 +36,21 @@ def test_tool_decorator_capabilities():
         return "ok"
 
     assert Capability.FS_WRITE_IN_ROOT in w.capabilities
+
+
+def test_builtin_tools_declare_capabilities():
+    from yaab.tools.builtin import (
+        fetch_url,
+        http_get,
+        make_file_tools,
+        python_exec,
+        web_search,
+    )
+
+    assert Capability.NET_EGRESS in http_get.capabilities
+    assert Capability.NET_EGRESS in fetch_url.capabilities
+    assert Capability.NET_EGRESS in web_search.capabilities
+    assert Capability.PROCESS_SPAWN in python_exec.capabilities
+    read, write, _list = make_file_tools(root=".")
+    assert Capability.FS_READ in read.capabilities
+    assert Capability.FS_WRITE_IN_ROOT in write.capabilities
