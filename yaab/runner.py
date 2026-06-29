@@ -22,6 +22,7 @@ from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
+from .capabilities import current_tool_capabilities
 from .exceptions import ApprovalRequired, MaxStepsExceeded, ToolError
 from .governance.audit import AuditKind
 from .governance.policy import Stage
@@ -1574,8 +1575,11 @@ class Runner:
                 tc.arguments = repaired
         tool = next((t for t in _available_tools(agent, ctx) if t.name == tc.name), None)
         # Expose the resolved tool's capabilities so capability-based approval
-        # gating in before_tool can match by effect, not just the tool name.
-        ctx._current_tool_capabilities = getattr(tool, "capabilities", frozenset())
+        # gating in before_tool can match by effect, not just the tool name. A
+        # ContextVar (not a shared-ctx attribute) keeps this isolated per tool
+        # call — concurrent calls in one turn run in separate tasks that each copy
+        # the context, so siblings never clobber each other's value.
+        current_tool_capabilities.set(getattr(tool, "capabilities", frozenset()))
         for plugin in self.plugins:
             short = await plugin.before_tool(ctx, agent.name, tc.name, tc.arguments)
             if short is not None:

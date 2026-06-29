@@ -7,6 +7,7 @@ gating is not.
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from enum import Enum
 
 
@@ -29,4 +30,12 @@ DESTRUCTIVE: frozenset[Capability] = frozenset(
         Capability.NET_EGRESS,
         Capability.SCHEDULE,
     }
+)
+
+#: The capabilities of the tool the runner is about to dispatch, so approval can
+#: gate by effect. A ``ContextVar`` (not an attribute on the shared RunContext)
+#: so concurrent tool calls in one turn — each running in its own asyncio Task,
+#: which copies the context — never read each other's value (no gate race).
+current_tool_capabilities: ContextVar[frozenset[Capability]] = ContextVar(
+    "current_tool_capabilities", default=frozenset()
 )

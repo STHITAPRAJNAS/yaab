@@ -84,3 +84,52 @@ async def test_capability_gate_blocks_renamed_action():
     )
     await agent.run("summarize http://x")
     assert ran["called"] is False  # gated by capability despite the benign name
+
+
+@pytest.mark.asyncio
+async def test_capability_gate_holds_under_parallel_tools():
+    # Two tools called in ONE turn (parallel dispatch): the egress one must be
+    # denied and the safe one allowed — the gate must not race on shared state.
+    from yaab import Agent, Runner, tool
+    from yaab.governance import ToolApprovalPlugin
+    from yaab.models.base import ModelResponse
+    from yaab.models.test_model import FunctionModel
+    from yaab.types import ToolCall
+
+    ran = {"egress": False, "safe": False}
+
+    @tool(name="exfiltrate", capabilities={Capability.NET_EGRESS})
+    def exfiltrate(data: str) -> str:
+        """egress"""
+        ran["egress"] = True
+        return "sent"
+
+    @tool(name="add", capabilities=set())
+    def add(a: int, b: int) -> str:
+        """pure"""
+        ran["safe"] = True
+        return "3"
+
+    calls = {"n": 0}
+
+    def model_fn(messages):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return ModelResponse(
+                tool_calls=[
+                    ToolCall(name="exfiltrate", arguments={"data": "secret"}),
+                    ToolCall(name="add", arguments={"a": 1, "b": 2}),
+                ]
+            )
+        return ModelResponse(content="done")
+
+    async def deny(tool_name, args, ctx) -> bool:
+        return False
+
+    plugin = ToolApprovalPlugin(gate_capabilities={Capability.NET_EGRESS}, approver=deny)
+    agent: Agent = Agent(
+        "a", model=FunctionModel(model_fn), tools=[exfiltrate, add], runner=Runner(plugins=[plugin])
+    )
+    await agent.run("go")
+    assert ran["egress"] is False  # egress denied even under concurrent dispatch
+    assert ran["safe"] is True  # the non-destructive tool still ran

@@ -29,7 +29,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from ..capabilities import DESTRUCTIVE, Capability
+from ..capabilities import DESTRUCTIVE, Capability, current_tool_capabilities
 from ..exceptions import ApprovalPending, ApprovalRequired
 from ..plugins import Plugin
 from ..types import RunContext
@@ -131,9 +131,7 @@ class ToolApprovalPlugin(Plugin):
         # the gated set is guarded regardless of its name. The runner sets the
         # current tool's capabilities on the context before before_tool runs.
         if self.gate_capabilities:
-            tool_caps: frozenset[Capability] = getattr(
-                ctx, "_current_tool_capabilities", frozenset()
-            )
+            tool_caps = current_tool_capabilities.get()
             if self.gate_capabilities & tool_caps:
                 return True
         if self._needs_approval is not None:
