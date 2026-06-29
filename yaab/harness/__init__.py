@@ -87,6 +87,7 @@ def coding_agent(
     extra_tools: list[Any] | None = None,
     mcp_tools: list[Any] | None = None,
     max_steps: int = 30,
+    checkpointer: Any | None = None,
 ) -> Agent:
     """Build a sandboxed, approval-gated coding :class:`~yaab.agent.Agent`.
 
@@ -108,6 +109,9 @@ def coding_agent(
         extra_tools: Extra developer tools (carry their own capabilities).
         mcp_tools: External/MCP tools — gated by name regardless of declared caps.
         max_steps: Hard cap on agent loop iterations.
+        checkpointer: Optional run checkpointer. Defaults to an in-process
+            ``MemorySaver`` (resume works within one process); pass a
+            ``SQLiteSaver`` for resume that survives across ``yaab run`` invocations.
 
     Raises:
         ValueError: if a destructive-capability tool is left ungated (fail-closed),
@@ -135,7 +139,7 @@ def coding_agent(
     mcp_names = [n for n in (getattr(t, "name", None) for t in mcp) if n]
 
     gate_caps = frozenset(gate) if gate is not None else DEFAULT_GATE
-    _assert_no_ungated_destructive(tools, gate_caps, name_gated=set(mcp_names))
+    _assert_no_ungated_gateworthy(tools, gate_caps, name_gated=set(mcp_names))
 
     plugin = ToolApprovalPlugin(
         gate_capabilities=gate_caps,
@@ -147,26 +151,43 @@ def coding_agent(
     base = _DEFAULT_INSTRUCTIONS if instructions is None else instructions
     base = _with_agents_md(base, root)
 
+    if checkpointer is None:
+        # hitl= sugar wires a gated, durable-in-memory Runner (MemorySaver).
+        return Agent(
+            name, model=model, instructions=base, tools=tools, max_steps=max_steps, hitl=plugin
+        )
+    # Power form: an explicit Runner so resume can be durable across processes.
+    from ..runner import Runner
+
+    runner = Runner(plugins=[plugin], run_checkpointer=checkpointer)
     return Agent(
-        name, model=model, instructions=base, tools=tools, max_steps=max_steps, hitl=plugin
+        name, model=model, instructions=base, tools=tools, max_steps=max_steps, runner=runner
     )
 
 
-def _assert_no_ungated_destructive(
+#: Capabilities the harness considers must-be-gated. This is exactly the default
+#: gated set: every destructive/exfiltrating cap PLUS in-root writes and env reads.
+#: The fail-closed check masks against this (not just DESTRUCTIVE) so a custom
+#: ``gate=`` that drops ``FS_WRITE_IN_ROOT``/``ENV_READ`` is still rejected — only
+#: plain reads (``FS_READ``) are ever allowed to run ungated.
+GATEWORTHY: frozenset[Capability] = DEFAULT_GATE
+
+
+def _assert_no_ungated_gateworthy(
     tools: list[Any], gate_caps: frozenset[Capability], *, name_gated: set[str]
 ) -> None:
-    """Fail-closed: refuse to build if a destructive tool is neither capability-
+    """Fail-closed: refuse to build if a gate-worthy tool is neither capability-
     gated nor name-gated."""
     ungated: set[Capability] = set()
     for t in tools:
         if getattr(t, "name", None) in name_gated:
             continue  # gated by name
-        caps = set(getattr(t, "capabilities", frozenset())) & DESTRUCTIVE
+        caps = set(getattr(t, "capabilities", frozenset())) & GATEWORTHY
         ungated |= caps - set(gate_caps)
     if ungated:
         missing = ", ".join(sorted(c.value for c in ungated))
         raise ValueError(
-            f"fail-closed: destructive capabilities are ungated: {missing}. "
+            f"fail-closed: gate-worthy capabilities are ungated: {missing}. "
             "Widen `gate=` to cover them or remove the offending tool."
         )
 

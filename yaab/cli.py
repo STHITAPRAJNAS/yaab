@@ -276,7 +276,13 @@ def _parse_env_pairs(items: list[str]) -> dict[str, str]:
     for item in items:
         key, sep, value = item.partition("=")
         if not sep:
-            raise SystemExit(f"--env expects KEY=VALUE (or KEY= for a placeholder), got '{item}'")
+            # A CLI-usage error: print to stderr and exit 2 (not 1), so callers can
+            # distinguish "you invoked me wrong" from a runtime failure.
+            print(
+                f"error: --env expects KEY=VALUE (or KEY= for a placeholder), got '{item}'",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
         env[key] = value
     return env
 
@@ -422,6 +428,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_deploy.add_argument("--region", default="us-central1")
 
+    from .run_cli import add_run_subparser
+
+    add_run_subparser(sub)
+
     args = parser.parse_args(argv)
 
     if args.command == "info" or args.command is None:
@@ -438,6 +448,10 @@ def main(argv: list[str] | None = None) -> int:
             return _compliance_report(args.regime, args.db, args.agent_id)
         print("usage: yaab compliance report <regime> [--db PATH] [--agent-id ID]")
         return 1
+    if args.command == "run":
+        from .run_cli import run_command
+
+        return run_command(args)
     if args.command == "serve":
         return _serve(args.spec, args.host, args.port)
     if args.command == "web":
