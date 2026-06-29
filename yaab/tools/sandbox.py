@@ -47,6 +47,8 @@ def _minimal_env() -> dict[str, str]:
 
 
 def _set_rlimits() -> None:  # pragma: no cover - runs in the child, POSIX only
+    if sys.platform == "win32":
+        return
     import resource
 
     for res, soft in (
@@ -62,14 +64,20 @@ def _set_rlimits() -> None:  # pragma: no cover - runs in the child, POSIX only
 
 def _kill_tree(proc: subprocess.Popen) -> None:
     """Terminate the process and its whole group/tree, cross-platform."""
-    try:
-        if os.name == "posix":
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        else:
+    if sys.platform == "win32":
+        try:
             subprocess.run(  # noqa: S603,S607
                 ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                 capture_output=True,
             )
+        except Exception:  # noqa: BLE001 - best-effort cleanup
+            try:
+                proc.kill()
+            except Exception:  # noqa: BLE001
+                pass
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
     except Exception:  # noqa: BLE001 - best-effort cleanup
         try:
             proc.kill()
@@ -95,11 +103,11 @@ class SubprocessSandbox:
 
     async def run(self, code: str, *, timeout: float) -> str:
         kwargs: dict = {}
-        if os.name == "posix":
+        if sys.platform == "win32":  # new process group so the tree can be killed
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
             kwargs["start_new_session"] = True  # own process group for group-kill
             kwargs["preexec_fn"] = _set_rlimits  # noqa: PLW1509
-        else:  # Windows: new process group so the tree can be signalled/killed
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
 
         try:
             proc = subprocess.Popen(  # noqa: S603
