@@ -79,6 +79,7 @@ nav:
   - Core:
       - Agents: agents.md
       - Tools: tools.md
+      - Coding harness: harness.md
       - Models: models.md
       - "State: sessions, memory, artifacts": state.md
       - Storage & backends: storage-backends.md

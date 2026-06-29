@@ -1108,16 +1108,35 @@ class Runner:
     async def _execute_approved_tool(
         self, agent: Any, ctx: RunContext, tool_name: str, arguments: dict[str, Any]
     ) -> Any:
-        """Run a now-approved tool directly, skipping the approval gate.
+        """Run a now-approved tool, skipping only the *approval* gate's pre-hook.
 
-        The human has already decided, so the approval plugin's ``before_tool``
-        must not park the run again. Other plugins' post-processing still applies.
+        The human has already decided, so a :class:`ToolApprovalPlugin`'s
+        ``before_tool`` must not park the run again. But every *other* plugin's
+        pre-execution hook (authorization, idempotency, rate-limit, audit) MUST
+        still run — the approved (possibly human-edited) args have not been seen by
+        them yet — and the tool's capabilities must be exposed for any of those
+        hooks that gate by effect. This keeps the approved path symmetric with the
+        normal :meth:`_run_tool` path except for the one gate we intentionally drop.
         """
         import asyncio
+
+        from .governance.approval import ToolApprovalPlugin
 
         tool = next((t for t in agent.tools if t.name == tool_name), None)
         if tool is None:
             return f"error: unknown tool '{tool_name}'"
+        # Expose the tool's capabilities (mirrors _run_tool) so effect-based hooks
+        # see them; without this a capability-gating plugin reads an empty set.
+        current_tool_capabilities.set(getattr(tool, "capabilities", frozenset()))
+        # Run pre-execution hooks for every plugin EXCEPT the approval gate(s),
+        # which would re-park the run the human just released. A non-None return is
+        # a short-circuit (e.g. an authorization deny) and is honored.
+        for plugin in self.plugins:
+            if isinstance(plugin, ToolApprovalPlugin):
+                continue
+            short = await plugin.before_tool(ctx, agent.name, tool_name, arguments)
+            if short is not None:
+                return short
         timeout = self._tool_timeout(tool)
         try:
             if timeout is not None:
