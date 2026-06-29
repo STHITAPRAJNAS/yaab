@@ -6,6 +6,53 @@ All notable changes to YAAB are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-06-29
+
+The **packaged coding harness** — a sandboxed, approval-gated coding agent you
+build in one call and run headlessly (in CI, embedded, or from the CLI), the
+analogue of a CLI coding tool shipped inside an SDK. Provider-neutral, safe by
+construction: every write/exec/network/schedule/env action is gated; only reads
+run unattended. Additive and backward compatible.
+
+### Added
+- **`coding_agent()`** (`yaab.harness`, re-exported as `yaab.coding_agent`) — returns
+  a plain `Agent` wired for autonomous software work: sandboxed `file_read` /
+  `file_write` / `file_list` / `file_edit`, optional allowlisted shell, optional
+  SSRF-guarded web tools, automatic `AGENTS.md` brief, a bounded loop, and a
+  `ToolApprovalPlugin` that gates by **capability** (not tool name). **Gated by
+  default, fail-closed** (construction raises if a gate-worthy tool is left
+  ungated), and **no silent auto-approve** — with no approver a gated tool pauses.
+  MCP tools are gated by name regardless of declared capabilities.
+- **`file_edit`** — surgical single-match (or `replace_all`) edits with a
+  read-before-edit + content-hash **staleness guard**, atomic write, and a unified
+  diff result. Refuses oversized files rather than truncating. Capability
+  `fs_write_in_root`.
+- **`shell_exec` + command sandboxes** (`yaab.tools.exec`) — **argv-only** (no
+  shell, so no injection), exact-binary **allowlist** + per-binary `ShellRule`
+  argument validation. Runs on a `CommandSandbox`: `SubprocessCommandSandbox`
+  (scrubbed env, process-group kill, POSIX rlimits) or `DockerCommandSandbox`
+  (workspace-mounted, no-network, cap-dropped container). `require_isolated()` is
+  the fail-closed gate. Capability `process_spawn`.
+- **`yaab run`** — headless CLI for the bundled coder (`--coding --root`) or any
+  `module:agent`. **Deterministic exit codes** (0 ok / 2 usage / 3 approval-paused
+  / 4 budget / 5 timeout / 6 cancelled / 7 max-steps / 8 output / 9 model / 10
+  policy) so CI can branch on *why* a run stopped. Answer→stdout, diagnostics→
+  stderr, `--json` envelope. Always bounded by a `UsageLimits`. Explicit approval
+  policy (`--auto` / `--read-only` / `--approve-caps`; no blanket `--yes`).
+  SIGINT/SIGTERM cancels cooperatively and prints a resume id; `--state-db` gives
+  durable cross-process resume.
+
+### Fixed
+- The approved-resume path (`_execute_approved_tool`) now runs every plugin's
+  pre-execution hook **except** the approval gate (previously it skipped them all),
+  so authorization / idempotency / rate-limit / audit and capability exposure still
+  apply when a human-approved tool runs.
+- `yaab deploy --env` parse errors now exit `2` (CLI usage) instead of `1`.
+
+### Documentation
+- New **Coding harness** page (`docs/harness.md`) covering `coding_agent()`, the
+  capability security model, allowlisted shell, and the `yaab run` CLI.
+
 ## [0.3.1] — 2026-06-28
 
 A documentation and examples release — **no library changes** (the `yaab` package

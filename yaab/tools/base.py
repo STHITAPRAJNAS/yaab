@@ -15,6 +15,7 @@ from typing import Any, Protocol, get_type_hints, runtime_checkable
 
 from pydantic import create_model
 
+from ..capabilities import Capability
 from ..exceptions import ToolError
 from ..types import RunContext
 from .auth import ToolAuth, ToolAuthRequired, as_headers
@@ -59,10 +60,14 @@ class FunctionTool:
         description: str | None = None,
         timeout: float | None = None,
         auth: ToolAuth | None = None,
+        capabilities: set[Capability] | frozenset[Capability] | None = None,
     ) -> None:
         self.fn = fn
         self.name = name or fn.__name__
         self.description = description or (inspect.getdoc(fn) or "").strip()
+        #: What this tool can do; policy (approval/budget/sandbox) gates on these
+        #: rather than the tool name, which the model can route around.
+        self.capabilities: frozenset[Capability] = frozenset(capabilities or ())
         #: Optional per-tool execution timeout (seconds); overrides the runner's
         #: ``default_tool_timeout``. ``None`` defers to the runner default.
         self.timeout = timeout
@@ -158,16 +163,25 @@ def tool(
     description: str | None = None,
     timeout: float | None = None,
     auth: ToolAuth | None = None,
+    capabilities: set[Capability] | frozenset[Capability] | None = None,
 ) -> Any:
     """Decorator turning a typed function into a :class:`FunctionTool`.
 
     Usable bare (``@tool``) or parameterized (``@tool(name=..., timeout=...,
     auth=...)``). When ``auth`` is given, the framework resolves and injects a
     credential before each call — see :class:`FunctionTool` and :mod:`.auth`.
+    ``capabilities`` declares what the tool can do so policy gates by effect.
     """
 
     def wrap(func: Callable[..., Any]) -> FunctionTool:
-        return FunctionTool(func, name=name, description=description, timeout=timeout, auth=auth)
+        return FunctionTool(
+            func,
+            name=name,
+            description=description,
+            timeout=timeout,
+            auth=auth,
+            capabilities=capabilities,
+        )
 
     if fn is not None:
         return wrap(fn)

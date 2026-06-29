@@ -19,6 +19,7 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from ...capabilities import Capability
 from ..base import tool
 
 SearchProvider = Callable[[str, int], Awaitable[list[dict]]]
@@ -96,7 +97,7 @@ def set_search_provider(provider: SearchProvider | None) -> None:
     _provider = provider
 
 
-@tool
+@tool(capabilities={Capability.NET_EGRESS})
 async def web_search(query: str, max_results: int = 5) -> str:
     """Search the web and return titled result snippets.
 

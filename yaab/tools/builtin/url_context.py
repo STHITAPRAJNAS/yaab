@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from ...capabilities import Capability
 from ...rag.loaders import html_to_text
 from ..base import FunctionTool, tool
 
@@ -63,7 +64,7 @@ def make_fetch_url(
     """
     factory = client_factory or _default_client_factory
 
-    @tool(name=name)
+    @tool(name=name, capabilities={Capability.NET_EGRESS})
     async def fetch_url(url: str, max_chars: int = 8000) -> str:
         """Fetch a web page and return its readable text (HTML stripped).
 

@@ -223,10 +223,10 @@ async def test_file_read_missing_file_reports_error(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_file_toolset_returns_three_tools(tmp_path):
+async def test_file_toolset_returns_all_file_tools(tmp_path):
     tools = file_toolset(root=str(tmp_path))
     names = {t.name for t in tools}
-    assert names == {"file_read", "file_write", "file_list"}
+    assert names == {"file_read", "file_write", "file_list", "file_edit"}
 
 
 # --- registration / discovery -------------------------------------------
