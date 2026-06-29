@@ -128,6 +128,10 @@ class SubprocessSandbox:
             return f"error: execution exceeded {timeout}s timeout"
         except Exception as exc:  # noqa: BLE001
             _kill_tree(proc)
+            try:
+                proc.wait(timeout=5)  # reap so the child does not become a zombie
+            except Exception:  # noqa: BLE001
+                pass
             return f"error: {exc}"
         if proc.returncode != 0:
             tail = (err or "").strip().splitlines()

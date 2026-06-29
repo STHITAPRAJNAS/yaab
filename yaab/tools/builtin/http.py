@@ -23,6 +23,7 @@ def _host_is_blocked(host: str) -> bool:
         infos = socket.getaddrinfo(host, None)
     except OSError:
         return True  # unresolvable -> refuse
+    cgnat = ipaddress.ip_network("100.64.0.0/10")  # RFC 6598 carrier-grade NAT
     for *_h, sockaddr in infos:
         ip = ipaddress.ip_address(sockaddr[0])
         if (
@@ -32,6 +33,7 @@ def _host_is_blocked(host: str) -> bool:
             or ip.is_reserved
             or ip.is_multicast
             or ip.is_unspecified
+            or (ip.version == 4 and ip in cgnat)
         ):
             return True
     return False
@@ -60,6 +62,8 @@ async def http_get(url: str, max_chars: int = 10_000) -> str:
                 resp = await client.get(url)
                 if resp.is_redirect and resp.next_request is not None:
                     url = str(resp.next_request.url)
+                    if not (url.startswith("http://") or url.startswith("https://")):
+                        return "error: redirect to a non-http(s) scheme is blocked"
                     nhost = urlparse(url).hostname or ""
                     if _host_is_blocked(nhost):
                         return f"error: redirect to blocked host {nhost!r}"
