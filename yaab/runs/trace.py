@@ -61,8 +61,15 @@ def _json_safe(value: Any) -> Any:
 
 
 def _safe_event(event: dict[str, Any]) -> dict[str, Any]:
-    """Render an event dict fully JSON-safe (top-level always a dict)."""
-    return {str(k): _json_safe(v) for k, v in event.items()}
+    """Render an event dict fully JSON-safe (top-level always a dict).
+
+    Secret-shaped substrings (in tool args/results, messages) are scrubbed before
+    they reach the durable trace store, which is often a shared/centralized DB.
+    """
+    from .._redaction import scrub_secrets
+
+    safe = {str(k): _json_safe(v) for k, v in event.items()}
+    return scrub_secrets(safe)
 
 
 @runtime_checkable
