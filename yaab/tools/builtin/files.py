@@ -19,6 +19,8 @@ results back to the model) rather than raised.
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 
 from ...capabilities import Capability
@@ -27,6 +29,37 @@ from ..base import FunctionTool, tool
 #: Hard cap on bytes written/read regardless of caller-supplied limits, so a
 #: runaway tool call can't exhaust memory or disk in one shot.
 _MAX_BYTES = 1_000_000
+
+
+#: In-root paths an agent must not poison — corrupting these can achieve code
+#: execution outside the sandbox at the next dev/CI action (supply-chain escape).
+_PROTECTED = (".git", ".github", ".hg", ".svn")
+
+
+def _is_protected(root: Path, target: Path) -> bool:
+    try:
+        rel = target.relative_to(root).parts
+    except ValueError:
+        return True
+    return bool(rel) and (rel[0] in _PROTECTED or rel[-1].endswith(".lock"))
+
+
+def _has_symlink_component(root: Path, target: Path) -> bool:
+    """True if any component between ``root`` and ``target`` is a symlink/junction.
+
+    The resolved-path check in :func:`_safe_path` is check-then-use; this rejects a
+    symlink planted along the path so a write/read cannot follow it out of root.
+    """
+    try:
+        rel = target.relative_to(root).parts
+    except ValueError:
+        return True
+    cur = root
+    for part in rel:
+        cur = cur / part
+        if cur.is_symlink():
+            return True
+    return False
 
 
 def _safe_path(root: Path, path: str) -> Path | None:
@@ -65,6 +98,8 @@ def make_file_tools(*, root: str) -> tuple[FunctionTool, FunctionTool, FunctionT
         target = _safe_path(base, path)
         if target is None:
             return f"error: path {path!r} escapes the sandbox root"
+        if _has_symlink_component(base, target):
+            return f"error: path {path!r} contains a symlink and is rejected"
         if not target.is_file():
             return f"error: no such file: {path}"
         try:
@@ -86,9 +121,22 @@ def make_file_tools(*, root: str) -> tuple[FunctionTool, FunctionTool, FunctionT
             return f"error: path {path!r} escapes the sandbox root"
         if len(content.encode("utf-8")) > _MAX_BYTES:
             return f"error: content exceeds {_MAX_BYTES} bytes"
+        if _is_protected(base, target):
+            return f"error: writing to protected path {path!r} is not allowed"
+        if _has_symlink_component(base, target):
+            return f"error: path {path!r} contains a symlink and is rejected"
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
+            # Atomic: write a temp file in the same dir, then replace, so a crash
+            # mid-write never truncates the destination.
+            fd, tmp = tempfile.mkstemp(dir=str(target.parent), prefix=".yaab-tmp-")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    fh.write(content)
+                os.replace(tmp, target)
+            finally:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
         except OSError as exc:
             return f"error: failed to write {path}: {exc}"
         return f"wrote {len(content)} chars to {path}"
