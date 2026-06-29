@@ -1572,11 +1572,14 @@ class Runner:
             repaired = await plugin.repair_tool_args(ctx, agent.name, tc.name, tc.arguments)
             if repaired is not None:
                 tc.arguments = repaired
+        tool = next((t for t in _available_tools(agent, ctx) if t.name == tc.name), None)
+        # Expose the resolved tool's capabilities so capability-based approval
+        # gating in before_tool can match by effect, not just the tool name.
+        ctx._current_tool_capabilities = getattr(tool, "capabilities", frozenset())
         for plugin in self.plugins:
             short = await plugin.before_tool(ctx, agent.name, tc.name, tc.arguments)
             if short is not None:
                 return short
-        tool = next((t for t in _available_tools(agent, ctx) if t.name == tc.name), None)
         if tool is None:
             # The tool is either unknown or currently gated off by a when= guard;
             # tell the model so it can recover rather than crashing the loop.

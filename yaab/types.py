@@ -125,6 +125,9 @@ class RunContext(Generic[Deps]):
         "pause_for",
         # Resume value injected on a resumed run (set by the runner).
         "_resume",
+        # Capabilities of the tool the runner is about to dispatch — set before
+        # ``before_tool`` so approval can gate by effect, not just tool name.
+        "_current_tool_capabilities",
     )
 
     def __init__(
@@ -153,6 +156,7 @@ class RunContext(Generic[Deps]):
         self.run_id = f"run_{uuid.uuid4().hex[:12]}"
         self.pause_for: Any = None
         self._resume: Any = None
+        self._current_tool_capabilities: frozenset[Any] = frozenset()
 
     def readonly(self) -> RunContextView:
         """A read-only projection for instruction rendering and routing.
