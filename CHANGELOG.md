@@ -11,6 +11,10 @@ All notable changes to YAAB are documented here. The format follows
   `coding_agent()` reads a file and makes a surgical `file_edit`, with the gated
   write approved by a capability-scoped approver. Runs offline (scripted model) and
   live (`YAAB_SAMPLE_MODEL`).
+- **Example `examples/10_coding_harness.py`** — the harness end to end: an approved
+  in-root edit, the same write *pausing* when unapproved, and fail-closed
+  construction when a gate omits a destructive capability. Runs offline and is
+  exercised in CI (script smoke + asserted result).
 
 ### Tested
 - Harness **integration tests** driving the factory through the real
