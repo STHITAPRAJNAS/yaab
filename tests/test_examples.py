@@ -176,6 +176,18 @@ def test_loaders_streaming_batch() -> None:
     assert out["batch_failed"] == 0
 
 
+def test_coding_harness_gate_and_fail_closed() -> None:
+    out = _main_result("10_coding_harness")
+    # 1) Approved in-root write lands the surgical edit.
+    assert out["edited"] == "x = 2"
+    assert out["answer"] == "Changed x from 1 to 2."
+    # 2) With no approver the gated write pauses and leaves the file untouched.
+    assert out["paused"] is True
+    assert out["file_after_pause"] == "x = 1"
+    # 3) A gate that omits a destructive capability refuses to build.
+    assert out["fail_closed"] is True
+
+
 def test_serve_app_serves_http() -> None:
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
