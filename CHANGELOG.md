@@ -6,6 +6,18 @@ All notable changes to YAAB are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Cookbook recipe `harness`** — a runnable example of the coding harness:
+  `coding_agent()` reads a file and makes a surgical `file_edit`, with the gated
+  write approved by a capability-scoped approver. Runs offline (scripted model) and
+  live (`YAAB_SAMPLE_MODEL`).
+
+### Tested
+- Harness **integration tests** driving the factory through the real
+  model→runner→tool loop: a gated `file_edit` that runs once approved, a durable
+  pause when unapproved, a raised `ApprovalRequired` without a resume id, a denied
+  write, and `yaab run` exiting `3` (approval) on a gated tool.
+
 ## [0.4.0] — 2026-06-29
 
 The **packaged coding harness** — a sandboxed, approval-gated coding agent you

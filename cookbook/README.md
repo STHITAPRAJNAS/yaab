@@ -41,6 +41,7 @@ python -m cookbook.recipes.agents
 | 25 | [`record_replay`](recipes/record_replay.py) | Deterministic offline tests of real model behaviour |
 | 26 | [`browser`](recipes/browser.py) | Drive a real browser, safely (allowlist-gated) |
 | 27 | [`interop`](recipes/interop.py) | Expose YAAB tools over MCP |
+| 28 | [`harness`](recipes/harness.py) | Sandboxed, approval-gated coding agent that edits a file |
 
 ## Apps
 

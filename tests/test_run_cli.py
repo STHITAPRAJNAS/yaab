@@ -146,3 +146,44 @@ def test_run_coding_agent_end_to_end(tmp_path, monkeypatch, capsys):
     assert payload["status"] == "ok"
     assert payload["output"] == "all done"
     assert payload["paused"] is False
+
+
+def test_run_pauses_on_gated_tool_exits_3(tmp_path, monkeypatch, capsys):
+    # A scripted model edits a file (gated write); with no approval flags and no
+    # TTY, the run must pause and `yaab run` must exit with the approval code.
+    import yaab.harness as harness
+    from yaab.cli import main
+    from yaab.models.base import ModelResponse
+    from yaab.models.test_model import FunctionModel
+    from yaab.types import ToolCall
+
+    (tmp_path / "m.py").write_text("x = 1\n", encoding="utf-8")
+    calls = {"n": 0}
+
+    def fn(messages):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return ModelResponse(
+                tool_calls=[ToolCall(name="file_read", arguments={"path": "m.py"})]
+            )
+        return ModelResponse(
+            tool_calls=[
+                ToolCall(
+                    name="file_edit",
+                    arguments={"path": "m.py", "old_string": "x = 1", "new_string": "x = 2"},
+                )
+            ]
+        )
+
+    real = harness.coding_agent
+    monkeypatch.setattr(
+        harness, "coding_agent", lambda **kw: real(**{**kw, "model": FunctionModel(fn)})
+    )
+
+    code = main(["run", "--coding", "--root", str(tmp_path), "--json", "edit m.py"])
+    assert code == EXIT["approval"]
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["paused"] is True
+    assert payload["resume_id"]  # a resume id is offered
+    # The gated edit did not run.
+    assert (tmp_path / "m.py").read_text(encoding="utf-8") == "x = 1\n"

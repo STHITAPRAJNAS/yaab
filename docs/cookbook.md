@@ -56,6 +56,7 @@ One focused, self-checking example per capability (`python -m cookbook.recipes.<
 | `record_replay` | Deterministic offline tests of real runs | [Record & replay](record-replay.md) |
 | `browser` | Drive a real browser, safely | [Tools](tools.md) |
 | `interop` | Expose YAAB tools over MCP | [Interop](interop.md) |
+| `harness` | Sandboxed, approval-gated coding agent that edits a file | [Coding harness](harness.md) |
 
 ## How they're tested
 
